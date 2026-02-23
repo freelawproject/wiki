@@ -1,4 +1,4 @@
-from django.contrib import admin
+from django.contrib import admin, messages
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.contrib.auth.models import User
 
@@ -52,6 +52,17 @@ class UserAdmin(BaseUserAdmin):
             return obj.profile.display_name or "—"
         except UserProfile.DoesNotExist:
             return "—"
+
+    def save_model(self, request, obj, form, change):
+        # SECURITY: enforce @free.law domain restriction in admin too.
+        # The login form validates this, but admin bypasses that form.
+        if obj.email and not obj.email.endswith("@free.law"):
+            messages.error(
+                request,
+                "Only @free.law email addresses are allowed.",
+            )
+            return
+        super().save_model(request, obj, form, change)
 
 
 @admin.register(UserProfile)
