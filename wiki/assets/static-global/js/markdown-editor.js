@@ -85,6 +85,7 @@ var initMarkdownEditor = (function() {
     // ── EasyMDE Editor ──────────────────────────────────────
     editor = new EasyMDE({
       element: document.getElementById('markdown-editor'),
+      autoDownloadFontAwesome: false,
       spellChecker: false,
       autosave: { enabled: false },
       status: ['lines', 'words'],

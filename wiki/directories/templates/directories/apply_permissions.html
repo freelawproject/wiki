@@ -5,7 +5,7 @@
 {% block content %}
 <div class="max-w-2xl">
   <div class="flex items-center justify-between mb-6">
-    <h1 class="text-2xl font-bold">Apply Permissions</h1>
+    <h1 class="text-2xl">Apply Permissions</h1>
     {% if directory.path %}
       <a href="{% url 'directory_permissions' path=directory.path %}" class="btn-outline text-sm">Back</a>
     {% else %}

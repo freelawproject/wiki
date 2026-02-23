@@ -6,7 +6,7 @@
 {% block content %}
 <div class="max-w-2xl">
   <div class="flex items-center justify-between mb-6">
-    <h1 class="text-2xl font-bold">{{ group.name }}</h1>
+    <h1 class="text-2xl">{{ group.name }}</h1>
     <div class="flex items-center gap-2">
       {% if can_manage %}
       <a href="{% url 'group_edit' pk=group.pk %}" class="btn-outline text-sm">Edit</a>
@@ -22,7 +22,7 @@
     <h2 class="text-lg font-semibold mb-3">Members</h2>
     <div class="space-y-2">
       {% for member in members %}
-      <div class="card flex items-center justify-between py-3 px-4">
+      <div class="card flex items-center justify-between py-3.5 px-5">
         <div class="flex items-center gap-3">
           {% if member.profile.gravatar_url %}
           <img src="{{ member.profile.gravatar_url }}" alt="" class="w-8 h-8 rounded-full">

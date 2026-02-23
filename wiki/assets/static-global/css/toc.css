@@ -1,17 +1,38 @@
 #toc-nav ul {
   list-style: none;
+  padding-left: 0;
   margin: 0;
-  padding: 0;
 }
 #toc-nav ul ul {
-  padding-left: 1rem;
+  padding-left: 0.875rem;
+}
+#toc-nav a {
+  display: block;
+  padding: 0.2rem 0;
+  padding-left: 0.75rem;
+  border-left: 2px solid transparent;
+  color: inherit;
+  text-decoration: none;
+  transition: color 0.15s, border-color 0.15s;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}
+#toc-nav a:hover {
+  color: var(--color-primary-600, #6D28D9);
+  border-left-color: var(--color-gray-300, #D0D5DD);
 }
 #toc-nav a.toc-active {
-  font-weight: 700;
-  color: var(--color-blue-600);
+  font-weight: 600;
+  color: var(--color-primary-600, #6D28D9);
+  border-left-color: var(--color-primary-600, #6D28D9);
 }
 @media (prefers-color-scheme: dark) {
+  #toc-nav a:hover {
+    color: var(--color-primary-400, #A78BFA);
+    border-left-color: var(--color-gray-600, #475467);
+  }
   #toc-nav a.toc-active {
-    color: var(--color-blue-400);
+    color: var(--color-primary-400, #A78BFA);
+    border-left-color: var(--color-primary-400, #A78BFA);
   }
 }
