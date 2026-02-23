@@ -74,6 +74,9 @@ jobs:
           docker compose -f docker-compose.yml
           -f <(echo 'services: { wiki-django: { image: "wiki" } }')
           up -d --no-build --pull=never
+      - name: Wait for django to be ready
+        run: |
+          timeout 60 bash -c 'until docker exec wiki-django python -c "print()" 2>/dev/null; do sleep 2; done'
       - name: List docker containers
         run: docker ps -a --no-trunc
       - name: Show the docker startup logs

@@ -14,6 +14,11 @@ services:
       POSTGRES_USER: "postgres"
       POSTGRES_PASSWORD: "postgres"
       POSTGRES_DB: "wiki"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
     networks:
       - wiki_net
 
@@ -39,7 +44,8 @@ services:
         BUILD_ENV: dev
     command: web-dev
     depends_on:
-      - wiki-postgres
+      wiki-postgres:
+        condition: service_healthy
     ports:
       - "8001:8000"
     user: root
