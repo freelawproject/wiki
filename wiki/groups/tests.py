@@ -156,3 +156,17 @@ class TestOldGroupUrlsRemoved:
         client.force_login(user)
         r = client.get("/g/")
         assert r.status_code == 404
+
+
+class TestGroupEmailSecurity:
+    def test_group_detail_does_not_expose_emails(
+        self, client, user, other_user, group
+    ):
+        """SECURITY: group detail page must not show full email addresses."""
+        other_user.groups.add(group)
+        client.force_login(user)
+        r = client.get(f"/u/admins/groups/{group.pk}/")
+        assert r.status_code == 200
+        # Display name should appear, but full email must not
+        assert b"Bob" in r.content
+        assert b"bob@free.law" not in r.content

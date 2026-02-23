@@ -89,26 +89,26 @@
   {% endif %}
 
   {# Add permission form #}
-  <div class="card" x-data="{ target: 'user' }">
+  <div class="card" x-data="permissionForm">
     <h2 class="text-lg font-semibold mb-4">Add Permission</h2>
     <form method="post" class="space-y-3">
       {% csrf_token %}
       <div class="flex gap-4 text-sm">
         <label class="flex items-center gap-1.5 cursor-pointer">
-          <input type="radio" name="target_type" value="user" x-model="target"> User
+          <input type="radio" name="target_type" value="user" :checked="isUser" @change="setTarget('user')"> User
         </label>
         <label class="flex items-center gap-1.5 cursor-pointer">
-          <input type="radio" name="target_type" value="group" x-model="target"> Group
+          <input type="radio" name="target_type" value="group" :checked="isGroup" @change="setTarget('group')"> Group
         </label>
       </div>
-      <div x-show="target === 'user'" class="relative">
+      <div x-show="isUser" class="relative">
         <label for="id_username" class="block text-sm font-medium mb-1">Username</label>
         {{ form.username }}
         <div id="username-dropdown"
              class="hidden absolute z-50 left-0 right-0 mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg max-h-48 overflow-y-auto">
         </div>
       </div>
-      <div x-show="target === 'group'" x-cloak>
+      <div x-show="isGroup" x-cloak>
         <label for="id_group" class="block text-sm font-medium mb-1">Group</label>
         {{ form.group }}
       </div>

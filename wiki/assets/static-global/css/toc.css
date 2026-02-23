@@ -1,0 +1,9 @@
+#toc-nav a.toc-active {
+  font-weight: 700;
+  color: var(--color-blue-600);
+}
+@media (prefers-color-scheme: dark) {
+  #toc-nav a.toc-active {
+    color: var(--color-blue-400);
+  }
+}

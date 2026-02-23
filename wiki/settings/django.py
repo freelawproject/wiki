@@ -6,7 +6,17 @@ from .project.testing import TESTING
 
 env = environ.FileAwareEnv()
 
-SECRET_KEY = env("SECRET_KEY", default="THIS-is-a-Secret")
+DEVELOPMENT = env.bool("DEVELOPMENT", default=True)
+
+# SECURITY: no default in production — Django will refuse to start if
+# the SECRET_KEY env var is missing, preventing accidental use of a
+# weak key.
+if DEVELOPMENT:
+    SECRET_KEY = env(
+        "SECRET_KEY", default="dev-only-insecure-key-not-for-production"
+    )
+else:
+    SECRET_KEY = env("SECRET_KEY")
 
 ############
 # Database #
@@ -35,8 +45,6 @@ CACHES = {
         "OPTIONS": {"MAX_ENTRIES": 25_000},
     },
 }
-
-DEVELOPMENT = env.bool("DEVELOPMENT", default=True)
 
 SESSION_ENGINE = "django.contrib.sessions.backends.db"
 
@@ -94,6 +102,8 @@ MIDDLEWARE = [
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.middleware.security.SecurityMiddleware",
+    "csp.middleware.CSPMiddleware",
+    "django_ratelimit.middleware.RatelimitMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "waffle.middleware.WaffleMiddleware",
@@ -166,3 +176,10 @@ from django.contrib.messages import (  # noqa: E402
 MESSAGE_TAGS = {
     message_constants.ERROR: "danger",
 }
+
+if TESTING:
+    CACHES = {
+        "default": {
+            "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+        }
+    }

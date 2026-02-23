@@ -149,6 +149,53 @@ class TestPageDetail:
         r = client.get(f"/c/{page_in_directory.slug}")
         assert b"Engineering" in r.content
 
+    def test_breadcrumbs_hide_private_ancestor(
+        self, client, other_user, user, root_directory
+    ):
+        """SECURITY: private ancestor directories must not appear in
+        breadcrumbs for users who lack permission."""
+        from wiki.directories.models import Directory
+
+        secret = Directory.objects.create(
+            path="classified",
+            title="Classified",
+            parent=root_directory,
+            owner=user,
+            created_by=user,
+            visibility=Directory.Visibility.PRIVATE,
+        )
+        child = Directory.objects.create(
+            path="classified/public-child",
+            title="Public Child",
+            parent=secret,
+            owner=user,
+            created_by=user,
+            visibility=Directory.Visibility.PUBLIC,
+        )
+        p = Page.objects.create(
+            title="Visible Page",
+            slug="visible-page",
+            content="hi",
+            directory=child,
+            owner=user,
+            created_by=user,
+            updated_by=user,
+            visibility=Page.Visibility.PUBLIC,
+        )
+        PageRevision.objects.create(
+            page=p,
+            title=p.title,
+            content=p.content,
+            change_message="init",
+            revision_number=1,
+            created_by=user,
+        )
+        client.force_login(other_user)
+        r = client.get(f"/c/{p.slug}")
+        assert r.status_code == 200
+        assert b"Classified" not in r.content
+        assert b"Public Child" in r.content
+
     def test_subscription_button_for_authenticated(self, client, user, page):
         client.force_login(user)
         r = client.get("/c/getting-started")
@@ -407,6 +454,28 @@ class TestFileUpload:
         r = client.post("/api/upload/")
         assert r.status_code == 400
 
+    def test_blocked_extension_rejected(self, client, user):
+        """SECURITY: executable file types must be rejected."""
+        client.force_login(user)
+        for ext in [".exe", ".js", ".sh", ".bat", ".ps1"]:
+            f = SimpleUploadedFile(
+                f"malicious{ext}",
+                b"payload",
+                content_type="application/octet-stream",
+            )
+            r = client.post("/api/upload/", {"file": f})
+            assert r.status_code == 400, f"{ext} should be blocked"
+            assert b"not allowed" in r.content
+
+    def test_safe_extension_allowed(self, client, user):
+        """SECURITY: normal file types should still be accepted."""
+        client.force_login(user)
+        f = SimpleUploadedFile(
+            "notes.txt", b"hello", content_type="text/plain"
+        )
+        r = client.post("/api/upload/", {"file": f})
+        assert r.status_code == 200
+
 
 class TestPageSearchAutocomplete:
     def test_search_returns_matches(self, client, user, page):
@@ -426,6 +495,96 @@ class TestPageSearchAutocomplete:
         r = client.get("/api/page-search/?q=getting&exclude=getting-started")
         assert r.status_code == 200
         assert b"getting-started" not in r.content
+
+    def test_search_hides_private_pages(
+        self, client, other_user, private_page
+    ):
+        """SECURITY: private pages must not appear in autocomplete for
+        users without permission."""
+        client.force_login(other_user)
+        r = client.get("/api/page-search/?q=secret")
+        assert r.status_code == 200
+        assert b"secret-notes" not in r.content
+
+    def test_search_shows_private_page_to_owner(
+        self, client, user, private_page
+    ):
+        """The page owner should still see their own private pages."""
+        client.force_login(user)
+        r = client.get("/api/page-search/?q=secret")
+        assert b"secret-notes" in r.content
+
+    def test_search_escapes_html_in_title(self, client, user):
+        """SECURITY: XSS payloads in page titles must be escaped."""
+        Page.objects.create(
+            title='<img src=x onerror="alert(1)">',
+            slug="xss-test",
+            content="test",
+            owner=user,
+            created_by=user,
+            updated_by=user,
+            visibility=Page.Visibility.PUBLIC,
+        )
+        client.force_login(user)
+        r = client.get("/api/page-search/?q=onerror")
+        # The raw <img> tag must not appear — it should be escaped
+        assert b"<img" not in r.content
+        assert b"&lt;img" in r.content
+
+
+class TestFileServePermissions:
+    def test_anon_cannot_access_orphaned_file(self, client, user):
+        """SECURITY: files not attached to any page require login."""
+        f = SimpleUploadedFile("test.txt", b"hello")
+        upload = FileUpload.objects.create(
+            uploaded_by=user,
+            file=f,
+            original_filename="test.txt",
+        )
+        r = client.get(f"/files/{upload.id}/test.txt")
+        assert r.status_code == 404
+
+    def test_authenticated_can_access_orphaned_file(self, client, user):
+        """Authenticated users can access orphaned files."""
+        f = SimpleUploadedFile("test.txt", b"hello")
+        upload = FileUpload.objects.create(
+            uploaded_by=user,
+            file=f,
+            original_filename="test.txt",
+        )
+        client.force_login(user)
+        r = client.get(f"/files/{upload.id}/test.txt")
+        # 200 in DEBUG mode (FileResponse), 302 in production (S3 redirect)
+        assert r.status_code in (200, 302)
+
+    def test_anon_cannot_access_private_page_file(
+        self, client, user, private_page
+    ):
+        """SECURITY: files on private pages need page permission."""
+        f = SimpleUploadedFile("secret.txt", b"classified")
+        upload = FileUpload.objects.create(
+            page=private_page,
+            uploaded_by=user,
+            file=f,
+            original_filename="secret.txt",
+        )
+        r = client.get(f"/files/{upload.id}/secret.txt")
+        assert r.status_code == 404
+
+    def test_other_user_cannot_access_private_page_file(
+        self, client, other_user, private_page, user
+    ):
+        """SECURITY: non-owner cannot access files on private pages."""
+        f = SimpleUploadedFile("secret.txt", b"classified")
+        upload = FileUpload.objects.create(
+            page=private_page,
+            uploaded_by=user,
+            file=f,
+            original_filename="secret.txt",
+        )
+        client.force_login(other_user)
+        r = client.get(f"/files/{upload.id}/secret.txt")
+        assert r.status_code == 404
 
 
 # ── Markdown & Wiki Links ─────────────────────────────────
@@ -451,6 +610,37 @@ class TestMarkdownRendering:
         result = render_markdown(md)
         toc = getattr(result, "toc_html", "")
         assert "Section One" in toc
+
+    def test_script_tag_stripped(self):
+        """SECURITY: <script> tags must be removed from rendered output."""
+        html = str(render_markdown('<script>alert("xss")</script>'))
+        assert "<script>" not in html
+        assert "alert" not in html
+
+    def test_onerror_attribute_stripped(self):
+        """SECURITY: event handler attributes must be removed."""
+        html = str(render_markdown('<img src=x onerror="alert(1)">'))
+        assert "onerror" not in html
+
+    def test_javascript_url_stripped(self):
+        """SECURITY: javascript: URLs in links must be neutralised."""
+        html = str(render_markdown("[click](javascript:alert(1))"))
+        assert "javascript:" not in html
+
+    def test_safe_html_preserved(self):
+        """Safe markdown features should survive sanitization."""
+        md = "**bold** and [link](https://example.com) and `code`"
+        html = str(render_markdown(md))
+        assert "<strong>bold</strong>" in html
+        assert 'href="https://example.com"' in html
+        assert "<code>code</code>" in html
+
+    def test_toc_sanitized(self):
+        """SECURITY: toc_html should also be sanitized."""
+        md = '## <script>alert("xss")</script> Heading'
+        result = render_markdown(md)
+        toc = result.toc_html
+        assert "<script>" not in toc
 
 
 class TestWikiLinks:
@@ -1719,3 +1909,58 @@ class TestCleanupCommandEditLocks:
         with time_machine.travel(future, tick=False):
             call_command("cleanup")
             assert not EditLock.objects.filter(page=page).exists()
+
+
+# ── CSP Header Tests ──────────────────────────────────────
+
+
+class TestCSPHeaders:
+    """SECURITY: Content-Security-Policy headers must be present on all
+    responses to prevent XSS, clickjacking, and other injection attacks."""
+
+    def test_csp_header_on_page_detail(self, client, user, page):
+        """Page detail responses include a CSP header."""
+        client.force_login(user)
+        r = client.get(f"/c/{page.slug}/")
+        assert "Content-Security-Policy" in r
+
+    def test_csp_header_on_root(self, client, user, root_directory):
+        """Root directory response includes a CSP header."""
+        client.force_login(user)
+        r = client.get("/c/")
+        assert "Content-Security-Policy" in r
+
+    def test_csp_blocks_frames(self, client, user, page):
+        """CSP header includes frame-src 'none' to block embedding."""
+        client.force_login(user)
+        r = client.get(f"/c/{page.slug}/")
+        csp = r["Content-Security-Policy"]
+        assert "frame-src 'none'" in csp
+
+    def test_csp_blocks_object(self, client, user, page):
+        """CSP header includes object-src 'none' to block plugins."""
+        client.force_login(user)
+        r = client.get(f"/c/{page.slug}/")
+        csp = r["Content-Security-Policy"]
+        assert "object-src 'none'" in csp
+
+    def test_csp_has_default_src(self, client, user, page):
+        """CSP header includes a default-src directive."""
+        client.force_login(user)
+        r = client.get(f"/c/{page.slug}/")
+        csp = r["Content-Security-Policy"]
+        assert "default-src" in csp
+
+    def test_csp_has_script_src(self, client, user, page):
+        """CSP header includes a script-src directive."""
+        client.force_login(user)
+        r = client.get(f"/c/{page.slug}/")
+        csp = r["Content-Security-Policy"]
+        assert "script-src" in csp
+
+    def test_csp_does_not_allow_unsafe_eval(self, client, user, page):
+        """SECURITY: CSP must not include unsafe-eval now that Alpine CSP build is used."""
+        client.force_login(user)
+        r = client.get(f"/c/{page.slug}/")
+        csp = r["Content-Security-Policy"]
+        assert "'unsafe-eval'" not in csp

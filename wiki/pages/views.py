@@ -1,10 +1,12 @@
 import json
+from pathlib import Path as FilePath
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.http import Http404, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
+from django.utils.html import escape
 from django.views.decorators.http import require_POST
 
 from wiki.lib.edit_lock import (
@@ -16,10 +18,12 @@ from wiki.lib.markdown import render_markdown
 from wiki.lib.permissions import (
     can_edit_directory,
     can_edit_page,
+    can_view_directory,
     can_view_page,
     is_editability_more_open_than_visibility,
     is_more_open_than,
 )
+from wiki.lib.ratelimiter import ratelimit_search, ratelimit_upload
 
 from .forms import PageForm
 from .models import (
@@ -233,16 +237,20 @@ def _render_page_detail(request, page):
     rendered_content = render_markdown(page.content)
     toc = getattr(rendered_content, "toc_html", "")
 
-    # Build breadcrumbs
+    # SECURITY: breadcrumbs must not reveal private ancestor directory
+    # names. Skip any ancestor the current user cannot view.
     breadcrumbs = [("Home", reverse("root"))]
     if page.directory:
         for ancestor in page.directory.get_ancestors():
             if not ancestor.path:
                 continue  # skip root — already in breadcrumbs
+            if not can_view_directory(request.user, ancestor):
+                continue
             breadcrumbs.append((ancestor.title, ancestor.get_absolute_url()))
-        breadcrumbs.append(
-            (page.directory.title, page.directory.get_absolute_url())
-        )
+        if can_view_directory(request.user, page.directory):
+            breadcrumbs.append(
+                (page.directory.title, page.directory.get_absolute_url())
+            )
     breadcrumbs.append((page.title, page.get_absolute_url()))
 
     # Check subscription status and get subscriber list
@@ -635,6 +643,7 @@ def page_move(request, path):
         request.POST or None,
         initial=initial,
         exclude_current=page.directory,
+        user=request.user,
     )
 
     if request.method == "POST" and form.is_valid():
@@ -1015,14 +1024,51 @@ def page_preview_htmx(request):
     return HttpResponse(rendered)
 
 
+# SECURITY: block executable/script file types to prevent serving
+# dangerous payloads even behind signed URLs.
+BLOCKED_EXTENSIONS = {
+    ".exe",
+    ".bat",
+    ".cmd",
+    ".com",
+    ".msi",
+    ".scr",
+    ".pif",
+    ".js",
+    ".vbs",
+    ".vbe",
+    ".wsf",
+    ".wsh",
+    ".ps1",
+    ".sh",
+    ".bash",
+    ".csh",
+    ".dll",
+    ".so",
+    ".dylib",
+    ".app",
+    ".action",
+    ".command",
+    ".jar",
+    ".class",
+}
+
+
 @require_POST
 @login_required
+@ratelimit_upload
 def file_upload_htmx(request):
     """Handle file upload via HTMX, return markdown syntax."""
 
     uploaded_file = request.FILES.get("file")
     if not uploaded_file:
         return JsonResponse({"error": "No file provided"}, status=400)
+
+    ext = FilePath(uploaded_file.name).suffix.lower()
+    if ext in BLOCKED_EXTENSIONS:
+        return JsonResponse(
+            {"error": f"File type '{ext}' is not allowed."}, status=400
+        )
 
     max_size = 1024 * 1024 * 1024  # 1 GB
     if uploaded_file.size > max_size:
@@ -1057,8 +1103,13 @@ def file_serve(request, file_id, filename):
     """Serve a file with permission checks. Redirect to signed S3 URL."""
     upload = get_object_or_404(FileUpload, id=file_id)
 
-    # If file is attached to a page, check page permissions
-    if upload.page and not can_view_page(request.user, upload.page):
+    # SECURITY: page-attached files require page-level view permission;
+    # orphaned files (page=None) still require authentication so that
+    # unauthenticated users cannot guess file IDs to access uploads.
+    if upload.page:
+        if not can_view_page(request.user, upload.page):
+            raise Http404
+    elif not request.user.is_authenticated:
         raise Http404
 
     # In development, serve directly; in production, redirect to S3
@@ -1075,24 +1126,37 @@ def file_serve(request, file_id, filename):
 
 
 @login_required
+@ratelimit_search
 def page_search_htmx(request):
     """HTMX endpoint for page title autocomplete."""
     q = request.GET.get("q", "").strip()
     if len(q) < 2:
         return HttpResponse("")
 
-    qs = Page.objects.filter(title__icontains=q)
+    # SECURITY: select_related("directory") needed for permission checks
+    # that walk the directory tree. Without it each can_view_page() call
+    # would trigger extra queries.
+    qs = Page.objects.filter(title__icontains=q).select_related("directory")
     exclude_slug = request.GET.get("exclude", "").strip()
     if exclude_slug:
         qs = qs.exclude(slug=exclude_slug)
-    pages = qs.values("title", "slug")[:10]
+
+    # SECURITY: filter results by permission so private pages are never
+    # revealed in autocomplete to users who lack access.
+    results = []
+    for p in qs.iterator():
+        if can_view_page(request.user, p):
+            results.append(p)
+        if len(results) >= 10:
+            break
 
     html = ""
-    for p in pages:
+    for p in results:
+        # SECURITY: escape() prevents stored XSS via page titles/slugs.
         html += (
             f'<div class="px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700'
-            f' cursor-pointer" data-slug="{p["slug"]}">'
-            f"{p['title']}</div>"
+            f' cursor-pointer" data-slug="{escape(p.slug)}">'
+            f"{escape(p.title)}</div>"
         )
 
     return HttpResponse(html)

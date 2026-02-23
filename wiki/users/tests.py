@@ -343,3 +343,60 @@ class TestUserArchiving:
         client.force_login(user)
         r = client.get("/u/admins/")
         assert b"Archived" in r.content
+
+
+class TestAdminEmailDomainSecurity:
+    def test_django_admin_rejects_non_free_law_email(self, client, user):
+        """SECURITY: the Django admin must not allow creating users with
+        non-@free.law email addresses."""
+        user.is_staff = True
+        user.is_superuser = True
+        user.save()
+        client.force_login(user)
+        client.post(
+            "/admin/auth/user/add/",
+            {
+                "username": "hacker@gmail.com",
+                "email": "hacker@gmail.com",
+                "password1": "Str0ngP@ss!",
+                "password2": "Str0ngP@ss!",
+            },
+        )
+        # The user should NOT be created
+        assert not User.objects.filter(email="hacker@gmail.com").exists()
+
+
+# ── Rate Limiting and 429 Tests ─────────────────────────
+
+
+class TestRateLimitConfig:
+    """SECURITY: verify rate limit infrastructure is properly configured."""
+
+    def test_ratelimit_middleware_installed(self, db):
+        """The ratelimit middleware must be in MIDDLEWARE."""
+        from django.conf import settings
+
+        assert any("RatelimitMiddleware" in m for m in settings.MIDDLEWARE)
+
+    def test_ratelimit_view_configured(self, db):
+        """RATELIMIT_VIEW must point to our 429 handler."""
+        from django.conf import settings
+
+        assert settings.RATELIMIT_VIEW == "wiki.lib.views.ratelimited"
+
+    def test_429_template_renders(self, client, db):
+        """The 429 handler returns a 429 status with the error template."""
+        from django.test import RequestFactory
+
+        from wiki.lib.views import ratelimited
+
+        request = RequestFactory().get("/")
+        response = ratelimited(request)
+        assert response.status_code == 429
+        assert b"Too Many Requests" in response.content
+
+    def test_csp_middleware_installed(self, db):
+        """The CSP middleware must be in MIDDLEWARE."""
+        from django.conf import settings
+
+        assert any("CSPMiddleware" in m for m in settings.MIDDLEWARE)

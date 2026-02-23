@@ -10,11 +10,14 @@ from django.shortcuts import redirect, render
 from django.utils import timezone
 
 from wiki.lib.permissions import is_system_owner
+from wiki.lib.ratelimiter import ratelimit_login
 from wiki.users.forms import LoginForm, UserSettingsForm
 from wiki.users.models import SystemConfig, UserProfile
 from wiki.users.tasks import send_magic_link_email
 
 
+# SECURITY: rate limit login POSTs to prevent magic link email spam.
+@ratelimit_login
 def login_view(request):
     """Show login form and send magic link email."""
     if request.user.is_authenticated:
