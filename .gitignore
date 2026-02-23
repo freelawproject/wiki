@@ -1,0 +1,39 @@
+# Python stuff
+.venv
+*.egg-info
+.dmypy.json
+
+# pyenv
+.python-version
+
+# no compiled files!
+*.pyc
+*~
+*.iml
+
+# Node
+node_modules/
+
+# Lock files generated in Docker
+uv.lock
+package-lock.json
+
+# Generated assets
+wiki/assets/static/
+wiki/assets/static-global/css/tailwind_styles.css
+
+# IntelliJ IDEA files
+.idea
+
+# Dev personal stuff - never check in these things with keys or codes!
+wiki/settings/*private.py
+.DS_Store
+.dir-locals.el
+/.env.dev
+/.env
+
+.vscode/*
+/.history
+
+# Claude Code
+.claude/

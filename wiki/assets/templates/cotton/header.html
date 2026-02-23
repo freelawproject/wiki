@@ -1,0 +1,37 @@
+{% load wiki_tags %}
+<header class="border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
+  <div class="max-w-content mx-auto px-4 flex items-center justify-between h-16">
+    <a href="{% url 'root' %}" class="text-xl font-bold text-gray-900 dark:text-white no-underline hover:no-underline">
+      FLP Wiki
+    </a>
+
+    <nav class="flex items-center gap-2 sm:gap-4">
+      <a href="{% url 'search' %}" class="btn-ghost text-sm sm:hidden" aria-label="Search">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+        </svg>
+      </a>
+      <form action="{% url 'search' %}" method="get" class="hidden sm:block">
+        <input
+          type="search"
+          name="q"
+          placeholder="Search..."
+          class="input-text w-48 lg:w-64"
+          autocomplete="off"
+        >
+      </form>
+
+      {% if user.is_authenticated %}
+        {% if user.is_staff %}
+          <a href="{% url 'admin_list' %}" class="btn-ghost text-sm">Admin</a>
+        {% endif %}
+        <form method="post" action="{% url 'logout' %}">
+          {% csrf_token %}
+          <button type="submit" class="btn-ghost text-sm">Sign out</button>
+        </form>
+      {% else %}
+        <a href="{% url 'login' %}" class="btn-outline text-sm">Sign in</a>
+      {% endif %}
+    </nav>
+  </div>
+</header>

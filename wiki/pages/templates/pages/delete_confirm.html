@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+
+{% block title %}Delete "{{ page.title }}" - FLP Wiki{% endblock %}
+
+{% block content %}
+<div class="max-w-lg">
+  <h1 class="text-2xl font-bold mb-4">Delete Page</h1>
+  {% if incoming_links %}
+  <div class="card border-red-300 dark:border-red-700">
+    <p class="mb-3 font-medium text-red-700 dark:text-red-400">
+      This page cannot be deleted because {{ incoming_links|length }}
+      page{{ incoming_links|pluralize }} link{{ incoming_links|pluralize:"s," }} to it.
+      Update {{ incoming_links|pluralize:"this page,these pages" }} first to remove
+      the #{{ page.slug }} reference{{ incoming_links|pluralize:".,s." }}
+    </p>
+    <ul class="space-y-1 mb-4">
+      {% for link in incoming_links %}
+      <li>
+        <a href="{{ link.from_page.get_absolute_url }}" class="hover:underline">{{ link.from_page.title }}</a>
+        {% if link.from_page.directory %}
+          <span class="text-sm text-gray-500 dark:text-gray-400">in {{ link.from_page.directory.title }}</span>
+        {% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+    <a href="{{ page.get_absolute_url }}" class="btn-outline">Back to Page</a>
+  </div>
+  {% else %}
+  <div class="card">
+    <p class="mb-4">
+      Are you sure you want to delete <strong>"{{ page.title }}"</strong>?
+      This action cannot be undone.
+    </p>
+    <form method="post" class="flex gap-3">
+      {% csrf_token %}
+      <button type="submit" class="btn-danger">Delete</button>
+      <a href="{{ page.get_absolute_url }}" class="btn-outline">Cancel</a>
+    </form>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

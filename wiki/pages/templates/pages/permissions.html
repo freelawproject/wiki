@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+{% load static wiki_tags %}
+
+{% block title %}Permissions: {{ page.title }} - FLP Wiki{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl">
+  <div class="flex items-center justify-between mb-6">
+    <h1 class="text-2xl font-bold">Permissions: {{ page.title }}</h1>
+    <a href="{{ page.get_absolute_url }}" class="btn-outline text-sm">Back</a>
+  </div>
+
+  <p class="text-sm text-gray-500 dark:text-gray-400 mb-6">
+    {% if page.visibility == 'public' %}
+    This page is <strong>public</strong> — anyone can view it.
+    Permissions below control who can edit or admin.
+    {% else %}
+    This page is <strong>private</strong> — only users with explicit
+    permissions (or the owner) can view or edit it.
+    {% endif %}
+  </p>
+
+  {# User permissions #}
+  {% if user_permissions %}
+  <div class="mb-6">
+    <h2 class="text-lg font-semibold mb-3">User Permissions</h2>
+    <div class="space-y-2">
+      {% for perm in user_permissions %}
+      <div class="card flex items-center justify-between py-3 px-4">
+        <div class="flex items-center gap-3">
+          {% if perm.user.profile.gravatar_url %}
+          <img src="{{ perm.user.profile.gravatar_url }}" alt="" class="w-8 h-8 rounded-full">
+          {% endif %}
+          <div>
+            <span class="font-medium">{{ perm.user|display_name }}</span>
+            <span class="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium
+              {% if perm.permission_type == 'owner' %}bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200
+              {% elif perm.permission_type == 'edit' %}bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200
+              {% else %}bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200{% endif %}">
+              {% if perm.permission_type == 'owner' %}Admin{% else %}{{ perm.get_permission_type_display }}{% endif %}
+            </span>
+          </div>
+        </div>
+        <form method="post">
+          {% csrf_token %}
+          <button type="submit" name="remove" value="{{ perm.pk }}"
+                  class="text-sm text-red-600 dark:text-red-400 hover:underline">
+            Remove
+          </button>
+        </form>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  {# Group permissions #}
+  {% if group_permissions %}
+  <div class="mb-6">
+    <h2 class="text-lg font-semibold mb-3">Group Permissions</h2>
+    <div class="space-y-2">
+      {% for perm in group_permissions %}
+      <div class="card flex items-center justify-between py-3 px-4">
+        <div class="flex items-center gap-3">
+          <div class="w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center text-sm font-medium">
+            {{ perm.group.name|first }}
+          </div>
+          <div>
+            <span class="font-medium">{{ perm.group.name }}</span>
+            <span class="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium
+              {% if perm.permission_type == 'owner' %}bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200
+              {% elif perm.permission_type == 'edit' %}bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200
+              {% else %}bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200{% endif %}">
+              {% if perm.permission_type == 'owner' %}Admin{% else %}{{ perm.get_permission_type_display }}{% endif %}
+            </span>
+          </div>
+        </div>
+        <form method="post">
+          {% csrf_token %}
+          <button type="submit" name="remove" value="{{ perm.pk }}"
+                  class="text-sm text-red-600 dark:text-red-400 hover:underline">
+            Remove
+          </button>
+        </form>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  {# Add permission form #}
+  <div class="card" x-data="{ target: 'user' }">
+    <h2 class="text-lg font-semibold mb-4">Add Permission</h2>
+    <form method="post" class="space-y-3">
+      {% csrf_token %}
+      <div class="flex gap-4 text-sm">
+        <label class="flex items-center gap-1.5 cursor-pointer">
+          <input type="radio" name="target_type" value="user" x-model="target"> User
+        </label>
+        <label class="flex items-center gap-1.5 cursor-pointer">
+          <input type="radio" name="target_type" value="group" x-model="target"> Group
+        </label>
+      </div>
+      <div x-show="target === 'user'" class="relative">
+        <label for="id_username" class="block text-sm font-medium mb-1">Username</label>
+        {{ form.username }}
+        <div id="username-dropdown"
+             class="hidden absolute z-50 left-0 right-0 mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+        </div>
+      </div>
+      <div x-show="target === 'group'" x-cloak>
+        <label for="id_group" class="block text-sm font-medium mb-1">Group</label>
+        {{ form.group }}
+      </div>
+      <div class="flex items-end gap-3">
+        <div>
+          <label for="id_permission_type" class="block text-sm font-medium mb-1">Access Level</label>
+          {{ form.permission_type }}
+        </div>
+        <button type="submit" class="btn-primary whitespace-nowrap">Grant Access</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block footer_scripts %}
+<script src="{% static 'js/username-autocomplete.js' %}"></script>
+{% endblock %}

@@ -1,0 +1,83 @@
+[project]
+name = "wiki"
+version = "1"
+description = "Internal wiki for Free Law Project organizational documentation."
+requires-python = ">=3.13,<3.14"
+authors = [
+  { name = "Mike Lissner", email = "mike@free.law" },
+]
+keywords = ["wiki", "documentation", "legal"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Natural Language :: English",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.13",
+  "Intended Audience :: Developers",
+]
+license = "AGPL-3.0-only"
+dependencies = [
+  "Django>=6.0,<6.1",
+  "boto3",
+  "daphne",
+  "django-cotton",
+  "django-environ",
+  "django-ses[events]",
+  "django-storages",
+  "django-tailwind~=3.9.1",
+  "django-waffle",
+  "factory-boy",
+  "gunicorn",
+  "markdown2",
+  "pillow",
+  "psycopg[binary,pool]",
+  "python-magic",
+  "sentry-sdk[django]",
+  "time-machine",
+  "uvicorn[standard]",
+]
+
+[project.optional-dependencies]
+dev = [
+  "django-debug-toolbar",
+  "django-extensions",
+  "django-stubs",
+  "django-tailwind[reload]~=3.9.1",
+  "mypy",
+  "pre-commit",
+  "pytest",
+  "pytest-django",
+]
+
+[tool.setuptools.packages.find]
+include = ["wiki*"]
+
+[tool.ruff]
+line-length = 79
+lint.select = [
+  # pycodestyle
+  "E",
+  # Pyflakes errors
+  "F",
+  # isort
+  "I",
+  # pyupgrade
+  "UP",
+  # Pyflakes warnings
+  "W",
+]
+lint.ignore = [
+  # line-too-long
+  "E501",
+  # suppressible-exception
+  "SIM105",
+  # if-else-block-instead-of-if-exp
+  "SIM108",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"wiki/settings/__init__.py" = ["F403"]
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "wiki.settings"
+python_files = ["tests.py", "test_*.py"]

@@ -1,0 +1,86 @@
+name: Tests
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Build docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./docker/django/Dockerfile
+          push: false
+          tags: wiki:latest
+          outputs: type=docker,dest=/tmp/wiki.tar
+          build-args: |
+            BUILD_ENV=dev
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: wiki
+          path: /tmp/wiki.tar
+          compression-level: 0
+          retention-days: 1
+
+  test:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Create the .env settings file
+        run: cp .env.example .env.dev
+      - name: Add test settings to .env.dev
+        run: |
+          echo 'SECRET_KEY=test-secret-key-for-ci' >> .env.dev
+          echo 'ALLOWED_HOSTS=*' >> .env.dev
+
+      - name: Set up docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          driver-opts: network=host
+
+      - name: Pull docker images
+        working-directory: docker/wiki
+        run: docker compose pull --quiet --ignore-buildable
+      - name: Download wiki image
+        uses: actions/download-artifact@v7
+        with:
+          name: wiki
+          path: /tmp
+      - name: Load wiki image
+        run: docker load --input /tmp/wiki.tar
+
+      - name: Start docker containers
+        working-directory: docker/wiki
+        run: >
+          docker compose -f docker-compose.yml
+          -f <(echo 'services: { wiki-django: { image: "wiki" } }')
+          up -d --no-build --pull=never
+      - name: List docker containers
+        run: docker ps -a --no-trunc
+      - name: Show the docker startup logs
+        working-directory: docker/wiki
+        run: docker compose logs
+
+      - name: Check if migrations are missing
+        run: docker exec wiki-django python manage.py makemigrations --check --dry-run
+      - name: Run the tests!
+        run: docker exec wiki-django python -m pytest --tb=short -q

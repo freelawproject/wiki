@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Propose Changes to "{{ page.title }}" - FLP Wiki{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="{% static 'css/easymde.min.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl">
+  <h1 class="text-2xl font-bold mb-2">Propose Changes</h1>
+  <p class="text-gray-600 dark:text-gray-400 mb-6">
+    Suggest edits to <strong>"{{ page.title }}"</strong>. The page owner will review your proposal.
+  </p>
+
+  <form method="post" class="space-y-4">
+    {% csrf_token %}
+
+    <div>
+      <label for="id_proposed_title" class="block text-sm font-medium mb-1">Title</label>
+      {{ form.proposed_title }}
+      {% if form.proposed_title.errors %}
+      <p class="text-red-600 dark:text-red-400 text-sm mt-1">{{ form.proposed_title.errors.0 }}</p>
+      {% endif %}
+    </div>
+
+    <div>
+      <label for="id_proposed_content" class="block text-sm font-medium mb-1">Content</label>
+      {{ form.proposed_content }}
+    </div>
+
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div>
+        <label for="id_change_message" class="block text-sm font-medium mb-1">
+          What did you change? <span class="text-red-500">*</span>
+        </label>
+        {{ form.change_message }}
+        {% if form.change_message.errors %}
+        <p class="text-red-600 dark:text-red-400 text-sm mt-1">{{ form.change_message.errors.0 }}</p>
+        {% endif %}
+      </div>
+      {% if form.proposer_email %}
+      <div>
+        <label for="id_proposer_email" class="block text-sm font-medium mb-1">
+          Your Email <span class="text-gray-400">(optional)</span>
+        </label>
+        {{ form.proposer_email }}
+        <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+          To receive a notification when your proposal is reviewed.
+        </p>
+      </div>
+      {% endif %}
+    </div>
+
+    <div class="flex gap-3">
+      <button type="submit" class="btn-primary">Submit Proposal</button>
+      <a href="{{ page.get_absolute_url }}" class="btn-outline">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}
+
+{% block footer_scripts %}
+<script src="{% static 'js/easymde.min.js' %}"></script>
+<script type="application/json" id="editor-config">
+{
+  "csrfToken": "{{ csrf_token }}"
+}
+</script>
+<script src="{% static 'js/markdown-editor.js' %}"></script>
+{% endblock %}

@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% load static wiki_tags %}
+
+{% block title %}{{ group.name }} - Groups - FLP Wiki{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl">
+  <div class="flex items-center justify-between mb-6">
+    <h1 class="text-2xl font-bold">{{ group.name }}</h1>
+    <div class="flex items-center gap-2">
+      {% if can_manage %}
+      <a href="{% url 'group_edit' pk=group.pk %}" class="btn-outline text-sm">Edit</a>
+      <a href="{% url 'group_delete' pk=group.pk %}" class="btn-outline text-sm text-red-600 dark:text-red-400">Delete</a>
+      {% endif %}
+      <a href="{% url 'group_list' %}" class="btn-outline text-sm">Back</a>
+    </div>
+  </div>
+
+  {# Members #}
+  {% if members %}
+  <div class="mb-8">
+    <h2 class="text-lg font-semibold mb-3">Members</h2>
+    <div class="space-y-2">
+      {% for member in members %}
+      <div class="card flex items-center justify-between py-3 px-4">
+        <div class="flex items-center gap-3">
+          {% if member.profile.gravatar_url %}
+          <img src="{{ member.profile.gravatar_url }}" alt="" class="w-8 h-8 rounded-full">
+          {% endif %}
+          <div>
+            <span class="font-medium">{{ member|display_name }}</span>
+            <span class="text-gray-400 text-sm ml-1">{{ member.email }}</span>
+          </div>
+        </div>
+        {% if can_manage %}
+        <form method="post" action="{% url 'group_remove_member' pk=group.pk %}">
+          {% csrf_token %}
+          <input type="hidden" name="user_id" value="{{ member.pk }}">
+          <button type="submit"
+                  class="text-sm text-red-600 dark:text-red-400 hover:underline">
+            Remove
+          </button>
+        </form>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% else %}
+  <p class="text-gray-500 dark:text-gray-400 mb-8">No members yet.</p>
+  {% endif %}
+
+  {# Add member form #}
+  {% if can_manage %}
+  <div class="card">
+    <h2 class="text-lg font-semibold mb-4">Add Member</h2>
+    <form method="post" action="{% url 'group_add_member' pk=group.pk %}"
+          class="flex flex-col sm:flex-row items-end gap-3">
+      {% csrf_token %}
+      <div class="flex-1 w-full relative">
+        <label for="id_username" class="block text-sm font-medium mb-1">Username</label>
+        {{ form.username }}
+        <div id="username-dropdown"
+             class="hidden absolute z-50 left-0 right-0 mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+        </div>
+        {% if form.username.errors %}
+        <p class="text-red-600 dark:text-red-400 text-sm mt-1">{{ form.username.errors.0 }}</p>
+        {% endif %}
+      </div>
+      <button type="submit" class="btn-primary whitespace-nowrap">Add Member</button>
+    </form>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block footer_scripts %}
+<script src="{% static 'js/username-autocomplete.js' %}"></script>
+{% endblock %}

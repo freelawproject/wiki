@@ -1,0 +1,10 @@
+name: CodeQL config for FLP Wiki
+
+paths-ignore:
+  - "wiki/*/migrations/"
+  - "wiki/*/tests.py"
+  - "wiki/conftest.py"
+  - "wiki/assets/static-global/js/*.min.js"
+  - "wiki/assets/static-global/css/*.min.css"
+  - "wiki/assets/static/"
+  - "node_modules/"

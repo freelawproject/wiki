@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+
+{% block title %}Delete Directory: {{ directory.title }} - FLP Wiki{% endblock %}
+
+{% block content %}
+<div class="max-w-lg">
+  <h1 class="text-2xl font-bold mb-6">Delete Directory: {{ directory.title }}</h1>
+
+  {% if has_children or has_pages %}
+  <div class="card border-red-300 dark:border-red-700 mb-6">
+    <p class="text-red-600 dark:text-red-400 font-medium mb-2">This directory cannot be deleted.</p>
+    <p class="text-sm text-gray-600 dark:text-gray-400">
+      It still contains
+      {% if has_pages %}pages{% endif %}
+      {% if has_pages and has_children %}and{% endif %}
+      {% if has_children %}subdirectories{% endif %}.
+      Move or delete them first.
+    </p>
+  </div>
+  <a href="{{ directory.get_absolute_url }}" class="btn-outline">Back</a>
+  {% else %}
+  <p class="mb-6 text-gray-600 dark:text-gray-400">
+    Are you sure you want to delete this directory? This action cannot be undone.
+  </p>
+  <form method="post" class="flex gap-3">
+    {% csrf_token %}
+    <button type="submit" class="btn-primary bg-red-600 hover:bg-red-700">Delete Directory</button>
+    <a href="{{ directory.get_absolute_url }}" class="btn-outline">Cancel</a>
+  </form>
+  {% endif %}
+</div>
+{% endblock %}

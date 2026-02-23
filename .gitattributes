@@ -1,0 +1,27 @@
+# Prevent Windows git clients from goofing up files that must run on Linux
+* text eol=lf
+
+# Image files
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+
+# Fonts
+*.eot binary
+*.otf binary
+*.ttf binary
+*.woff binary
+*.woff2 binary
+
+# Document files
+*.pdf binary
+
+# Vendored minified files — exclude from language stats
+*.min.js linguist-vendored
+*.min.css linguist-vendored
+
+# Generated files — exclude from diffs and language stats
+uv.lock linguist-generated
+package-lock.json linguist-generated

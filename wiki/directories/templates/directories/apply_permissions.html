@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+
+{% block title %}Apply Permissions: {{ directory.title }} - FLP Wiki{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl">
+  <div class="flex items-center justify-between mb-6">
+    <h1 class="text-2xl font-bold">Apply Permissions</h1>
+    {% if directory.path %}
+      <a href="{% url 'directory_permissions' path=directory.path %}" class="btn-outline text-sm">Back</a>
+    {% else %}
+      <a href="{% url 'directory_permissions_root' %}" class="btn-outline text-sm">Back</a>
+    {% endif %}
+  </div>
+
+  <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
+    Copy this directory's visibility and permissions to its children.
+    Existing permissions on child items are preserved (additive).
+  </p>
+
+  <div class="card mb-6">
+    <h2 class="text-lg font-semibold mb-2">{{ directory.title }}</h2>
+    <ul class="text-sm text-gray-600 dark:text-gray-400 space-y-1">
+      <li>Direct child pages: <strong>{{ direct_page_count }}</strong></li>
+      <li>Total pages (all levels): <strong>{{ total_page_count }}</strong></li>
+      <li>Total subdirectories: <strong>{{ total_dir_count }}</strong></li>
+    </ul>
+  </div>
+
+  <div class="flex flex-col sm:flex-row gap-3">
+    <form method="post">
+      {% csrf_token %}
+      <input type="hidden" name="scope" value="direct">
+      <button type="submit" class="btn-primary">
+        Apply to direct pages only
+      </button>
+    </form>
+    <form method="post">
+      {% csrf_token %}
+      <input type="hidden" name="scope" value="recursive">
+      <button type="submit" class="btn-primary">
+        Apply recursively to all pages and subdirectories
+      </button>
+    </form>
+  </div>
+</div>
+{% endblock %}

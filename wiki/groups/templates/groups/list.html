@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% load wiki_tags %}
+
+{% block title %}Groups - FLP Wiki{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl">
+  <h1 class="text-2xl font-bold mb-4">Admin</h1>
+
+  <nav class="flex gap-4 border-b border-gray-200 dark:border-gray-700 mb-6">
+    <a href="{% url 'admin_list' %}" class="pb-2 text-sm font-medium border-b-2 border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 no-underline">Users</a>
+    <a href="{% url 'group_list' %}" class="pb-2 text-sm font-medium border-b-2 border-primary-600 text-primary-600 dark:text-primary-400 no-underline">Groups</a>
+  </nav>
+
+  <div class="flex items-center justify-between mb-6">
+    <h2 class="text-lg font-semibold">Groups</h2>
+    {% if can_manage %}
+    <a href="{% url 'group_create' %}" class="btn-primary text-sm">New Group</a>
+    {% endif %}
+  </div>
+
+  {% if groups %}
+  <div class="space-y-2">
+    {% for group in groups %}
+    <a href="{% url 'group_detail' pk=group.pk %}" class="card block py-3 px-4 hover:bg-gray-50 dark:hover:bg-gray-800">
+      <div class="flex items-center justify-between">
+        <span class="font-medium">{{ group.name }}</span>
+        <span class="text-sm text-gray-500 dark:text-gray-400">
+          {{ group.user_set.count }} member{{ group.user_set.count|pluralize }}
+        </span>
+      </div>
+    </a>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="text-gray-500 dark:text-gray-400">No groups yet.</p>
+  {% endif %}
+</div>
+{% endblock %}

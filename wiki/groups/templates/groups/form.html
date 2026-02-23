@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+
+{% block title %}{% if creating %}New Group{% else %}Edit Group: {{ group.name }}{% endif %} - FLP Wiki{% endblock %}
+
+{% block content %}
+<div class="max-w-lg">
+  <h1 class="text-2xl font-bold mb-6">
+    {% if creating %}New Group{% else %}Edit Group: {{ group.name }}{% endif %}
+  </h1>
+
+  <form method="post" class="space-y-4">
+    {% csrf_token %}
+
+    <div>
+      <label for="id_name" class="block text-sm font-medium mb-1">Name</label>
+      {{ form.name }}
+      {% if form.name.errors %}
+      <p class="text-red-600 dark:text-red-400 text-sm mt-1">{{ form.name.errors.0 }}</p>
+      {% endif %}
+    </div>
+
+    <div class="flex gap-3">
+      <button type="submit" class="btn-primary">
+        {% if creating %}Create Group{% else %}Save{% endif %}
+      </button>
+      {% if creating %}
+        <a href="{% url 'group_list' %}" class="btn-outline">Cancel</a>
+      {% else %}
+        <a href="{% url 'group_detail' pk=group.pk %}" class="btn-outline">Cancel</a>
+      {% endif %}
+    </div>
+  </form>
+</div>
+{% endblock %}

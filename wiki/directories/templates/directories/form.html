@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}{% if creating %}New Directory{% else %}Edit Directory: {{ directory.title }}{% endif %} - FLP Wiki{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="{% static 'css/easymde.min.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl">
+  <h1 class="text-2xl font-bold mb-6">
+    {% if creating %}
+      New Directory{% if parent %} in {{ parent.title }}{% endif %}
+    {% else %}
+      Edit Directory: {{ directory.title }}
+    {% endif %}
+  </h1>
+
+  <form method="post" class="space-y-4">
+    {% csrf_token %}
+
+    <div>
+      <label for="id_title" class="block text-sm font-medium mb-1">Title</label>
+      {{ form.title }}
+      {% if form.title.errors %}
+      <p class="text-red-600 dark:text-red-400 text-sm mt-1">{{ form.title.errors.0 }}</p>
+      {% endif %}
+    </div>
+
+    <div>
+      <label for="id_description" class="block text-sm font-medium mb-1">Description</label>
+      {{ form.description }}
+    </div>
+
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div>
+        <label for="id_visibility" class="block text-sm font-medium mb-1">Visibility</label>
+        {{ form.visibility }}
+      </div>
+      <div>
+        <label for="id_editability" class="block text-sm font-medium mb-1">Editability</label>
+        {{ form.editability }}
+      </div>
+    </div>
+
+    {% if not creating %}
+    <div>
+      <label for="id_change_message" class="block text-sm font-medium mb-1">Change message</label>
+      {{ form.change_message }}
+    </div>
+    {% endif %}
+
+    <div class="flex gap-3">
+      <button type="submit" class="btn-primary">
+        {% if creating %}Create Directory{% else %}Save{% endif %}
+      </button>
+      {% if creating %}
+        {% if parent %}
+          <a href="{{ parent.get_absolute_url }}" class="btn-outline">Cancel</a>
+        {% else %}
+          <a href="{% url 'root' %}" class="btn-outline">Cancel</a>
+        {% endif %}
+      {% else %}
+        <a href="{{ directory.get_absolute_url }}" class="btn-outline">Cancel</a>
+      {% endif %}
+    </div>
+  </form>
+
+  {# Wiki link autocomplete dropdown #}
+  <div id="slug-dropdown"
+       class="hidden absolute z-50 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg max-h-48 overflow-y-auto w-64">
+  </div>
+
+  {# @-mention autocomplete dropdown #}
+  <div id="mention-dropdown"
+       class="hidden absolute z-50 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg max-h-48 overflow-y-auto w-64">
+  </div>
+</div>
+{% endblock %}
+
+{% block footer_scripts %}
+<script src="{% static 'js/easymde.min.js' %}"></script>
+<script type="application/json" id="editor-config">
+{
+  "csrfToken": "{{ csrf_token }}"
+}
+</script>
+<script src="{% static 'js/markdown-editor.js' %}"></script>
+{% endblock %}

@@ -1,0 +1,182 @@
+@tailwind base;
+
+@layer base {
+  body {
+    @apply bg-white text-gray-900 dark:bg-gray-900 dark:text-gray-100;
+  }
+  a {
+    @apply text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300;
+  }
+  h1 {
+    @apply text-3xl font-bold md:text-4xl;
+  }
+  h2 {
+    @apply text-2xl font-semibold;
+  }
+  h3 {
+    @apply text-xl font-semibold;
+  }
+  h4 {
+    @apply text-lg font-semibold;
+  }
+  code {
+    @apply font-mono text-sm bg-primary-50 text-primary-700 border border-primary-200 rounded px-1 dark:bg-primary-900 dark:text-primary-300 dark:border-primary-700;
+  }
+  pre code {
+    @apply block p-4 overflow-x-auto bg-gray-50 border-gray-200 text-gray-800 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-200;
+  }
+  /* Ensure all form elements respect dark mode */
+  input, textarea, select {
+    color-scheme: light dark;
+  }
+  [x-cloak] {
+    display: none !important;
+  }
+}
+
+@tailwind components;
+
+@layer components {
+  .btn {
+    @apply py-2 px-4 rounded-lg text-sm font-medium inline-flex items-center gap-1.5 transition-colors;
+  }
+  .btn-primary {
+    @apply btn text-white bg-primary-600 hover:bg-primary-700 focus:ring-2 focus:ring-primary-300 dark:bg-primary-500 dark:hover:bg-primary-600;
+  }
+  .btn-outline {
+    @apply btn bg-white text-gray-700 border border-gray-300 hover:bg-gray-50 focus:ring-2 focus:ring-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:border-gray-600 dark:hover:bg-gray-700;
+  }
+  .btn-danger {
+    @apply btn text-white bg-red-600 hover:bg-red-700 focus:ring-2 focus:ring-red-300;
+  }
+  .btn-ghost {
+    @apply btn hover:bg-gray-100 dark:hover:bg-gray-800;
+  }
+  .card {
+    @apply bg-white border border-gray-200 rounded-xl p-6 dark:bg-gray-800 dark:border-gray-700;
+  }
+  .input-text {
+    @apply border border-gray-300 rounded-lg py-2 px-3 text-sm bg-white focus:ring-2 focus:ring-primary-300 focus:border-primary-500 dark:bg-gray-800 dark:border-gray-600 dark:text-gray-100;
+  }
+  .alert {
+    @apply px-4 py-3 text-sm rounded-lg border;
+  }
+  .alert-success {
+    @apply alert bg-green-50 text-green-800 border-green-300 dark:bg-green-900/30 dark:text-green-300 dark:border-green-700;
+  }
+  .alert-warning {
+    @apply alert bg-yellow-50 text-yellow-800 border-yellow-300 dark:bg-yellow-900/30 dark:text-yellow-300 dark:border-yellow-700;
+  }
+  .alert-danger {
+    @apply alert bg-red-50 text-red-800 border-red-300 dark:bg-red-900/30 dark:text-red-300 dark:border-red-700;
+  }
+  .alert-info {
+    @apply alert bg-blue-50 text-blue-800 border-blue-300 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-700;
+  }
+}
+
+@layer components {
+  /* Prose-like styles for rendered wiki markdown content */
+  .wiki-content {
+    @apply text-gray-900 dark:text-gray-100 leading-relaxed;
+  }
+  .wiki-content h1 { @apply text-3xl font-bold mt-8 mb-4; }
+  .wiki-content h2 { @apply text-2xl font-semibold mt-6 mb-3 pb-1 border-b border-gray-200 dark:border-gray-700; }
+  .wiki-content h3 { @apply text-xl font-semibold mt-5 mb-2; }
+  .wiki-content h4 { @apply text-lg font-semibold mt-4 mb-2; }
+  .wiki-content p { @apply my-3; }
+  .wiki-content ul { @apply list-disc ml-6 my-3; }
+  .wiki-content ol { @apply list-decimal ml-6 my-3; }
+  .wiki-content li { @apply my-1; }
+  .wiki-content blockquote {
+    @apply border-l-4 border-primary-300 dark:border-primary-600 pl-4 italic text-gray-600 dark:text-gray-400 my-4;
+  }
+  .wiki-content table { @apply border-collapse w-full my-4; }
+  .wiki-content th {
+    @apply bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 px-3 py-2 text-left text-sm font-semibold;
+  }
+  .wiki-content td {
+    @apply border border-gray-200 dark:border-gray-700 px-3 py-2 text-sm;
+  }
+  .wiki-content img { @apply max-w-full rounded-lg my-4; }
+  .wiki-content hr { @apply border-gray-200 dark:border-gray-700 my-6; }
+  .wiki-content a { @apply text-primary-600 dark:text-primary-400 hover:underline; }
+  .wiki-content .task-list-item { @apply list-none ml-0; }
+  .wiki-content .task-list-item input[type="checkbox"] { @apply mr-2; }
+}
+
+@layer components {
+  /* EasyMDE / CodeMirror dark mode overrides */
+  @media (prefers-color-scheme: dark) {
+    .EasyMDEContainer .CodeMirror {
+      background: theme('colors.gray.800');
+      color: theme('colors.gray.100');
+      border-color: theme('colors.gray.600');
+    }
+    .EasyMDEContainer .CodeMirror-cursor {
+      border-left-color: theme('colors.gray.100');
+    }
+    .EasyMDEContainer .CodeMirror-selected {
+      background: theme('colors.gray.700');
+    }
+    .EasyMDEContainer .CodeMirror-focused .CodeMirror-selected {
+      background: theme('colors.gray.600');
+    }
+    .EasyMDEContainer .CodeMirror .CodeMirror-line::selection,
+    .EasyMDEContainer .CodeMirror .CodeMirror-line > span::selection,
+    .EasyMDEContainer .CodeMirror .CodeMirror-line > span > span::selection {
+      background: theme('colors.gray.600');
+    }
+    .EasyMDEContainer .editor-toolbar {
+      border-color: theme('colors.gray.600');
+    }
+    .EasyMDEContainer .editor-toolbar button {
+      color: theme('colors.gray.300') !important;
+    }
+    .EasyMDEContainer .editor-toolbar button:hover,
+    .EasyMDEContainer .editor-toolbar button.active {
+      background: theme('colors.gray.700');
+      border-color: theme('colors.gray.600');
+    }
+    .EasyMDEContainer .editor-toolbar i.separator {
+      border-left-color: theme('colors.gray.600');
+      border-right-color: theme('colors.gray.600');
+    }
+    .EasyMDEContainer .editor-statusbar {
+      color: theme('colors.gray.400');
+      border-top-color: theme('colors.gray.600');
+    }
+    .EasyMDEContainer .editor-preview {
+      background: theme('colors.gray.800');
+      color: theme('colors.gray.100');
+    }
+    .EasyMDEContainer .editor-preview-side {
+      background: theme('colors.gray.800');
+      color: theme('colors.gray.100');
+      border-color: theme('colors.gray.600');
+    }
+    .EasyMDEContainer .CodeMirror .cm-header {
+      color: theme('colors.gray.100');
+    }
+    .EasyMDEContainer .CodeMirror .cm-link {
+      color: theme('colors.primary.400');
+    }
+    .EasyMDEContainer .CodeMirror .cm-url {
+      color: theme('colors.primary.300');
+    }
+    .EasyMDEContainer .CodeMirror .cm-comment {
+      color: theme('colors.gray.400');
+    }
+    .EasyMDEContainer .CodeMirror .cm-quote {
+      color: theme('colors.gray.400');
+    }
+    .EasyMDEContainer .CodeMirror .cm-string {
+      color: theme('colors.green.400');
+    }
+    .EasyMDEContainer .CodeMirror .cm-keyword {
+      color: theme('colors.purple.400');
+    }
+  }
+}
+
+@tailwind utilities;

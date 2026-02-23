@@ -1,0 +1,170 @@
+{% extends "base.html" %}
+{% load static wiki_tags %}
+
+{% block title %}{{ page.title }} - FLP Wiki{% endblock %}
+
+{% block content %}
+{# Breadcrumbs #}
+{% if breadcrumbs %}
+<nav class="text-sm text-gray-500 dark:text-gray-400 mb-4">
+  {% for title, url in breadcrumbs %}
+    {% if not forloop.last %}
+      <a href="{{ url }}" class="hover:underline">{{ title }}</a>
+      <span class="mx-1">/</span>
+    {% else %}
+      <span class="text-gray-900 dark:text-gray-100 font-medium">{{ title }}</span>
+    {% endif %}
+  {% endfor %}
+</nav>
+{% endif %}
+
+<div class="flex gap-8">
+  {# Main content #}
+  <article class="flex-1 min-w-0">
+    <div class="flex flex-col xl:flex-row xl:items-center justify-between gap-3 mb-6">
+      <h1>{{ page.title }}</h1>
+      <div class="flex items-center gap-2 flex-shrink-0">
+        {% if can_edit %}
+          <a href="{% url 'page_edit' path=page.content_path %}" class="btn-outline text-sm">Edit</a>
+        {% else %}
+          <a href="{% url 'propose_changes' path=page.content_path %}" class="btn-outline text-sm">Propose Changes</a>
+        {% endif %}
+        <div class="relative" x-data="{ open: false }">
+          {% if pending_proposal_count %}<span class="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full z-10"></span>{% endif %}
+          <button @click="open = !open" @click.outside="open = false" class="btn-outline text-sm" type="button">
+            Actions
+            <svg class="w-4 h-4 ml-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+          </button>
+          <div x-show="open" x-cloak @click="open = false"
+               class="absolute right-0 mt-1 w-44 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-50 py-1">
+            {% if user.is_authenticated %}
+              <button class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700"
+                      hx-post="{% url 'page_subscribe' path=page.content_path %}"
+                      hx-swap="outerHTML">
+                {% if is_subscribed %}Unsubscribe{% else %}Subscribe{% endif %}
+              </button>
+            {% endif %}
+            {% if can_edit %}
+              <a href="{% url 'page_permissions' path=page.content_path %}" class="block px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 no-underline text-gray-700 dark:text-gray-200">Permissions</a>
+              <a href="{% url 'page_move' path=page.content_path %}" class="block px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 no-underline text-gray-700 dark:text-gray-200">Move</a>
+              {% if pending_proposal_count %}
+              <a href="{% url 'proposal_list' path=page.content_path %}" class="block px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 no-underline text-gray-700 dark:text-gray-200">
+                Proposals ({{ pending_proposal_count }})
+              </a>
+              {% endif %}
+            {% endif %}
+            <a href="{% url 'page_history' path=page.content_path %}" class="block px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 no-underline text-gray-700 dark:text-gray-200">History</a>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="wiki-content">
+      {{ rendered_content|safe }}
+    </div>
+
+    <div class="mt-8 pt-4 border-t border-gray-200 dark:border-gray-700 text-sm text-gray-500 dark:text-gray-400">
+      <div class="flex items-center justify-between">
+        <span>{{ page.view_count }} view{{ page.view_count|pluralize }}</span>
+        <span>Last updated {{ page.updated_at|timesince }} ago</span>
+      </div>
+      {% if people %}
+      <div class="mt-3 flex items-center gap-1 flex-wrap">
+        {% if people.creator %}
+        <span class="mr-1">Creator:</span>
+        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 text-xs">
+          {% if people.creator.profile.gravatar_url %}
+          <img src="{{ people.creator.profile.gravatar_url }}" alt="" class="w-4 h-4 rounded-full">
+          {% endif %}
+          {{ people.creator|display_name }}
+        </span>
+        {% endif %}
+        {% if people.admins %}
+        <span class="ml-2 mr-1">Admins:</span>
+        {% for admin in people.admins %}
+        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200 text-xs">
+          {% if admin.profile.gravatar_url %}
+          <img src="{{ admin.profile.gravatar_url }}" alt="" class="w-4 h-4 rounded-full">
+          {% endif %}
+          {{ admin|display_name }}
+        </span>
+        {% endfor %}
+        {% endif %}
+        {% if people.editors %}
+        <span class="ml-2 mr-1">Editors:</span>
+        {% for editor in people.editors %}
+        <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 text-xs">
+          {% if editor.profile.gravatar_url %}
+          <img src="{{ editor.profile.gravatar_url }}" alt="" class="w-4 h-4 rounded-full">
+          {% endif %}
+          {{ editor|display_name }}
+        </span>
+        {% endfor %}
+        {% endif %}
+      </div>
+      {% endif %}
+      {% if subscribers %}
+      <div class="mt-3 flex items-center gap-1 flex-wrap">
+        <span class="mr-1">Watching:</span>
+        {% for sub in subscribers %}
+          <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 text-xs">
+            {% if sub.user.profile.gravatar_url %}
+            <img src="{{ sub.user.profile.gravatar_url }}" alt="" class="w-4 h-4 rounded-full">
+            {% endif %}
+            {{ sub.user|display_name }}
+          </span>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </div>
+  </article>
+
+  {# TOC sidebar #}
+  {% if toc %}
+  <aside class="hidden lg:block w-64 flex-shrink-0">
+    <nav id="toc-nav" class="sticky top-4 text-sm">
+      <h3 class="text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500 mb-3">
+        On this page
+      </h3>
+      <div class="space-y-1 text-gray-600 dark:text-gray-400">
+        {{ toc|safe }}
+      </div>
+    </nav>
+  </aside>
+  <style>
+    #toc-nav a.toc-active {
+      font-weight: 700;
+      color: var(--color-blue-600);
+    }
+    @media (prefers-color-scheme: dark) {
+      #toc-nav a.toc-active {
+        color: var(--color-blue-400);
+      }
+    }
+  </style>
+  <script>
+    (function() {
+      var nav = document.getElementById('toc-nav');
+      if (!nav) return;
+      var headings = document.querySelectorAll('.wiki-content h2, .wiki-content h3, .wiki-content h4');
+      if (!headings.length) return;
+
+      var observer = new IntersectionObserver(function(entries) {
+        entries.forEach(function(entry) {
+          if (entry.isIntersecting) {
+            var id = entry.target.id;
+            if (!id) return;
+            var links = nav.querySelectorAll('a');
+            links.forEach(function(a) { a.classList.remove('toc-active'); });
+            var match = nav.querySelector('a[href="#' + CSS.escape(id) + '"]');
+            if (match) match.classList.add('toc-active');
+          }
+        });
+      }, { rootMargin: '0px 0px -80% 0px' });
+
+      headings.forEach(function(h) { observer.observe(h); });
+    })();
+  </script>
+  {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+
+{% block title %}{{ directory.title|default:"Home" }} - FLP Wiki{% endblock %}
+
+{% block content %}
+<div class="max-w-3xl">
+  {# Breadcrumbs #}
+  <nav class="text-sm text-gray-500 dark:text-gray-400 mb-4">
+    {% for title, url in breadcrumbs %}
+      {% if not forloop.last %}
+        <a href="{{ url }}" class="hover:underline">{{ title }}</a>
+        <span class="mx-1">/</span>
+      {% else %}
+        <span class="text-gray-900 dark:text-gray-100 font-medium">{{ title }}</span>
+      {% endif %}
+    {% endfor %}
+  </nav>
+
+  <div class="flex flex-col xl:flex-row xl:items-center justify-between gap-3 mb-6">
+    <h1>
+      {{ directory.title|default:"Home" }}
+      {% if directory.visibility == "private" %}
+        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200 align-middle ml-2">Private</span>
+      {% endif %}
+    </h1>
+    <div class="flex items-center gap-2 flex-shrink-0">
+      {% if user.is_authenticated %}
+        {% if directory and directory.path %}
+          <a href="{% url 'page_create_in_dir' path=directory.path %}" class="btn-primary text-sm">New Page</a>
+        {% else %}
+          <a href="{% url 'page_create' %}" class="btn-primary text-sm">New Page</a>
+        {% endif %}
+      {% endif %}
+      {% if can_edit or user.is_authenticated %}
+      <div class="relative" x-data="{ open: false }">
+        <button @click="open = !open" @click.outside="open = false" class="btn-outline text-sm" type="button">
+          Actions
+          <svg class="w-4 h-4 ml-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+        </button>
+        <div x-show="open" x-cloak @click="open = false"
+             class="absolute right-0 mt-1 w-44 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-50 py-1">
+          {% if can_edit %}
+            {% if directory.path %}
+              <a href="{% url 'directory_edit' path=directory.path %}" class="block px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 no-underline text-gray-700 dark:text-gray-200">Edit</a>
+              <a href="{% url 'directory_permissions' path=directory.path %}" class="block px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 no-underline text-gray-700 dark:text-gray-200">Permissions</a>
+              <a href="{% url 'directory_move' path=directory.path %}" class="block px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 no-underline text-gray-700 dark:text-gray-200">Move</a>
+              <a href="{% url 'directory_delete' path=directory.path %}" class="block px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 no-underline text-red-600 dark:text-red-400">Delete</a>
+            {% else %}
+              <a href="{% url 'directory_edit_root' %}" class="block px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 no-underline text-gray-700 dark:text-gray-200">Edit</a>
+              <a href="{% url 'directory_permissions_root' %}" class="block px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 no-underline text-gray-700 dark:text-gray-200">Permissions</a>
+            {% endif %}
+          {% endif %}
+          {% if directory.path %}
+            <a href="{% url 'directory_history' path=directory.path %}" class="block px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 no-underline text-gray-700 dark:text-gray-200">History</a>
+          {% else %}
+            <a href="{% url 'directory_history_root' %}" class="block px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 no-underline text-gray-700 dark:text-gray-200">History</a>
+          {% endif %}
+          {% if user.is_authenticated %}
+            {% if directory and directory.path %}
+              <a href="{% url 'directory_create_in_dir' path=directory.path %}" class="block px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 no-underline text-gray-700 dark:text-gray-200">New Directory</a>
+            {% else %}
+              <a href="{% url 'directory_create' %}" class="block px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 no-underline text-gray-700 dark:text-gray-200">New Directory</a>
+            {% endif %}
+          {% endif %}
+        </div>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if rendered_description %}
+  <div class="wiki-content mb-8">
+    {{ rendered_description|safe }}
+  </div>
+  {% endif %}
+
+  {# Subdirectories #}
+  {% if subdirectories %}
+  <h2 class="text-lg font-semibold mb-3">Directories</h2>
+  <div class="grid gap-2 mb-8">
+    {% for subdir in subdirectories %}
+    <a href="{{ subdir.get_absolute_url }}" class="card flex items-center gap-3 hover:border-primary-300 dark:hover:border-primary-600 transition-colors no-underline">
+      <span class="text-xl">&#128193;</span>
+      <span class="font-medium text-gray-900 dark:text-gray-100">{{ subdir.title }}</span>
+    </a>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {# Pages #}
+  {% if pages %}
+  {# Sort controls #}
+  <div class="flex items-center justify-between mb-3">
+    <h2 class="text-lg font-semibold">Pages</h2>
+    <div class="text-sm text-gray-500 dark:text-gray-400">
+      Sort by:
+      {% if current_sort == "title" %}<strong class="text-gray-900 dark:text-gray-100">Title</strong>{% else %}<a href="?sort=title" class="hover:underline">Title</a>{% endif %}
+      |
+      {% if current_sort == "updated" %}<strong class="text-gray-900 dark:text-gray-100">Last edited</strong>{% else %}<a href="?sort=updated" class="hover:underline">Last edited</a>{% endif %}
+      |
+      {% if current_sort == "created" %}<strong class="text-gray-900 dark:text-gray-100">Created</strong>{% else %}<a href="?sort=created" class="hover:underline">Created</a>{% endif %}
+      |
+      {% if current_sort == "views" %}<strong class="text-gray-900 dark:text-gray-100">Most viewed</strong>{% else %}<a href="?sort=views" class="hover:underline">Most viewed</a>{% endif %}
+    </div>
+  </div>
+  <div class="grid gap-2">
+    {% for page in pages %}
+    <a href="{{ page.get_absolute_url }}" class="card flex items-center gap-3 hover:border-primary-300 dark:hover:border-primary-600 transition-colors no-underline">
+      <span class="text-xl">&#128196;</span>
+      <div>
+        <span class="font-medium text-gray-900 dark:text-gray-100">{{ page.title }}</span>
+        <span class="text-sm text-gray-500 dark:text-gray-400 ml-2">
+          {{ page.updated_at|timesince }} ago
+        </span>
+      </div>
+    </a>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if not subdirectories and not pages %}
+  <p class="text-gray-500 dark:text-gray-400">
+    This directory is empty.
+    {% if user.is_authenticated %}
+      {% if directory and directory.path %}
+        <a href="{% url 'page_create_in_dir' path=directory.path %}" class="hover:underline">Create the first page</a>.
+      {% else %}
+        <a href="{% url 'page_create' %}" class="hover:underline">Create the first page</a>.
+      {% endif %}
+    {% endif %}
+  </p>
+  {% endif %}
+</div>
+{% endblock %}

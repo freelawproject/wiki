@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+
+{% block title %}Diff: {{ directory.title }} - FLP Wiki{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl">
+  <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
+    <h1 class="text-2xl font-bold">
+      Diff: {{ directory.title }}
+      <span class="text-gray-400 font-normal text-lg">
+        v{{ rev1.revision_number }} &rarr; v{{ rev2.revision_number }}
+      </span>
+    </h1>
+    <div class="flex items-center gap-2 flex-shrink-0">
+      {% if can_edit %}
+        <a href="{{ revert_url }}" class="btn-outline text-sm">
+          Revert to v{{ rev1.revision_number }}
+        </a>
+      {% endif %}
+      <a href="{{ history_url }}" class="btn-outline text-sm">Back to History</a>
+    </div>
+  </div>
+
+  {% if meta_changes %}
+  <div class="card mb-4">
+    <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Metadata changes</h3>
+    <ul class="text-sm space-y-1">
+      {% for change in meta_changes %}
+      <li class="text-gray-600 dark:text-gray-400">{{ change }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+  {% if diff_html %}
+  <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Description changes</h3>
+  <div class="card font-mono text-sm overflow-x-auto">
+    {{ diff_html|safe }}
+  </div>
+  {% elif not meta_changes %}
+  <p class="text-gray-500 dark:text-gray-400">No changes between these revisions.</p>
+  {% endif %}
+</div>
+{% endblock %}

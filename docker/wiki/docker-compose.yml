@@ -1,0 +1,51 @@
+# Run using `docker compose up` from this directory
+networks:
+  wiki_net:
+    driver: bridge
+
+services:
+  # Database (PostgreSQL)
+  wiki-postgres:
+    container_name: wiki-postgres
+    image: postgres:16-alpine
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_USER: "postgres"
+      POSTGRES_PASSWORD: "postgres"
+      POSTGRES_DB: "wiki"
+    networks:
+      - wiki_net
+
+  # Tailwind CSS watcher (rebuilds on file change)
+  wiki-tailwind:
+    container_name: wiki-tailwind
+    image: node:22
+    volumes:
+      - ${WIKI_BASE_DIR:-../../}:/opt/wiki
+    working_dir: /opt/wiki
+    env_file:
+      - ../../.env.dev
+    command: sh -c 'npm install && npm run dev'
+    tty: true
+
+  # Django dev server
+  wiki-django:
+    container_name: wiki-django
+    build:
+      context: "${WIKI_BASE_DIR:-../../}"
+      dockerfile: "./docker/django/Dockerfile"
+      args:
+        BUILD_ENV: dev
+    command: web-dev
+    depends_on:
+      - wiki-postgres
+    ports:
+      - "8001:8000"
+    user: root
+    volumes:
+      - ${WIKI_BASE_DIR:-../../}:/opt/wiki
+    networks:
+      - wiki_net
+    env_file:
+      - ../../.env.dev

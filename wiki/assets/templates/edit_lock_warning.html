@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% load wiki_tags %}
+
+{% block title %}Editing in Progress - FLP Wiki{% endblock %}
+
+{% block content %}
+<div class="max-w-lg">
+  <h1 class="text-2xl font-bold mb-4">Editing in Progress</h1>
+  <div class="card">
+    <p class="mb-4">
+      <strong>{{ lock.user|display_name }}</strong> started editing
+      <strong>"{{ target_title }}"</strong>
+      {{ lock.created_at|timesince }} ago.
+    </p>
+    <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
+      If you edit anyway, your changes may conflict with theirs.
+    </p>
+    <form method="post" action="{{ edit_url }}?override_lock=1" class="flex gap-3">
+      {% csrf_token %}
+      <button type="submit" class="btn-primary">Edit Anyway</button>
+      <a href="{{ cancel_url }}" class="btn-outline">Cancel</a>
+    </form>
+  </div>
+</div>
+{% endblock %}

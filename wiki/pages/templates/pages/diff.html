@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+
+{% block title %}Diff: {{ page.title }} - FLP Wiki{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl">
+  <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
+    <h1 class="text-2xl font-bold">
+      Diff: {{ page.title }}
+      <span class="text-gray-400 font-normal text-lg">
+        v{{ rev1.revision_number }} &rarr; v{{ rev2.revision_number }}
+      </span>
+    </h1>
+    <div class="flex items-center gap-2 flex-shrink-0">
+      {% if can_edit %}
+        <a href="{% url 'page_revert' path=page.content_path rev_num=rev1.revision_number %}" class="btn-outline text-sm">
+          Revert to v{{ rev1.revision_number }}
+        </a>
+      {% endif %}
+      <a href="{% url 'page_history' path=page.content_path %}" class="btn-outline text-sm">Back to History</a>
+    </div>
+  </div>
+
+  {% if diff_html %}
+  <div class="card font-mono text-sm overflow-x-auto">
+    {{ diff_html|safe }}
+  </div>
+  {% else %}
+  <p class="text-gray-500 dark:text-gray-400">No content changes between these revisions.</p>
+  {% endif %}
+</div>
+{% endblock %}

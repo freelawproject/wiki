@@ -1,0 +1,149 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}{% if editing %}Edit{% else %}New{% endif %} Page - FLP Wiki{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="{% static 'css/easymde.min.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl">
+  <h1 class="text-2xl font-bold mb-6">
+    {% if editing %}Edit "{{ page.title }}"{% else %}New Page{% endif %}
+  </h1>
+
+  <form method="post" class="space-y-4" id="page-form">
+    {% csrf_token %}
+
+    {# Location picker #}
+    <div>
+      <label class="block text-sm font-medium mb-1">Location</label>
+      <input type="hidden" name="directory_path" id="directory-path-input"
+             value="{% if editing and page.directory %}{{ page.directory.path }}{% elif directory %}{{ directory.path }}{% endif %}">
+      <div class="relative">
+        <div id="location-picker" class="input-text w-full flex items-center flex-wrap gap-1 min-h-[2.5rem] cursor-text px-2 py-1">
+          <span class="text-gray-400 dark:text-gray-500 text-sm select-none">/</span>
+          <div id="location-chips" class="flex items-center gap-1 flex-wrap"></div>
+          <input type="text" id="location-input"
+                 class="flex-1 min-w-[120px] bg-transparent border-0 outline-none text-sm p-0 focus:ring-0"
+                 placeholder="Type to search directories..."
+                 autocomplete="off"
+                 autofocus
+        >
+        </div>
+        <div id="dir-dropdown"
+             class="hidden absolute z-50 left-0 right-0 mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+        </div>
+      </div>
+      <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+        Navigate into directories or type to create a new one. Backspace removes segments.
+      </p>
+    </div>
+
+    <div>
+      <label for="id_title" class="block text-sm font-medium mb-1">Title</label>
+      {{ form.title }}
+      {% if form.title.errors %}
+      <p class="text-red-600 dark:text-red-400 text-sm mt-1">{{ form.title.errors.0 }}</p>
+      {% endif %}
+    </div>
+
+    <div>
+      <label for="id_content" class="block text-sm font-medium mb-1">Content</label>
+      {{ form.content }}
+    </div>
+
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div>
+        <label for="id_visibility" class="block text-sm font-medium mb-1">Visibility</label>
+        {{ form.visibility }}
+      </div>
+      <div>
+        <label for="id_editability" class="block text-sm font-medium mb-1">Editability</label>
+        {{ form.editability }}
+      </div>
+      <div>
+        <label for="id_change_message" class="block text-sm font-medium mb-1">
+          Change Message <span class="text-red-500">*</span>
+        </label>
+        {{ form.change_message }}
+        {% if form.change_message.errors %}
+        <p class="text-red-600 dark:text-red-400 text-sm mt-1">{{ form.change_message.errors.0 }}</p>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="flex gap-3">
+      <button type="submit" class="btn-primary">
+        {% if editing %}Save Changes{% else %}Create Page{% endif %}
+      </button>
+      {% if editing %}
+        <a href="{{ page.get_absolute_url }}" class="btn-outline">Cancel</a>
+      {% endif %}
+    </div>
+  </form>
+
+  {# Wiki link autocomplete dropdown #}
+  <div id="slug-dropdown"
+       class="hidden absolute z-50 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg max-h-48 overflow-y-auto w-64">
+  </div>
+
+  {# @-mention autocomplete dropdown #}
+  <div id="mention-dropdown"
+       class="hidden absolute z-50 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg max-h-48 overflow-y-auto w-64">
+  </div>
+
+  {# Change message @-mention dropdown (positioned near the input) #}
+  <div id="cm-mention-dropdown"
+       class="hidden absolute z-50 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg max-h-48 overflow-y-auto w-64">
+  </div>
+
+  {# Permission warning modal #}
+  <div id="perm-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+    <div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full mx-4 p-6">
+      <h3 class="text-lg font-semibold mb-3">Permission Review</h3>
+
+      <div id="perm-modal-mentions-section" class="hidden">
+        <h4 class="text-sm font-semibold mb-1">Mentioned users without access</h4>
+        <p class="text-sm text-gray-600 dark:text-gray-400 mb-3">
+          Choose what access to grant each user. Users without access won't be notified.
+        </p>
+        <div id="perm-modal-users" class="space-y-2 mb-4"></div>
+      </div>
+
+      <div id="perm-modal-links-section" class="hidden">
+        <h4 class="text-sm font-semibold mb-1">Linked pages with restricted access</h4>
+        <p class="text-sm text-gray-600 dark:text-gray-400 mb-3">
+          This page links to private pages. Readers may not be able to follow these links.
+        </p>
+        <div id="perm-modal-links" class="space-y-2 mb-4"></div>
+      </div>
+
+      <div class="flex gap-3">
+        <button id="perm-grant-btn" class="btn-primary text-sm">Save</button>
+        <button id="perm-cancel-btn" class="btn-outline text-sm">Cancel</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block footer_scripts %}
+<script src="{% static 'js/easymde.min.js' %}"></script>
+<script type="application/json" id="editor-config">
+{
+  "csrfToken": "{{ csrf_token }}"
+}
+</script>
+<script type="application/json" id="page-config">
+{
+  "csrfToken": "{{ csrf_token }}",
+  "isEditing": {{ editing|yesno:"true,false" }},
+  "pageSlug": "{{ page.slug|default:"" }}",
+  "dirSegments": {{ dir_segments_json|safe }}
+}
+</script>
+<script src="{% static 'js/markdown-editor.js' %}"></script>
+<script src="{% static 'js/page-form.js' %}"></script>
+{% endblock %}

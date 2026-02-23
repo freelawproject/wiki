@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+{% load static wiki_tags %}
+
+{% block title %}Review Proposal for "{{ page.title }}" - FLP Wiki{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl">
+  <h1 class="text-2xl font-bold mb-2">Review Proposal</h1>
+  <p class="text-gray-600 dark:text-gray-400 mb-1">
+    {% if proposal.proposed_by %}
+      Proposed by <strong>{{ proposal.proposed_by|display_name }}</strong>
+    {% elif proposal.proposer_email %}
+      Proposed by <strong>{{ proposal.proposer_email }}</strong>
+    {% else %}
+      Proposed by an anonymous user
+    {% endif %}
+    &middot; {{ proposal.created_at|timesince }} ago
+  </p>
+  <p class="text-gray-600 dark:text-gray-400 mb-6">
+    <strong>Change:</strong> {{ proposal.change_message }}
+  </p>
+
+  {% if proposal.proposed_title != page.title %}
+  <div class="mb-4 p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
+    <span class="text-sm font-medium">Title change:</span>
+    <span class="text-sm">"{{ page.title }}" &rarr; "{{ proposal.proposed_title }}"</span>
+  </div>
+  {% endif %}
+
+  {% if diff_html %}
+  <div class="mb-6">
+    <h2 class="text-lg font-semibold mb-2">Diff</h2>
+    <div class="font-mono text-sm overflow-x-auto border border-gray-200 dark:border-gray-700 rounded-lg p-3">
+      {{ diff_html|safe }}
+    </div>
+  </div>
+  {% else %}
+  <p class="text-gray-500 dark:text-gray-400 mb-6 italic">No content changes.</p>
+  {% endif %}
+
+  {% if proposal.status == "pending" %}
+  <div x-data="{ showEditor: false, showDeny: false }" class="space-y-4">
+
+    {# Toggle to edit before accepting #}
+    <div class="flex items-center gap-3">
+      <a href="#" @click.prevent="showEditor = !showEditor" class="text-sm text-blue-600 dark:text-blue-400 hover:underline">
+        <span x-text="showEditor ? 'Hide editor' : 'Edit before accepting'"></span>
+      </a>
+    </div>
+
+    {# Accept form #}
+    <form method="post" action="{% url 'proposal_accept' path=page.content_path pk=proposal.pk %}">
+      {% csrf_token %}
+
+      {# Editor fields (shown when toggled) #}
+      <template x-if="showEditor">
+        <div class="space-y-4 mb-4">
+          <div>
+            <label class="block text-sm font-medium mb-1">Title</label>
+            <input type="text" name="title" value="{{ proposal.proposed_title }}"
+                   class="input-text w-full" autocomplete="off">
+          </div>
+          <div>
+            <label class="block text-sm font-medium mb-1">Content</label>
+            <textarea name="content" rows="15"
+                      class="input-text w-full font-mono text-sm">{{ proposal.proposed_content }}</textarea>
+          </div>
+        </div>
+      </template>
+
+      {# Hidden fields when editor is not shown (use proposal values as-is) #}
+      <template x-if="!showEditor">
+        <div>
+          <input type="hidden" name="title" value="{{ proposal.proposed_title }}">
+          <input type="hidden" name="content" value="{{ proposal.proposed_content }}">
+        </div>
+      </template>
+
+      <button type="submit" class="btn-primary">Accept Proposal</button>
+    </form>
+
+    {# Deny section #}
+    <div class="border-t border-gray-200 dark:border-gray-700 pt-4">
+      <button @click="showDeny = !showDeny" class="text-sm text-red-600 dark:text-red-400 hover:underline" type="button">
+        <span x-text="showDeny ? 'Cancel' : 'Deny Proposal'"></span>
+      </button>
+
+      <form x-show="showDeny" x-cloak method="post"
+            action="{% url 'proposal_deny' path=page.content_path pk=proposal.pk %}"
+            class="mt-3 space-y-3">
+        {% csrf_token %}
+        <div>
+          <label class="block text-sm font-medium mb-1">Reason (optional)</label>
+          <textarea name="denial_reason" rows="3"
+                    class="input-text w-full"
+                    placeholder="Explain why this proposal was denied..."></textarea>
+        </div>
+        <button type="submit" class="btn-primary bg-red-600 hover:bg-red-700">Confirm Deny</button>
+      </form>
+    </div>
+  </div>
+
+  {% else %}
+  <div class="p-4 rounded-lg {% if proposal.status == 'accepted' %}bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800{% else %}bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800{% endif %}">
+    <p class="font-medium">
+      {% if proposal.status == "accepted" %}Accepted{% else %}Denied{% endif %}
+      {% if proposal.reviewed_by %}by {{ proposal.reviewed_by|display_name }}{% endif %}
+      {% if proposal.reviewed_at %}&middot; {{ proposal.reviewed_at|timesince }} ago{% endif %}
+    </p>
+    {% if proposal.status == "denied" and proposal.denial_reason %}
+    <p class="mt-1 text-sm text-gray-600 dark:text-gray-400">
+      Reason: {{ proposal.denial_reason }}
+    </p>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  <div class="mt-6">
+    <a href="{% url 'proposal_list' path=page.content_path %}" class="btn-outline text-sm">Back to Proposals</a>
+    <a href="{{ page.get_absolute_url }}" class="btn-ghost text-sm ml-2">View Page</a>
+  </div>
+</div>
+{% endblock %}

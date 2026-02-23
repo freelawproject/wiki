@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+
+{% block title %}{% if query %}Search: {{ query }}{% else %}Search{% endif %} - FLP Wiki{% endblock %}
+
+{% block content %}
+<div class="max-w-3xl">
+  <h1 class="text-2xl font-bold mb-6">Search</h1>
+
+  <form method="get" class="mb-8">
+    <div class="flex gap-2">
+      <input
+        type="search"
+        name="q"
+        value="{{ query }}"
+        placeholder="Search pages..."
+        class="input-text flex-1"
+        autocomplete="off"
+        autofocus
+      >
+      <button type="submit" class="btn-primary">Search</button>
+    </div>
+  </form>
+
+  {% if query %}
+  <div class="space-y-3">
+    {% for page in results %}
+    <div class="card">
+      <a href="{{ page.get_absolute_url }}" class="text-lg font-medium hover:underline">
+        {{ page.title }}
+      </a>
+      <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
+        {{ page.get_absolute_url }}
+      </p>
+    </div>
+    {% empty %}
+    <p class="text-gray-500 dark:text-gray-400">No results found for "{{ query }}".</p>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% load static wiki_tags %}
+
+{% block title %}History: {{ directory.title }} - FLP Wiki{% endblock %}
+
+{% block content %}
+<div class="max-w-3xl">
+  <div class="flex items-center justify-between mb-6">
+    <h1 class="text-2xl font-bold">History: {{ directory.title }}</h1>
+    <a href="{{ directory.get_absolute_url }}" class="btn-outline text-sm">Back to Directory</a>
+  </div>
+
+  {% if revisions|length >= 2 %}
+  <form method="get" action="" class="mb-4" id="diff-form">
+    <p class="text-sm text-gray-500 dark:text-gray-400 mb-2">
+      Select two revisions to compare:
+    </p>
+  </form>
+  {% endif %}
+
+  <div class="space-y-2">
+    {% for rev in revisions %}
+    <div class="card flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+      <div class="flex items-center gap-3">
+        {% if revisions|length >= 2 %}
+        <input type="radio" name="v1" value="{{ rev.revision_number }}"
+               class="diff-radio" data-side="old"
+               {% if forloop.counter == 2 %}checked{% endif %}>
+        <input type="radio" name="v2" value="{{ rev.revision_number }}"
+               class="diff-radio" data-side="new"
+               {% if forloop.first %}checked{% endif %}>
+        {% endif %}
+        <div>
+          <span class="font-mono text-sm text-gray-400 dark:text-gray-500">v{{ rev.revision_number }}</span>
+          <span class="ml-2 font-medium">{{ rev.change_message|default:"No description" }}</span>
+          <span class="text-sm text-gray-500 dark:text-gray-400 ml-2">
+            by {{ rev.created_by|display_name }}
+          </span>
+        </div>
+      </div>
+      <span class="text-sm text-gray-500 dark:text-gray-400 flex-shrink-0">
+        {{ rev.created_at|timesince }} ago
+      </span>
+    </div>
+    {% empty %}
+    <p class="text-gray-500 dark:text-gray-400">No revisions yet.</p>
+    {% endfor %}
+  </div>
+
+  {% if revisions|length >= 2 %}
+  <div class="mt-4">
+    <button id="compare-btn" class="btn-primary text-sm">Compare Selected</button>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block footer_scripts %}
+<script type="application/json" id="history-config">
+{
+  "diffBase": "{{ diff_base }}"
+}
+</script>
+<script src="{% static 'js/revision-history.js' %}"></script>
+{% endblock %}
