@@ -367,6 +367,19 @@ wheels = [
 ]
 
 [[package]]
+name = "django-csp"
+version = "4.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "django" },
+    { name = "packaging" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/52/db/23567744dff2169aadb095f726088074476b24dfff5a759ffcf6389cf401/django_csp-4.0.tar.gz", hash = "sha256:b27010bb702eb20a3dad329178df2b61a2b82d338b70fbdc13c3a3bd28712833", size = 20028 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e1/a4/736ab90ee527a23e194d1ce7358c6bcced66381ced83c28268b4aea236f7/django_csp-4.0-py3-none-any.whl", hash = "sha256:d5a0a05463a6b75a4f1fc1828c58c89af8db9364d09fc6e12f122b4d7f3d00dc", size = 25689 },
+]
+
+[[package]]
 name = "django-debug-toolbar"
 version = "6.2.0"
 source = { registry = "https://pypi.org/simple" }
@@ -398,6 +411,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/6d/b3/ed0f54ed706ec0b54fd251cc0364a249c6cd6c6ec97f04dc34be5e929eac/django_extensions-4.1.tar.gz", hash = "sha256:7b70a4d28e9b840f44694e3f7feb54f55d495f8b3fa6c5c0e5e12bcb2aa3cdeb", size = 283078 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/64/96/d967ca440d6a8e3861120f51985d8e5aec79b9a8bdda16041206adfe7adc/django_extensions-4.1-py3-none-any.whl", hash = "sha256:0699a7af28f2523bf8db309a80278519362cd4b6e1fd0a8cd4bf063e1e023336", size = 232980 },
+]
+
+[[package]]
+name = "django-ratelimit"
+version = "4.1.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/6f/8f/94038fe739b095aca3e4708ecc8a4e77f1fcfd87bed5d6baff43d4c80bc4/django-ratelimit-4.1.0.tar.gz", hash = "sha256:555943b283045b917ad59f196829530d63be2a39adb72788d985b90c81ba808b", size = 11551 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/fb/78/2c59b30cd8bc8068d02349acb6aeed5c4e05eb01cdf2107ccd76f2e81487/django_ratelimit-4.1.0-py2.py3-none-any.whl", hash = "sha256:d047a31cf94d83ef1465d7543ca66c6fc16695559b5f8d814d1b51df15110b92", size = 11608 },
 ]
 
 [[package]]
@@ -1532,7 +1554,9 @@ dependencies = [
     { name = "daphne" },
     { name = "django" },
     { name = "django-cotton" },
+    { name = "django-csp" },
     { name = "django-environ" },
+    { name = "django-ratelimit" },
     { name = "django-ses", extra = ["events"] },
     { name = "django-storages" },
     { name = "django-tailwind" },
@@ -1567,9 +1591,11 @@ requires-dist = [
     { name = "daphne" },
     { name = "django", specifier = ">=6.0,<6.1" },
     { name = "django-cotton" },
+    { name = "django-csp", specifier = ">=4.0" },
     { name = "django-debug-toolbar", marker = "extra == 'dev'" },
     { name = "django-environ" },
     { name = "django-extensions", marker = "extra == 'dev'" },
+    { name = "django-ratelimit", specifier = ">=4.1.0" },
     { name = "django-ses", extras = ["events"] },
     { name = "django-storages" },
     { name = "django-stubs", marker = "extra == 'dev'" },

@@ -102,6 +102,8 @@ MIDDLEWARE = [
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.middleware.security.SecurityMiddleware",
+    "csp.middleware.CSPMiddleware",
+    "django_ratelimit.middleware.RatelimitMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "waffle.middleware.WaffleMiddleware",
@@ -174,3 +176,10 @@ from django.contrib.messages import (  # noqa: E402
 MESSAGE_TAGS = {
     message_constants.ERROR: "danger",
 }
+
+if TESTING:
+    CACHES = {
+        "default": {
+            "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+        }
+    }
