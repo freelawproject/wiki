@@ -2,6 +2,8 @@ from django import forms
 from django.contrib.auth.models import Group
 from django.utils.text import slugify
 
+from wiki.lib.permissions import can_view_directory
+
 from .models import Directory, DirectoryPermission
 
 
@@ -13,7 +15,7 @@ class DirectoryMoveForm(forms.Form):
         label="New parent directory",
     )
 
-    def __init__(self, *args, directory=None, **kwargs):
+    def __init__(self, *args, directory=None, user=None, **kwargs):
         super().__init__(*args, **kwargs)
         # Exclude the directory itself and its descendants
         excluded_ids = set()
@@ -21,6 +23,11 @@ class DirectoryMoveForm(forms.Form):
             excluded_ids.add(directory.pk)
             self._collect_descendant_ids(directory, excluded_ids)
         qs = Directory.objects.exclude(pk__in=excluded_ids).order_by("path")
+        # SECURITY: only show directories the user can view so that
+        # private directory names are never leaked in the dropdown.
+        if user:
+            visible_pks = [d.pk for d in qs if can_view_directory(user, d)]
+            qs = qs.filter(pk__in=visible_pks)
         self.fields["parent"].queryset = qs
         self.fields["parent"].label_from_instance = (
             lambda d: f"/{d.path}" if d.path else "/ (Root)"

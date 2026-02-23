@@ -2,6 +2,7 @@ from django import forms
 from django.contrib.auth.models import Group
 
 from wiki.directories.models import Directory
+from wiki.lib.permissions import can_view_directory
 
 from .models import Page, PagePermission
 
@@ -14,11 +15,16 @@ class PageMoveForm(forms.Form):
         widget=forms.Select(attrs={"class": "input-text w-full"}),
     )
 
-    def __init__(self, *args, exclude_current=None, **kwargs):
+    def __init__(self, *args, exclude_current=None, user=None, **kwargs):
         super().__init__(*args, **kwargs)
         qs = Directory.objects.exclude(path="").order_by("path")
         if exclude_current:
             qs = qs.exclude(pk=exclude_current.pk)
+        # SECURITY: only show directories the user can view so that
+        # private directory names are never leaked in the dropdown.
+        if user:
+            visible_pks = [d.pk for d in qs if can_view_directory(user, d)]
+            qs = qs.filter(pk__in=visible_pks)
         self.fields["directory"].queryset = qs
         self.fields["directory"].label_from_instance = lambda d: f"/{d.path}"
 
