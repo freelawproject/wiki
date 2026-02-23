@@ -6,7 +6,17 @@ from .project.testing import TESTING
 
 env = environ.FileAwareEnv()
 
-SECRET_KEY = env("SECRET_KEY", default="THIS-is-a-Secret")
+DEVELOPMENT = env.bool("DEVELOPMENT", default=True)
+
+# SECURITY: no default in production — Django will refuse to start if
+# the SECRET_KEY env var is missing, preventing accidental use of a
+# weak key.
+if DEVELOPMENT:
+    SECRET_KEY = env(
+        "SECRET_KEY", default="dev-only-insecure-key-not-for-production"
+    )
+else:
+    SECRET_KEY = env("SECRET_KEY")
 
 ############
 # Database #
@@ -35,8 +45,6 @@ CACHES = {
         "OPTIONS": {"MAX_ENTRIES": 25_000},
     },
 }
-
-DEVELOPMENT = env.bool("DEVELOPMENT", default=True)
 
 SESSION_ENGINE = "django.contrib.sessions.backends.db"
 
