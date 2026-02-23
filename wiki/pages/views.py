@@ -1016,7 +1016,6 @@ check_mention_permissions = check_page_permissions
 
 
 @require_POST
-@login_required
 def page_preview_htmx(request):
     """Return rendered markdown preview for HTMX requests."""
     content = request.POST.get("content", "")

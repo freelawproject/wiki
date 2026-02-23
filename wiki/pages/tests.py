@@ -423,9 +423,9 @@ class TestPreviewEndpoint:
         assert r.status_code == 200
         assert b"<h2" in r.content
 
-    def test_preview_requires_login(self, client, db):
+    def test_preview_works_without_login(self, client, db):
         r = client.post("/api/preview/", {"content": "test"})
-        assert r.status_code == 302
+        assert r.status_code == 200
 
 
 class TestFileUpload:
