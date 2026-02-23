@@ -107,6 +107,6 @@ docker exec -it wiki-django python manage.py shell
 
 ## Dependencies
 
-- **Python**: managed via `pyproject.toml` with `uv`
+- **Python**: managed via `pyproject.toml` with `uv`. MUST use `uv` for package management, not `pip`.
 - **JavaScript**: `package.json` with `npm`
 - **Pre-commit**: `.pre-commit-config.yaml` (ruff linter + formatter)
