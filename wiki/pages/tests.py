@@ -1909,3 +1909,51 @@ class TestCleanupCommandEditLocks:
         with time_machine.travel(future, tick=False):
             call_command("cleanup")
             assert not EditLock.objects.filter(page=page).exists()
+
+
+# ── CSP Header Tests ──────────────────────────────────────
+
+
+class TestCSPHeaders:
+    """SECURITY: Content-Security-Policy headers must be present on all
+    responses to prevent XSS, clickjacking, and other injection attacks."""
+
+    def test_csp_header_on_page_detail(self, client, user, page):
+        """Page detail responses include a CSP header."""
+        client.force_login(user)
+        r = client.get(f"/c/{page.slug}/")
+        assert "Content-Security-Policy" in r
+
+    def test_csp_header_on_root(self, client, user, root_directory):
+        """Root directory response includes a CSP header."""
+        client.force_login(user)
+        r = client.get("/c/")
+        assert "Content-Security-Policy" in r
+
+    def test_csp_blocks_frames(self, client, user, page):
+        """CSP header includes frame-src 'none' to block embedding."""
+        client.force_login(user)
+        r = client.get(f"/c/{page.slug}/")
+        csp = r["Content-Security-Policy"]
+        assert "frame-src 'none'" in csp
+
+    def test_csp_blocks_object(self, client, user, page):
+        """CSP header includes object-src 'none' to block plugins."""
+        client.force_login(user)
+        r = client.get(f"/c/{page.slug}/")
+        csp = r["Content-Security-Policy"]
+        assert "object-src 'none'" in csp
+
+    def test_csp_has_default_src(self, client, user, page):
+        """CSP header includes a default-src directive."""
+        client.force_login(user)
+        r = client.get(f"/c/{page.slug}/")
+        csp = r["Content-Security-Policy"]
+        assert "default-src" in csp
+
+    def test_csp_has_script_src(self, client, user, page):
+        """CSP header includes a script-src directive."""
+        client.force_login(user)
+        r = client.get(f"/c/{page.slug}/")
+        csp = r["Content-Security-Policy"]
+        assert "script-src" in csp
