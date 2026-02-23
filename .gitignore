@@ -15,7 +15,6 @@
 node_modules/
 
 # Lock files generated in Docker
-uv.lock
 package-lock.json
 
 # Generated assets

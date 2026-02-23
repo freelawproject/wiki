@@ -29,6 +29,7 @@ dependencies = [
   "factory-boy",
   "gunicorn",
   "markdown2",
+  "nh3",
   "pillow",
   "psycopg[binary,pool]",
   "python-magic",
