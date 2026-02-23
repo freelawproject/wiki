@@ -72,11 +72,10 @@ jobs:
         working-directory: docker/wiki
         run: >
           docker compose -f docker-compose.yml
-          -f <(echo 'services: { wiki-django: { image: "wiki" } }')
+          -f <(echo 'services: { wiki-django: { image: "wiki", command: "sleep infinity" } }')
           up -d --no-build --pull=never
-      - name: Wait for django to be ready
-        run: |
-          timeout 60 bash -c 'until docker exec wiki-django python -c "print()" 2>/dev/null; do sleep 2; done'
+      - name: Wait for postgres to be healthy
+        run: timeout 30 bash -c 'until docker exec wiki-postgres pg_isready; do sleep 1; done'
       - name: List docker containers
         run: docker ps -a --no-trunc
       - name: Show the docker startup logs
