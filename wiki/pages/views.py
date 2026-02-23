@@ -23,6 +23,7 @@ from wiki.lib.permissions import (
     is_editability_more_open_than_visibility,
     is_more_open_than,
 )
+from wiki.lib.ratelimiter import ratelimit_search, ratelimit_upload
 
 from .forms import PageForm
 from .models import (
@@ -1055,6 +1056,7 @@ BLOCKED_EXTENSIONS = {
 
 @require_POST
 @login_required
+@ratelimit_upload
 def file_upload_htmx(request):
     """Handle file upload via HTMX, return markdown syntax."""
 
@@ -1124,6 +1126,7 @@ def file_serve(request, file_id, filename):
 
 
 @login_required
+@ratelimit_search
 def page_search_htmx(request):
     """HTMX endpoint for page title autocomplete."""
     q = request.GET.get("q", "").strip()

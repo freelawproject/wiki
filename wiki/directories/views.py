@@ -17,6 +17,7 @@ from wiki.lib.permissions import (
     can_view_page,
     is_editability_more_open_than_visibility,
 )
+from wiki.lib.ratelimiter import ratelimit_search
 
 from .models import Directory, DirectoryRevision
 
@@ -592,6 +593,7 @@ def directory_delete(request, path):
 
 
 @login_required
+@ratelimit_search
 def directory_search_htmx(request):
     """JSON endpoint for directory autocomplete.
 
