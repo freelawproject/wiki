@@ -1203,3 +1203,80 @@ class TestDirectoryEditLock:
             },
         )
         assert not EditLock.objects.filter(directory=sub_directory).exists()
+
+
+# ── Security Regression Tests ────────────────────────────
+
+
+class TestDirectorySearchSecurity:
+    def test_private_directory_hidden_from_search(
+        self, client, other_user, private_directory
+    ):
+        """SECURITY: private directories must not appear in autocomplete
+        for users without permission."""
+        client.force_login(other_user)
+        r = client.get("/api/dir-search/?parent=&q=secret")
+        import json
+
+        data = json.loads(r.content)
+        titles = [d["title"] for d in data]
+        assert "Secret Team" not in titles
+
+    def test_private_directory_visible_to_owner(
+        self, client, user, private_directory
+    ):
+        """Directory owner should see their private directories."""
+        client.force_login(user)
+        r = client.get("/api/dir-search/?parent=&q=secret")
+        import json
+
+        data = json.loads(r.content)
+        titles = [d["title"] for d in data]
+        assert "Secret Team" in titles
+
+
+class TestMoveDirectoryFormSecurity:
+    def test_move_form_hides_private_directories(
+        self, client, user, other_user, root_directory, sub_directory
+    ):
+        """SECURITY: the move form dropdown must not list private
+        directories the user cannot view."""
+        Directory.objects.create(
+            path="private-target",
+            title="Private Target",
+            parent=root_directory,
+            owner=user,
+            created_by=user,
+            visibility=Directory.Visibility.PRIVATE,
+        )
+        # other_user owns sub_directory for this test
+        sub_directory.owner = other_user
+        sub_directory.save()
+        client.force_login(other_user)
+        r = client.get("/c/engineering/move-dir/")
+        assert r.status_code == 200
+        assert b"Private Target" not in r.content
+
+
+class TestMovePageFormSecurity:
+    def test_move_form_hides_private_directories(
+        self, client, user, other_user, root_directory, page
+    ):
+        """SECURITY: page move dropdown must not list private
+        directories the user cannot view."""
+
+        Directory.objects.create(
+            path="private-target",
+            title="Private Target",
+            parent=root_directory,
+            owner=user,
+            created_by=user,
+            visibility=Directory.Visibility.PRIVATE,
+        )
+        # other_user needs edit permission on the page
+        page.editability = "internal"
+        page.save()
+        client.force_login(other_user)
+        r = client.get("/c/getting-started/move/")
+        assert r.status_code == 200
+        assert b"Private Target" not in r.content

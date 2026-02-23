@@ -343,3 +343,24 @@ class TestUserArchiving:
         client.force_login(user)
         r = client.get("/u/admins/")
         assert b"Archived" in r.content
+
+
+class TestAdminEmailDomainSecurity:
+    def test_django_admin_rejects_non_free_law_email(self, client, user):
+        """SECURITY: the Django admin must not allow creating users with
+        non-@free.law email addresses."""
+        user.is_staff = True
+        user.is_superuser = True
+        user.save()
+        client.force_login(user)
+        client.post(
+            "/admin/auth/user/add/",
+            {
+                "username": "hacker@gmail.com",
+                "email": "hacker@gmail.com",
+                "password1": "Str0ngP@ss!",
+                "password2": "Str0ngP@ss!",
+            },
+        )
+        # The user should NOT be created
+        assert not User.objects.filter(email="hacker@gmail.com").exists()
