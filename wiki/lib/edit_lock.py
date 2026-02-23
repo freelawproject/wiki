@@ -53,7 +53,5 @@ def release_lock_for_directory(directory):
 
 def cleanup_expired_locks():
     """Delete all expired edit locks. Returns the number deleted."""
-    count, _ = EditLock.objects.filter(
-        expires_at__lte=timezone.now()
-    ).delete()
+    count, _ = EditLock.objects.filter(expires_at__lte=timezone.now()).delete()
     return count

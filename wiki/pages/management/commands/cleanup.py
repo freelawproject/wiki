@@ -25,13 +25,17 @@ class Command(BaseCommand):
         self.stdout.write(f"Deleted {count} expired session(s).")
 
     def _clear_expired_magic_tokens(self, now):
-        count = UserProfile.objects.filter(
-            magic_link_expires__lt=now,
-        ).exclude(
-            magic_link_token="",
-        ).update(
-            magic_link_token="",
-            magic_link_expires=None,
+        count = (
+            UserProfile.objects.filter(
+                magic_link_expires__lt=now,
+            )
+            .exclude(
+                magic_link_token="",
+            )
+            .update(
+                magic_link_token="",
+                magic_link_expires=None,
+            )
         )
         self.stdout.write(f"Cleared {count} expired magic token(s).")
 
