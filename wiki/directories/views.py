@@ -499,6 +499,7 @@ def directory_move(request, path):
         request.POST or None,
         initial=initial,
         directory=directory,
+        user=request.user,
     )
 
     if request.method == "POST" and form.is_valid():
@@ -614,7 +615,14 @@ def directory_search_htmx(request):
     if q:
         qs = qs.filter(title__icontains=q)
 
-    results = [{"path": d.path, "title": d.title} for d in qs[:15]]
+    # SECURITY: filter results by permission so private directories are
+    # never revealed in autocomplete to users who lack access.
+    results = []
+    for d in qs.iterator():
+        if can_view_directory(request.user, d):
+            results.append({"path": d.path, "title": d.title})
+        if len(results) >= 15:
+            break
 
     return JsonResponse(results, safe=False)
 
