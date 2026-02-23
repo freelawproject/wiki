@@ -32,12 +32,12 @@
         {% endif %}
       {% endif %}
       {% if can_edit or user.is_authenticated %}
-      <div class="relative" x-data="{ open: false }">
-        <button @click="open = !open" @click.outside="open = false" class="btn-outline text-sm" type="button">
+      <div class="relative" x-data="dropdown">
+        <button @click="toggle" @click.outside="close" class="btn-outline text-sm" type="button">
           Actions
           <svg class="w-4 h-4 ml-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
         </button>
-        <div x-show="open" x-cloak @click="open = false"
+        <div x-show="open" x-cloak @click="close"
              class="absolute right-0 mt-1 w-44 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-50 py-1">
           {% if can_edit %}
             {% if directory.path %}

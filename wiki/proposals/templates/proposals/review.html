@@ -39,12 +39,12 @@
   {% endif %}
 
   {% if proposal.status == "pending" %}
-  <div x-data="{ showEditor: false, showDeny: false }" class="space-y-4">
+  <div x-data="proposalReview" class="space-y-4">
 
     {# Toggle to edit before accepting #}
     <div class="flex items-center gap-3">
-      <a href="#" @click.prevent="showEditor = !showEditor" class="text-sm text-blue-600 dark:text-blue-400 hover:underline">
-        <span x-text="showEditor ? 'Hide editor' : 'Edit before accepting'"></span>
+      <a href="#" @click.prevent="toggleEditor" class="text-sm text-blue-600 dark:text-blue-400 hover:underline">
+        <span x-text="editorLabel"></span>
       </a>
     </div>
 
@@ -69,7 +69,7 @@
       </template>
 
       {# Hidden fields when editor is not shown (use proposal values as-is) #}
-      <template x-if="!showEditor">
+      <template x-if="editorHidden">
         <div>
           <input type="hidden" name="title" value="{{ proposal.proposed_title }}">
           <input type="hidden" name="content" value="{{ proposal.proposed_content }}">
@@ -81,8 +81,8 @@
 
     {# Deny section #}
     <div class="border-t border-gray-200 dark:border-gray-700 pt-4">
-      <button @click="showDeny = !showDeny" class="text-sm text-red-600 dark:text-red-400 hover:underline" type="button">
-        <span x-text="showDeny ? 'Cancel' : 'Deny Proposal'"></span>
+      <button @click="toggleDeny" class="text-sm text-red-600 dark:text-red-400 hover:underline" type="button">
+        <span x-text="denyLabel"></span>
       </button>
 
       <form x-show="showDeny" x-cloak method="post"

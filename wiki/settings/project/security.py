@@ -25,9 +25,8 @@ SECURE_REFERRER_POLICY = "same-origin"
 CONTENT_SECURITY_POLICY = {
     "DIRECTIVES": {
         "default-src": [SELF],
-        # Alpine.js v3 uses new Function(), requiring 'unsafe-eval'.
-        # Migrate to @alpinejs/csp build to eliminate this.
-        "script-src": [SELF, "'unsafe-eval'"],
+        # Uses @alpinejs/csp build — no unsafe-eval needed.
+        "script-src": [SELF],
         # Needed for style="" HTML attributes in templates.
         "style-src": [SELF, "'unsafe-inline'"],
         "img-src": [

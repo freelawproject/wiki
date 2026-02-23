@@ -1957,3 +1957,10 @@ class TestCSPHeaders:
         r = client.get(f"/c/{page.slug}/")
         csp = r["Content-Security-Policy"]
         assert "script-src" in csp
+
+    def test_csp_does_not_allow_unsafe_eval(self, client, user, page):
+        """SECURITY: CSP must not include unsafe-eval now that Alpine CSP build is used."""
+        client.force_login(user)
+        r = client.get(f"/c/{page.slug}/")
+        csp = r["Content-Security-Policy"]
+        assert "'unsafe-eval'" not in csp

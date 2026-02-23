@@ -58,6 +58,18 @@ wiki/
 
 6. **Type hints**: Encouraged for new code but not yet enforced project-wide.
 
+7. **JavaScript vendoring**: MUST vendor all JS libraries locally in `wiki/assets/static-global/js/`.
+   NEVER load JS from CDNs at runtime.
+
+8. **Alpine.js (CSP build)**: The project uses `@alpinejs/csp`, which does NOT support inline
+   JavaScript expressions in templates. MUST follow these rules:
+   - Register all components in `wiki/assets/static-global/js/alpine-components.js` using `Alpine.data()`
+   - Use `x-data="componentName"` (not inline objects like `x-data="{ open: false }"`)
+   - Use methods for actions: `@click="toggle"` (not `@click="open = !open"`)
+   - Use getters for computed values: `x-text="label"` (not `x-text="open ? 'Yes' : 'No'"`)
+   - Simple property access works: `x-show="open"`, `x-if="visible"`
+   - Do NOT use `x-model` — use `:checked`/`:value` + `@change`/`@input` instead
+
 
 ## Testing
 
