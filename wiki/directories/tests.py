@@ -361,7 +361,7 @@ class TestDirectorySort:
     def test_default_sort_is_title(self, client, page):
         r = client.get("/c/")
         assert r.status_code == 200
-        assert b"Sort by:" in r.content
+        assert b"Sort:" in r.content
         # "Title" should be bold (active)
         assert (
             b'<strong class="text-gray-900 dark:text-gray-100">Title</strong>'

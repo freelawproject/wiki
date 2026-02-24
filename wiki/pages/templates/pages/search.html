@@ -4,36 +4,46 @@
 
 {% block content %}
 <div class="max-w-3xl">
-  <h1 class="text-2xl font-bold mb-6">Search</h1>
+  <h1 class="mb-6">Search</h1>
 
   <form method="get" class="mb-8">
     <div class="flex gap-2">
-      <input
-        type="search"
-        name="q"
-        value="{{ query }}"
-        placeholder="Search pages..."
-        class="input-text flex-1"
-        autocomplete="off"
-        autofocus
-      >
-      <button type="submit" class="btn-primary">Search</button>
+      <div class="flex-1 relative">
+        <svg xmlns="http://www.w3.org/2000/svg" class="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400 dark:text-gray-500 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+        </svg>
+        <input
+          type="search"
+          name="q"
+          value="{{ query }}"
+          placeholder="Search pages..."
+          class="input-text w-full pl-10 py-2.5"
+          autocomplete="off"
+          autofocus
+        >
+      </div>
+      <button type="submit" class="btn-primary px-6">Search</button>
     </div>
   </form>
 
   {% if query %}
   <div class="space-y-3">
     {% for page in results %}
-    <div class="card">
-      <a href="{{ page.get_absolute_url }}" class="text-lg font-medium hover:underline">
+    <a href="{{ page.get_absolute_url }}" class="card block py-4 px-5 hover:shadow-card-hover hover:border-primary-300 dark:hover:border-primary-600 transition-all no-underline">
+      <div class="font-medium text-gray-900 dark:text-gray-100">
         {{ page.title }}
-      </a>
-      <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
+      </div>
+      <p class="text-sm text-gray-400 dark:text-gray-500 mt-1">
         {{ page.get_absolute_url }}
       </p>
-    </div>
+    </a>
     {% empty %}
-    <p class="text-gray-500 dark:text-gray-400">No results found for "{{ query }}".</p>
+    <div class="text-center py-12">
+      <svg class="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+      </svg>
+      <p class="text-gray-500 dark:text-gray-400">No results found for &ldquo;{{ query }}&rdquo;</p>
+    </div>
     {% endfor %}
   </div>
   {% endif %}

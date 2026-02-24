@@ -5,21 +5,29 @@
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
   <title>Server Error - FLP Wiki</title>
   <style>
-    body { font-family: system-ui, sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; background: #F9FAFB; color: #101828; }
-    .container { text-align: center; }
-    h1 { font-size: 4rem; color: #D0D5DD; margin: 0; }
-    h2 { margin-top: 1rem; }
-    p { color: #667085; }
+    body {
+      font-family: Charter, 'Bitstream Charter', 'Sitka Text', Cambria, serif;
+      display: flex; align-items: center; justify-content: center;
+      min-height: 100vh; margin: 0;
+      background: #FCFCFD; color: #101828;
+    }
+    .container { text-align: center; max-width: 28rem; padding: 2rem; }
+    .code {
+      font-size: 6rem; font-weight: 700; line-height: 1;
+      color: #EAECF0; letter-spacing: -0.02em;
+    }
+    h2 { font-size: 1.5rem; margin-top: 1rem; font-weight: 700; letter-spacing: -0.01em; }
+    p { color: #667085; font-family: Inter, system-ui, sans-serif; font-size: 0.9375rem; line-height: 1.5; }
     @media (prefers-color-scheme: dark) {
       body { background: #101828; color: #F2F4F7; }
-      h1 { color: #344054; }
+      .code { color: #344054; }
       p { color: #98A2B3; }
     }
   </style>
 </head>
 <body>
   <div class="container">
-    <h1>500</h1>
+    <p class="code">500</p>
     <h2>Server Error</h2>
     <p>Something went wrong. Please try again later.</p>
   </div>

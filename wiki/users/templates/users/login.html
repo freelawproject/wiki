@@ -4,16 +4,18 @@
 
 {% block content %}
 <div class="max-w-sm mx-auto mt-16">
-  <div class="card">
-    <h1 class="text-2xl font-bold mb-6 text-center">Sign In</h1>
-    <p class="text-gray-500 dark:text-gray-400 text-sm mb-6 text-center">
+  <div class="text-center mb-8">
+    <h1 class="text-2xl">Sign In</h1>
+    <p class="text-gray-500 dark:text-gray-400 text-sm mt-2">
       Enter your @free.law email to receive a sign-in link.
     </p>
+  </div>
+  <div class="card">
     <form method="post">
       {% csrf_token %}
       <div class="space-y-4">
         <div>
-          <label for="id_email" class="block text-sm font-medium mb-1">Email</label>
+          <label for="id_email" class="block text-sm font-medium mb-1.5">Email</label>
           {{ form.email }}
           {% if form.email.errors %}
           <p class="text-red-600 dark:text-red-400 text-sm mt-1">
@@ -21,7 +23,7 @@
           </p>
           {% endif %}
         </div>
-        <button type="submit" class="btn-primary w-full justify-center">
+        <button type="submit" class="btn-primary w-full justify-center py-2.5">
           Send Sign-In Link
         </button>
       </div>

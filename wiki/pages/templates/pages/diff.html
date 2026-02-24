@@ -5,9 +5,9 @@
 {% block content %}
 <div class="max-w-4xl">
   <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
-    <h1 class="text-2xl font-bold">
+    <h1 class="text-2xl">
       Diff: {{ page.title }}
-      <span class="text-gray-400 font-normal text-lg">
+      <span class="text-gray-400 dark:text-gray-500 font-normal text-lg ml-1">
         v{{ rev1.revision_number }} &rarr; v{{ rev2.revision_number }}
       </span>
     </h1>
@@ -22,8 +22,10 @@
   </div>
 
   {% if diff_html %}
-  <div class="card font-mono text-sm overflow-x-auto">
-    {{ diff_html|safe }}
+  <div class="card font-mono text-sm overflow-x-auto p-0">
+    <div class="p-4">
+      {{ diff_html|safe }}
+    </div>
   </div>
   {% else %}
   <p class="text-gray-500 dark:text-gray-400">No content changes between these revisions.</p>

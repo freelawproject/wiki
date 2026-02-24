@@ -2,28 +2,30 @@
 
 @layer base {
   body {
-    @apply bg-white text-gray-900 dark:bg-gray-900 dark:text-gray-100;
+    @apply bg-gray-25 text-gray-900 dark:bg-gray-900 dark:text-gray-100;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
   a {
-    @apply text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300;
+    @apply text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300 transition-colors;
   }
   h1 {
-    @apply text-3xl font-bold md:text-4xl;
+    @apply text-3xl font-bold md:text-4xl font-serif tracking-tight text-gray-900 dark:text-white;
   }
   h2 {
-    @apply text-2xl font-semibold;
+    @apply text-2xl font-semibold font-serif tracking-tight;
   }
   h3 {
-    @apply text-xl font-semibold;
+    @apply text-xl font-semibold font-serif;
   }
   h4 {
     @apply text-lg font-semibold;
   }
   code {
-    @apply font-mono text-sm bg-primary-50 text-primary-700 border border-primary-200 rounded px-1 dark:bg-primary-900 dark:text-primary-300 dark:border-primary-700;
+    @apply font-mono text-sm bg-primary-50 text-primary-700 border border-primary-200/60 rounded px-1.5 py-0.5 dark:bg-primary-900/40 dark:text-primary-300 dark:border-primary-700/50;
   }
   pre code {
-    @apply block p-4 overflow-x-auto bg-gray-50 border-gray-200 text-gray-800 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-200;
+    @apply block p-4 overflow-x-auto bg-gray-50 border-gray-200 text-gray-800 rounded-lg dark:bg-gray-800 dark:border-gray-700 dark:text-gray-200;
   }
   /* Ensure all form elements respect dark mode */
   input, textarea, select {
@@ -37,72 +39,216 @@
 @tailwind components;
 
 @layer components {
+  /* === Buttons === */
   .btn {
-    @apply py-2 px-4 rounded-lg text-sm font-medium inline-flex items-center gap-1.5 transition-colors;
+    @apply py-2 px-4 rounded-lg text-sm font-medium inline-flex items-center gap-1.5 transition-all duration-150 cursor-pointer;
   }
   .btn-primary {
-    @apply btn text-white bg-primary-600 hover:bg-primary-700 focus:ring-2 focus:ring-primary-300 dark:bg-primary-500 dark:hover:bg-primary-600;
+    @apply btn text-white bg-primary-600 hover:bg-primary-700 active:bg-primary-800
+           shadow-button hover:shadow-soft
+           focus:outline-none focus:ring-2 focus:ring-primary-300 focus:ring-offset-1
+           dark:bg-primary-500 dark:hover:bg-primary-600 dark:focus:ring-offset-gray-900;
   }
   .btn-outline {
-    @apply btn bg-white text-gray-700 border border-gray-300 hover:bg-gray-50 focus:ring-2 focus:ring-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:border-gray-600 dark:hover:bg-gray-700;
+    @apply btn bg-white text-gray-700 border border-gray-300
+           shadow-button hover:shadow-soft
+           hover:bg-gray-50 hover:border-gray-400
+           focus:outline-none focus:ring-2 focus:ring-gray-200 focus:ring-offset-1
+           dark:bg-gray-800 dark:text-gray-200 dark:border-gray-600
+           dark:hover:bg-gray-700 dark:hover:border-gray-500 dark:focus:ring-offset-gray-900;
   }
   .btn-danger {
-    @apply btn text-white bg-red-600 hover:bg-red-700 focus:ring-2 focus:ring-red-300;
+    @apply btn text-white bg-red-600 hover:bg-red-700 active:bg-red-800
+           shadow-button hover:shadow-soft
+           focus:outline-none focus:ring-2 focus:ring-red-300 focus:ring-offset-1;
   }
   .btn-ghost {
-    @apply btn hover:bg-gray-100 dark:hover:bg-gray-800;
+    @apply btn text-gray-600 hover:bg-gray-100 hover:text-gray-900
+           dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100;
   }
+
+  /* === Cards === */
   .card {
-    @apply bg-white border border-gray-200 rounded-xl p-6 dark:bg-gray-800 dark:border-gray-700;
+    @apply bg-white border border-gray-200 rounded-card p-6
+           shadow-soft
+           dark:bg-gray-800 dark:border-gray-700 dark:shadow-none;
   }
+
+  /* === Inputs === */
   .input-text {
-    @apply border border-gray-300 rounded-lg py-2 px-3 text-sm bg-white focus:ring-2 focus:ring-primary-300 focus:border-primary-500 dark:bg-gray-800 dark:border-gray-600 dark:text-gray-100;
+    @apply border border-gray-300 rounded-lg py-2 px-3 text-sm bg-white
+           shadow-button
+           placeholder:text-gray-400
+           focus:outline-none focus:ring-2 focus:ring-primary-300 focus:border-primary-500
+           dark:bg-gray-800 dark:border-gray-600 dark:text-gray-100
+           dark:placeholder:text-gray-500
+           dark:focus:ring-primary-700 dark:focus:border-primary-600
+           transition-shadow duration-150;
   }
+
+  /* === Alerts === */
   .alert {
     @apply px-4 py-3 text-sm rounded-lg border;
   }
   .alert-success {
-    @apply alert bg-green-50 text-green-800 border-green-300 dark:bg-green-900/30 dark:text-green-300 dark:border-green-700;
+    @apply alert bg-green-50 text-green-800 border-green-200
+           dark:bg-green-900/20 dark:text-green-300 dark:border-green-800;
   }
   .alert-warning {
-    @apply alert bg-yellow-50 text-yellow-800 border-yellow-300 dark:bg-yellow-900/30 dark:text-yellow-300 dark:border-yellow-700;
+    @apply alert bg-accent-50 text-accent-800 border-accent-200
+           dark:bg-accent-900/20 dark:text-accent-300 dark:border-accent-800;
   }
   .alert-danger {
-    @apply alert bg-red-50 text-red-800 border-red-300 dark:bg-red-900/30 dark:text-red-300 dark:border-red-700;
+    @apply alert bg-red-50 text-red-800 border-red-200
+           dark:bg-red-900/20 dark:text-red-300 dark:border-red-800;
   }
   .alert-info {
-    @apply alert bg-blue-50 text-blue-800 border-blue-300 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-700;
+    @apply alert bg-blue-50 text-blue-800 border-blue-200
+           dark:bg-blue-900/20 dark:text-blue-300 dark:border-blue-800;
+  }
+
+  /* === Badges/Pills === */
+  .badge {
+    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium;
+  }
+  .badge-green {
+    @apply badge bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300;
+  }
+  .badge-purple {
+    @apply badge bg-primary-100 text-primary-800 dark:bg-primary-900/40 dark:text-primary-300;
+  }
+  .badge-blue {
+    @apply badge bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300;
+  }
+  .badge-yellow {
+    @apply badge bg-accent-100 text-accent-800 dark:bg-accent-900/40 dark:text-accent-300;
+  }
+  .badge-gray {
+    @apply badge bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300;
+  }
+  .badge-red {
+    @apply badge bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300;
+  }
+
+  /* === Tab navigation === */
+  .tab-nav {
+    @apply flex gap-1 border-b border-gray-200 dark:border-gray-700;
+  }
+  .tab-item {
+    @apply pb-2.5 px-3 text-sm font-medium border-b-2 border-transparent
+           text-gray-500 dark:text-gray-400
+           hover:text-gray-700 dark:hover:text-gray-200
+           no-underline transition-colors;
+  }
+  .tab-item-active {
+    @apply tab-item border-primary-600 text-primary-700 dark:text-primary-400 dark:border-primary-400;
   }
 }
 
 @layer components {
-  /* Prose-like styles for rendered wiki markdown content */
+  /* === Wiki content prose === */
   .wiki-content {
     @apply text-gray-900 dark:text-gray-100 leading-relaxed;
   }
-  .wiki-content h1 { @apply text-3xl font-bold mt-8 mb-4; }
-  .wiki-content h2 { @apply text-2xl font-semibold mt-6 mb-3 pb-1 border-b border-gray-200 dark:border-gray-700; }
-  .wiki-content h3 { @apply text-xl font-semibold mt-5 mb-2; }
-  .wiki-content h4 { @apply text-lg font-semibold mt-4 mb-2; }
-  .wiki-content p { @apply my-3; }
-  .wiki-content ul { @apply list-disc ml-6 my-3; }
-  .wiki-content ol { @apply list-decimal ml-6 my-3; }
-  .wiki-content li { @apply my-1; }
-  .wiki-content blockquote {
-    @apply border-l-4 border-primary-300 dark:border-primary-600 pl-4 italic text-gray-600 dark:text-gray-400 my-4;
+  .wiki-content h1 {
+    @apply text-3xl font-bold font-serif tracking-tight mt-10 mb-4;
   }
-  .wiki-content table { @apply border-collapse w-full my-4; }
+  .wiki-content h2 {
+    @apply text-2xl font-semibold font-serif tracking-tight mt-8 mb-3 pb-2
+           border-b border-gray-200 dark:border-gray-700;
+  }
+  .wiki-content h3 {
+    @apply text-xl font-semibold font-serif mt-6 mb-2;
+  }
+  .wiki-content h4 {
+    @apply text-lg font-semibold mt-5 mb-2;
+  }
+  .wiki-content p {
+    @apply my-3;
+  }
+  .wiki-content ul {
+    @apply list-disc ml-6 my-3;
+  }
+  .wiki-content ol {
+    @apply list-decimal ml-6 my-3;
+  }
+  .wiki-content li {
+    @apply my-1;
+  }
+  .wiki-content blockquote {
+    @apply border-l-4 border-primary-300 dark:border-primary-600
+           pl-5 italic text-gray-600 dark:text-gray-400 my-5
+           bg-primary-50/30 dark:bg-primary-900/10 py-3 pr-4 rounded-r-lg;
+  }
+  .wiki-content table {
+    @apply border-collapse w-full my-5;
+  }
   .wiki-content th {
-    @apply bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 px-3 py-2 text-left text-sm font-semibold;
+    @apply bg-gray-50 dark:bg-gray-800/80 border border-gray-200 dark:border-gray-700
+           px-3 py-2.5 text-left text-sm font-semibold;
   }
   .wiki-content td {
     @apply border border-gray-200 dark:border-gray-700 px-3 py-2 text-sm;
   }
-  .wiki-content img { @apply max-w-full rounded-lg my-4; }
-  .wiki-content hr { @apply border-gray-200 dark:border-gray-700 my-6; }
-  .wiki-content a { @apply text-primary-600 dark:text-primary-400 hover:underline; }
-  .wiki-content .task-list-item { @apply list-none ml-0; }
-  .wiki-content .task-list-item input[type="checkbox"] { @apply mr-2; }
+  .wiki-content tr:hover td {
+    @apply bg-gray-50/50 dark:bg-gray-800/30;
+  }
+  .wiki-content img {
+    @apply max-w-full rounded-lg my-5 shadow-card;
+  }
+  .wiki-content hr {
+    @apply border-gray-200 dark:border-gray-700 my-8;
+  }
+  .wiki-content a {
+    @apply text-primary-600 dark:text-primary-400 hover:underline
+           decoration-primary-300 dark:decoration-primary-600 underline-offset-2;
+  }
+  .wiki-content .task-list-item {
+    @apply list-none ml-0;
+  }
+  .wiki-content .task-list-item input[type="checkbox"] {
+    @apply mr-2;
+  }
+}
+
+@layer components {
+  /* === Breadcrumbs === */
+  .breadcrumbs {
+    @apply text-sm text-gray-500 dark:text-gray-400 flex items-center flex-wrap gap-0.5;
+  }
+  .breadcrumbs a {
+    @apply text-gray-500 dark:text-gray-400 hover:text-primary-600 dark:hover:text-primary-400
+           no-underline hover:underline transition-colors;
+  }
+  .breadcrumbs .separator {
+    @apply mx-1 text-gray-300 dark:text-gray-600 select-none;
+  }
+  .breadcrumbs .current {
+    @apply text-gray-900 dark:text-gray-100 font-medium;
+  }
+
+  /* === Dropdown menus === */
+  .dropdown-menu {
+    @apply absolute right-0 mt-1.5 w-48 bg-white dark:bg-gray-800
+           border border-gray-200 dark:border-gray-700
+           rounded-lg shadow-lg z-50 py-1
+           ring-1 ring-black/5 dark:ring-white/5;
+  }
+  .dropdown-item {
+    @apply block w-full text-left px-4 py-2 text-sm
+           text-gray-700 dark:text-gray-200
+           hover:bg-gray-50 dark:hover:bg-gray-700
+           no-underline transition-colors;
+  }
+  .dropdown-item-danger {
+    @apply dropdown-item text-red-600 dark:text-red-400;
+  }
+
+  /* === Page metadata footer === */
+  .page-meta {
+    @apply mt-10 pt-5 border-t border-gray-200 dark:border-gray-700
+           text-sm text-gray-500 dark:text-gray-400;
+  }
 }
 
 @layer components {

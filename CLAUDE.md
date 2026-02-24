@@ -109,12 +109,19 @@ docker exec wiki-django python manage.py makemigrations [app_name]
 # Apply migrations
 docker exec wiki-django python manage.py migrate
 
-# Rebuild Tailwind CSS
-docker exec wiki-django python manage.py tailwind build
-
 # Django shell
 docker exec -it wiki-django python manage.py shell
 ```
+
+
+## Tailwind CSS
+
+Tailwind is rebuilt automatically by the `wiki-tailwind` Docker container (runs `npm run dev` in watch mode). NEVER run `npm run build` or `npm run dev` manually — Docker handles it. The compiled `tailwind_styles.css` is gitignored.
+
+
+## Static Files
+
+NEVER run `collectstatic` in dev. Django serves files directly from `static-global/` via `STATICFILES_DIRS`.
 
 
 ## Dependencies
