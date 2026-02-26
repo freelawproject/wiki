@@ -24,7 +24,7 @@ case "$1" in
         --bind 0.0.0.0:8000
     ;;
 *)
-    # Pass through to manage.py for cron jobs, e.g.:
+    # Pass through to manage.py, e.g.:
     #   docker exec wiki-django python manage.py sync_view_counts
     exec python manage.py "$@"
     ;;
