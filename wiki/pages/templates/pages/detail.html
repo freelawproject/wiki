@@ -3,6 +3,33 @@
 
 {% block title %}{{ page.title }} - FLP Wiki{% endblock %}
 
+{% if page_description %}
+{% block description %}{{ page_description }}{% endblock %}
+{% endif %}
+
+{% block robots %}
+{% if not is_public %}<meta name="robots" content="noindex, nofollow"/>{% endif %}
+{% endblock %}
+
+{% block canonical %}
+{% if canonical_url %}<link rel="canonical" href="{{ canonical_url }}"/>{% endif %}
+{% endblock %}
+
+{% block opengraph %}
+<meta property="og:title" content="{{ page.title }}"/>
+<meta property="og:description" content="{{ page_description|default:'Free Law Project internal wiki' }}"/>
+{% if canonical_url %}<meta property="og:url" content="{{ canonical_url }}"/>{% endif %}
+<meta property="og:type" content="article"/>
+<meta property="og:site_name" content="FLP Wiki"/>
+<meta name="twitter:card" content="summary"/>
+{% endblock %}
+
+{% block structured_data %}
+{% if breadcrumbs_json %}
+<script type="application/ld+json">{{ breadcrumbs_json|safe }}</script>
+{% endif %}
+{% endblock %}
+
 {% block head %}
 <link rel="stylesheet" href="{% static 'css/highlight.css' %}">
 {% endblock %}
