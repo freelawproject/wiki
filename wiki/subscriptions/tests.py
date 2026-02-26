@@ -114,6 +114,30 @@ class TestUnsubscribeLanding:
         assert r.status_code == 302
 
 
+class TestRevertNotifiesSubscribers:
+    """Integration: reverting a page sends notification emails."""
+
+    def test_revert_sends_notification(self, client, user, other_user, page):
+        # Create revision 2 by editing
+        client.force_login(user)
+        client.post(
+            f"/c/{page.slug}/edit/",
+            {
+                "title": page.title,
+                "content": "Edited content",
+                "visibility": "public",
+                "change_message": "An edit",
+            },
+        )
+        mail.outbox.clear()
+
+        # Subscribe another user, then revert to revision 1
+        PageSubscription.objects.create(user=other_user, page=page)
+        client.post(f"/c/{page.slug}/revert/1/")
+        assert len(mail.outbox) == 1
+        assert "Reverted to version 1" in mail.outbox[0].body
+
+
 class TestEditNotifiesSubscribers:
     """Integration: editing a page sends notification emails."""
 

@@ -24,6 +24,7 @@ from wiki.lib.permissions import (
     is_more_open_than,
 )
 from wiki.lib.ratelimiter import ratelimit_search, ratelimit_upload
+from wiki.subscriptions.tasks import notify_subscribers
 
 from .forms import PageForm
 from .models import (
@@ -920,6 +921,14 @@ def page_revert(request, path, rev_num):
             change_message=page.change_message,
             revision_number=new_rev_num,
             created_by=request.user,
+        )
+
+        notify_subscribers(
+            page.id,
+            request.user.id,
+            page.change_message,
+            prev_rev=new_rev_num - 1 if new_rev_num > 1 else None,
+            new_rev=new_rev_num,
         )
 
         messages.success(
