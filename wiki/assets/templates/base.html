@@ -8,8 +8,13 @@
   {% block meta %}
   <meta name="description" content="{% block description %}Free Law Project internal wiki{% endblock %}"/>
   {% endblock %}
+  {% block robots %}{% endblock %}
+  {% block canonical %}{% endblock %}
 
   <title>{% block title %}FLP Wiki{% endblock %}</title>
+
+  {% block opengraph %}{% endblock %}
+  {% block structured_data %}{% endblock %}
 
   <link rel="icon" href="{% static 'ico/favicon.ico' %}" sizes="32x32">
   <link rel="icon" href="{% static 'svg/favicon.svg' %}" type="image/svg+xml">
