@@ -229,7 +229,7 @@
 
   /* === Dropdown menus === */
   .dropdown-menu {
-    @apply absolute right-0 mt-1.5 w-48 bg-white dark:bg-gray-800
+    @apply absolute right-0 mt-1.5 bg-white dark:bg-gray-800
            border border-gray-200 dark:border-gray-700
            rounded-lg shadow-lg z-50 py-1
            ring-1 ring-black/5 dark:ring-white/5;

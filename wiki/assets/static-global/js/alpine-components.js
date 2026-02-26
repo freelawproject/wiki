@@ -14,6 +14,24 @@ document.addEventListener('alpine:init', () => {
     setTarget(value) { this.target = value },
   }))
 
+  // Copy page markdown to clipboard
+  Alpine.data('copyMarkdown', () => ({
+    label: 'Copy Page',
+    copy(event) {
+      event.stopPropagation()
+      var el = document.getElementById('page-markdown-source')
+      if (!el) return
+      var self = this
+      navigator.clipboard.writeText(el.value).then(function() {
+        self.label = 'Copied!'
+        setTimeout(function() {
+          self.label = 'Copy Page'
+          document.body.click()
+        }, 1000)
+      })
+    },
+  }))
+
   // Proposal review — editor and deny toggles
   Alpine.data('proposalReview', () => ({
     showEditor: false,

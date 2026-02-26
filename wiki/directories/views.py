@@ -886,8 +886,6 @@ def _directory_revert_inner(request, directory, rev_num):
     if request.method == "POST":
         directory.title = revision.title
         directory.description = revision.description
-        directory.visibility = revision.visibility
-        directory.editability = revision.editability
         directory.save()
         _create_revision(
             directory,

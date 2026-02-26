@@ -1132,15 +1132,17 @@ class TestDirectoryHistory:
             revision_number=1,
             created_by=user,
         )
-        # Edit the directory
+        # Edit the directory (change title, description, and permissions)
         sub_directory.title = "New Title"
+        sub_directory.visibility = "internal"
+        sub_directory.editability = "open"
         sub_directory.save()
         DirectoryRevision.objects.create(
             directory=sub_directory,
             title="New Title",
             description="New desc",
-            visibility="public",
-            editability="restricted",
+            visibility="internal",
+            editability="open",
             change_message="v2",
             revision_number=2,
             created_by=user,
@@ -1151,6 +1153,9 @@ class TestDirectoryHistory:
         sub_directory.refresh_from_db()
         assert sub_directory.title == "Old Title"
         assert sub_directory.description == "Old desc"
+        # Permissions should NOT be reverted
+        assert sub_directory.visibility == "internal"
+        assert sub_directory.editability == "open"
         # A new revision should be created for the revert
         assert sub_directory.revisions.count() == 3
 

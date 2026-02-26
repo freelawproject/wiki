@@ -644,8 +644,8 @@ From the history view you can:
 
 - **Compare revisions** — Select two revisions and click
   **Compare** to see a side-by-side diff of what changed
-- **Revert** — Restore the directory to a previous revision's
-  settings (title, description, visibility, editability)
+- **Revert** — Restore the directory's title and description
+  from a previous revision (permissions are not changed)
 
 ### Permissions
 
@@ -704,8 +704,8 @@ restore the page or directory to that point. Reverting creates a
 the full timeline is always preserved.
 
 For pages, reverting restores the title and content. For
-directories, it restores the title, description, visibility, and
-editability.
+directories, it restores the title and description (permissions
+are not changed).
 
 ### Edit locks
 
@@ -790,8 +790,8 @@ notifications whenever that page is updated.
 
 ### Email notifications
 
-When a page you're subscribed to is edited, you receive an email
-containing:
+When a page you're subscribed to is edited or reverted, you
+receive an email containing:
 
 - Who made the change
 - The change message they wrote

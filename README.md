@@ -446,7 +446,10 @@ Every edit creates a full-content `PageRevision` snapshot. Users can:
 
 - View revision history with author and change message
 - Compare any two revisions with a color-coded diff
-- Revert to any previous revision (creates a new revision)
+- Revert to any previous revision (creates a new revision, notifies subscribers)
+
+Directories also have versioned history (title and description). Reverting a
+directory does **not** change its visibility or editability settings.
 
 ### No Task Queue
 
@@ -497,11 +500,11 @@ Test files live alongside the code they test (`wiki/pages/tests.py`,
 
 | App | Tests | Covers |
 |---|---|---|
-| `pages` | 60 | CRUD, history, diff, revert, slugs, search, uploads, markdown, wiki links, view counts, help page seeding |
-| `users` | 23 | Login form, magic link flow, logout, settings, profile model |
-| `directories` | 19 | Root view, directory detail, edit, model methods, page creation in directories |
-| `lib` | 17 | Permission checks (system owner, view, edit, restricted, directory inheritance) |
-| `subscriptions` | 14 | Subscribe/unsubscribe toggle, notifications, email content, unsubscribe landing |
+| `pages` | 162 | CRUD, history, diff, revert, slugs, search, uploads, markdown, wiki links, view counts, help page seeding |
+| `users` | 43 | Login form, magic link flow, logout, settings, profile model |
+| `directories` | 100 | Root view, directory detail, edit, history, diff, revert, model methods, page creation in directories |
+| `lib` | 36 | Permission checks (system owner, view, edit, restricted, directory inheritance) |
+| `subscriptions` | 16 | Subscribe/unsubscribe toggle, notifications, revert notifications, email content, unsubscribe landing |
 
 
 ## Management Commands
