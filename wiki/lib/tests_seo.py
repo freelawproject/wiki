@@ -4,13 +4,11 @@ import json
 
 import pytest
 from django.test import RequestFactory
-from django.urls import reverse
 
 from wiki.directories.models import Directory
 from wiki.lib.middleware import SEOHeadersMiddleware
 from wiki.lib.seo import build_breadcrumbs_jsonld, extract_description
 from wiki.pages.models import Page
-
 
 # ── extract_description ──────────────────────────────────────────────
 
@@ -88,8 +86,7 @@ class TestBreadcrumbsJsonLd:
         assert result["itemListElement"][0]["position"] == 1
         assert result["itemListElement"][0]["name"] == "Home"
         assert (
-            result["itemListElement"][0]["item"]
-            == "https://wiki.free.law/c/"
+            result["itemListElement"][0]["item"] == "https://wiki.free.law/c/"
         )
         assert result["itemListElement"][1]["position"] == 2
 
@@ -99,8 +96,7 @@ class TestBreadcrumbsJsonLd:
             build_breadcrumbs_jsonld(crumbs, "https://wiki.free.law")
         )
         assert (
-            result["itemListElement"][0]["item"]
-            == "https://wiki.free.law/c/"
+            result["itemListElement"][0]["item"] == "https://wiki.free.law/c/"
         )
 
 
@@ -193,9 +189,9 @@ class TestSEOHeadersMiddleware:
         ]:
             request = self._make_request(prefix)
             response = middleware(request)
-            assert (
-                response["X-Robots-Tag"] == "noindex, nofollow"
-            ), f"Missing noindex for {prefix}"
+            assert response["X-Robots-Tag"] == "noindex, nofollow", (
+                f"Missing noindex for {prefix}"
+            )
 
 
 # ── Robots.txt ───────────────────────────────────────────────────────
@@ -283,10 +279,10 @@ class TestPageMetaTags:
         client.force_login(owner_user)
         response = client.get(page.get_absolute_url())
         content = response.content.decode()
-        assert 'og:title' in content
-        assert 'og:description' in content
-        assert 'og:type' in content
-        assert 'twitter:card' in content
+        assert "og:title" in content
+        assert "og:description" in content
+        assert "og:type" in content
+        assert "twitter:card" in content
 
     def test_public_page_has_canonical(self, client, page, owner_user):
         client.force_login(owner_user)
@@ -305,7 +301,7 @@ class TestPageMetaTags:
         client.force_login(user)
         response = client.get(private_page.get_absolute_url())
         content = response.content.decode()
-        assert 'noindex' in content
+        assert "noindex" in content
 
     def test_private_page_no_jsonld(self, client, private_page, user):
         client.force_login(user)
@@ -322,8 +318,8 @@ class TestDirectoryMetaTags:
         client.force_login(owner_user)
         response = client.get(root_directory.get_absolute_url())
         content = response.content.decode()
-        assert 'og:title' in content
-        assert 'og:type' in content
+        assert "og:title" in content
+        assert "og:type" in content
 
     def test_private_directory_has_noindex(
         self, client, private_directory, user
@@ -331,4 +327,4 @@ class TestDirectoryMetaTags:
         client.force_login(user)
         response = client.get(private_directory.get_absolute_url())
         content = response.content.decode()
-        assert 'noindex' in content
+        assert "noindex" in content

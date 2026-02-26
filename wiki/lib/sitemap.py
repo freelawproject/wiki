@@ -13,9 +13,9 @@ class PageSitemap(Sitemap):
     priority = 0.7
 
     def items(self):
-        return Page.objects.filter(
-            visibility=Page.Visibility.PUBLIC
-        ).order_by("pk")
+        return Page.objects.filter(visibility=Page.Visibility.PUBLIC).order_by(
+            "pk"
+        )
 
     def lastmod(self, obj):
         return obj.updated_at
