@@ -18,6 +18,7 @@ from wiki.lib.permissions import (
     is_editability_more_open_than_visibility,
 )
 from wiki.lib.ratelimiter import ratelimit_search
+from wiki.lib.seo import build_breadcrumbs_jsonld, extract_description
 
 from .models import Directory, DirectoryRevision
 
@@ -98,6 +99,23 @@ def root_view(request):
     if root.description:
         rendered_description = render_markdown(root.description)
 
+    # SEO
+    from django.conf import settings as django_settings
+
+    is_public = root.visibility == Directory.Visibility.PUBLIC
+    breadcrumbs = [("Home", reverse("root"))]
+    directory_description = extract_description(root.description)
+    breadcrumbs_json = ""
+    if is_public:
+        breadcrumbs_json = build_breadcrumbs_jsonld(
+            breadcrumbs, django_settings.BASE_URL
+        )
+    else:
+        request.seo_noindex = True
+
+    canonical_url = f"{django_settings.BASE_URL}{root.get_absolute_url()}"
+    request.seo_canonical = canonical_url
+
     return render(
         request,
         "directories/detail.html",
@@ -105,10 +123,14 @@ def root_view(request):
             "directory": root,
             "subdirectories": subdirectories,
             "pages": visible_pages,
-            "breadcrumbs": [("Home", reverse("root"))],
+            "breadcrumbs": breadcrumbs,
             "current_sort": sort,
             "rendered_description": rendered_description,
             "can_edit": can_edit_directory(request.user, root),
+            "is_public": is_public,
+            "directory_description": directory_description,
+            "breadcrumbs_json": breadcrumbs_json,
+            "canonical_url": canonical_url,
         },
     )
 
@@ -192,6 +214,23 @@ def directory_detail(request, path):
     if directory.description:
         rendered_description = render_markdown(directory.description)
 
+    # SEO
+    from django.conf import settings as django_settings
+
+    is_public = directory.visibility == Directory.Visibility.PUBLIC
+    breadcrumbs = directory.get_breadcrumbs()
+    directory_description = extract_description(directory.description)
+    breadcrumbs_json = ""
+    if is_public:
+        breadcrumbs_json = build_breadcrumbs_jsonld(
+            breadcrumbs, django_settings.BASE_URL
+        )
+    else:
+        request.seo_noindex = True
+
+    canonical_url = f"{django_settings.BASE_URL}{directory.get_absolute_url()}"
+    request.seo_canonical = canonical_url
+
     return render(
         request,
         "directories/detail.html",
@@ -199,10 +238,14 @@ def directory_detail(request, path):
             "directory": directory,
             "subdirectories": subdirectories,
             "pages": visible_pages,
-            "breadcrumbs": directory.get_breadcrumbs(),
+            "breadcrumbs": breadcrumbs,
             "rendered_description": rendered_description,
             "can_edit": can_edit_directory(request.user, directory),
             "current_sort": sort,
+            "is_public": is_public,
+            "directory_description": directory_description,
+            "breadcrumbs_json": breadcrumbs_json,
+            "canonical_url": canonical_url,
         },
     )
 

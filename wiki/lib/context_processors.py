@@ -6,4 +6,5 @@ def inject_settings(request):
     return {
         "DEBUG": settings.DEBUG,
         "DEVELOPMENT": settings.DEVELOPMENT,
+        "BASE_URL": settings.BASE_URL,
     }

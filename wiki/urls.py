@@ -1,12 +1,27 @@
 from django.conf import settings
 from django.contrib import admin
+from django.contrib.sitemaps.views import sitemap
 from django.urls import include, path
 from django.views.generic import RedirectView
 
+from wiki.lib.sitemap import DirectorySitemap, PageSitemap
+from wiki.lib.views import robots_txt
 from wiki.users.views import logout_view
+
+sitemaps = {
+    "pages": PageSitemap,
+    "directories": DirectorySitemap,
+}
 
 urlpatterns = [
     path("", RedirectView.as_view(url="/c/", permanent=False)),
+    path("robots.txt", robots_txt, name="robots_txt"),
+    path(
+        "sitemap.xml",
+        sitemap,
+        {"sitemaps": sitemaps},
+        name="django.contrib.sitemaps.views.sitemap",
+    ),
     path("u/login/", include("wiki.users.urls")),
     path("u/logout/", logout_view, name="logout"),
     path("u/settings/", include("wiki.users.urls_settings")),
