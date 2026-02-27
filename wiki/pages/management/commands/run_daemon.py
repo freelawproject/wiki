@@ -17,7 +17,9 @@ logger = logging.getLogger(__name__)
 
 
 class Command(BaseCommand):
-    help = "Run periodic tasks (view counts, search vectors, cleanup) in a loop."
+    help = (
+        "Run periodic tasks (view counts, search vectors, cleanup) in a loop."
+    )
 
     def handle(self, *args, **options):
         self._shutdown = False
