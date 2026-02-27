@@ -34,6 +34,26 @@ services:
     command: sh -c 'npm install && npm run dev'
     tty: true
 
+  # Daemon for periodic tasks (view counts, search vectors, cleanup)
+  wiki-daemon:
+    container_name: wiki-daemon
+    build:
+      context: "${WIKI_BASE_DIR:-../../}"
+      dockerfile: "./docker/django/Dockerfile"
+      args:
+        BUILD_ENV: dev
+    command: run_daemon
+    depends_on:
+      wiki-postgres:
+        condition: service_healthy
+    user: root
+    volumes:
+      - ${WIKI_BASE_DIR:-../../}:/opt/wiki
+    networks:
+      - wiki_net
+    env_file:
+      - ../../.env.dev
+
   # Django dev server
   wiki-django:
     container_name: wiki-django

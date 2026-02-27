@@ -72,7 +72,7 @@ jobs:
         working-directory: docker/wiki
         run: >
           docker compose -f docker-compose.yml
-          -f <(echo 'services: { wiki-django: { image: "wiki", entrypoint: ["sleep", "infinity"], command: "" } }')
+          -f <(echo 'services: { wiki-django: { image: "wiki", entrypoint: ["sleep", "infinity"], command: "" }, wiki-daemon: { image: "wiki", entrypoint: ["sleep", "infinity"], command: "" } }')
           up -d --no-build --pull=never
       - name: Wait for postgres to be healthy
         run: timeout 30 bash -c 'until docker exec wiki-postgres pg_isready; do sleep 1; done'

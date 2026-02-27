@@ -46,7 +46,7 @@ unrestricted access to all content.
 | CSS | Tailwind 3.x (built via npm) |
 | JS | Alpine.js, HTMX, EasyMDE (all vendored, no CDN) |
 | Templates | Django templates + django-cotton components |
-| Task queue | None — cron + management commands |
+| Task queue | None — daemon service + management commands |
 | File storage | Local filesystem (dev), S3 via django-storages (prod) |
 | Email | Console (dev), Amazon SES (prod) |
 | Containers | Docker Compose for development |
@@ -90,7 +90,7 @@ configuration.
 - Docker (or a Python 3.13 environment with PostgreSQL 16)
 - An AWS account with S3 and SES configured
 - A domain with DNS and HTTPS configured (via a reverse proxy like Nginx or Caddy)
-- A Linux host with cron
+- Docker Compose (or equivalent) to run the daemon service
 
 
 ### Step 1: Environment Variables
@@ -313,25 +313,34 @@ server {
 ```
 
 
-### Step 7: Cron Jobs
+### Step 7: Daemon Service
 
-The wiki uses management commands instead of a task queue. Add these to the
-host crontab (or use a sidecar container):
+The wiki runs periodic tasks via a daemon service (`run_daemon` management
+command) that loops and executes tasks on a configurable schedule. Start it
+alongside the web server:
 
-```cron
-# Sync page view tallies into Page.view_count every 5 minutes
-*/5 * * * * docker exec wiki-django python manage.py sync_view_counts
-
-# Update full-text search vectors every 10 minutes
-*/10 * * * * docker exec wiki-django python manage.py update_search_vectors
+```bash
+docker run -d \
+    --name wiki-daemon \
+    --env-file .env \
+    wiki-django run_daemon
 ```
 
-What each job does:
+The daemon runs three tasks:
 
-| Command | Purpose |
+| Task | Default interval | Purpose |
+|---|---|---|
+| `sync_view_counts` | 5 s | Aggregates `PageViewTally` rows into `Page.view_count` and deletes processed tallies. Avoids write contention on the Page table during reads. |
+| `update_search_vectors` | 30 s | Rebuilds PostgreSQL full-text search vectors for all pages, so search results stay current. |
+| `cleanup` | 6 hours | Runs miscellaneous cleanup tasks. |
+
+Override intervals with environment variables (values in seconds):
+
+| Variable | Default |
 |---|---|
-| `sync_view_counts` | Aggregates `PageViewTally` rows into `Page.view_count` and deletes processed tallies. Avoids write contention on the Page table during reads. |
-| `update_search_vectors` | Rebuilds PostgreSQL full-text search vectors for all pages, so search results stay current. |
+| `DAEMON_SYNC_VIEW_COUNTS_INTERVAL` | `5` |
+| `DAEMON_UPDATE_SEARCH_VECTORS_INTERVAL` | `30` |
+| `DAEMON_CLEANUP_INTERVAL` | `21600` |
 
 
 ### Step 8: Seed Help Pages (Optional)
@@ -453,9 +462,10 @@ directory does **not** change its visibility or editability settings.
 
 ### No Task Queue
 
-Background work (syncing page view counts, updating search vectors) runs via
-cron-triggered management commands instead of Celery or django-q2. See
-the [Cron Jobs](#step-7-cron-jobs) section for the schedule.
+Background work (syncing page view counts, updating search vectors, cleanup)
+runs via a daemon service (`run_daemon` management command) instead of Celery
+or django-q2. The daemon runs in its own container and loops on a configurable
+schedule. See the [Daemon Service](#step-7-daemon-service) section.
 
 ### No External CDNs
 
@@ -469,10 +479,9 @@ toggle — the wiki follows the user's OS/browser setting.
 
 ### Page View Counting
 
-Each page view creates a `PageViewTally` row. A periodic cron job
-(`sync_view_counts`) sums tallies into `Page.view_count` and deletes the
-processed rows. This avoids write contention on the Page table during
-high-traffic reads.
+Each page view creates a `PageViewTally` row. The daemon service periodically
+sums tallies into `Page.view_count` and deletes the processed rows. This
+avoids write contention on the Page table during high-traffic reads.
 
 
 ## Running Tests
@@ -510,13 +519,16 @@ Test files live alongside the code they test (`wiki/pages/tests.py`,
 ## Management Commands
 
 ```bash
+# Run the daemon (periodic tasks: view counts, search vectors, cleanup)
+docker exec wiki-django python manage.py run_daemon
+
 # Seed help pages in /help directory (idempotent)
 docker exec wiki-django python manage.py seed_help_pages
 
-# Sync page view tallies into Page.view_count
+# Sync page view tallies into Page.view_count (also run by daemon)
 docker exec wiki-django python manage.py sync_view_counts
 
-# Update full-text search vectors for all pages
+# Update full-text search vectors for all pages (also run by daemon)
 docker exec wiki-django python manage.py update_search_vectors
 
 # Run migrations
@@ -544,6 +556,7 @@ docker exec -it wiki-django python manage.py shell
 | `wiki-django` | Django dev server with auto-reload | `localhost:8001` |
 | `wiki-postgres` | PostgreSQL 16 | `localhost:5433` |
 | `wiki-tailwind` | Tailwind CSS watcher (rebuilds on file changes) | — |
+| `wiki-daemon` | Periodic tasks (view counts, search vectors, cleanup) | — |
 
 ### Pre-commit Hooks
 
@@ -588,7 +601,7 @@ Quick reference for going to production:
 - [ ] `collectstatic` run to upload static files to S3
 - [ ] `migrate` and `createcachetable` run against the production database
 - [ ] Reverse proxy configured with HTTPS
-- [ ] Cron jobs added for `sync_view_counts` and `update_search_vectors`
+- [ ] Daemon service running (`run_daemon` for view counts, search vectors, cleanup)
 - [ ] Sentry DSN configured (optional)
 - [ ] First user logged in to become system owner
 
