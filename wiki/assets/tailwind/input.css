@@ -209,6 +209,32 @@
   .wiki-content .task-list-item input[type="checkbox"] {
     @apply mr-2;
   }
+
+  /* === Code block wrapper (copy button + highlight.js) === */
+  .code-block-wrapper {
+    @apply relative my-3;
+  }
+  .code-block-wrapper pre code {
+    @apply pr-12;
+  }
+  .copy-code-btn {
+    @apply absolute top-2 right-2 p-1.5 rounded-md
+           text-gray-400 hover:text-gray-600 hover:bg-gray-200/60
+           dark:text-gray-500 dark:hover:text-gray-300 dark:hover:bg-gray-700/60
+           transition-colors;
+  }
+  .copy-code-btn .copy-icon {
+    @apply w-4 h-4 block;
+  }
+  .copy-code-btn .check-icon {
+    @apply w-4 h-4 hidden text-green-600 dark:text-green-400;
+  }
+  .copy-code-btn.copied .copy-icon {
+    @apply hidden;
+  }
+  .copy-code-btn.copied .check-icon {
+    @apply block;
+  }
 }
 
 @layer components {

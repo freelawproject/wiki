@@ -1,6 +1,11 @@
 {% extends "base.html" %}
+{% load static %}
 
 {% block title %}{{ directory.title|default:"Home" }} - FLP Wiki{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="{% static 'css/highlight.css' %}">
+{% endblock %}
 
 {% block content %}
 <div class="max-w-3xl">
@@ -139,4 +144,9 @@
   </div>
   {% endif %}
 </div>
+{% endblock %}
+
+{% block footer_scripts %}
+<script src="{% static 'js/highlight.min.js' %}"></script>
+<script src="{% static 'js/code-blocks.js' %}"></script>
 {% endblock %}

@@ -3,6 +3,10 @@
 
 {% block title %}{{ page.title }} - FLP Wiki{% endblock %}
 
+{% block head %}
+<link rel="stylesheet" href="{% static 'css/highlight.css' %}">
+{% endblock %}
+
 {% block content %}
 {# Breadcrumbs #}
 {% if breadcrumbs %}
@@ -136,4 +140,9 @@
   <script src="{% static 'js/toc-highlight.js' %}" defer></script>
   {% endif %}
 </div>
+{% endblock %}
+
+{% block footer_scripts %}
+<script src="{% static 'js/highlight.min.js' %}"></script>
+<script src="{% static 'js/code-blocks.js' %}"></script>
 {% endblock %}
