@@ -3,25 +3,29 @@
 
 {% block title %}{{ page.title }} - FLP Wiki{% endblock %}
 
+{% block head %}
+<link rel="stylesheet" href="{% static 'css/highlight.css' %}">
+{% endblock %}
+
 {% block content %}
 {# Breadcrumbs #}
 {% if breadcrumbs %}
-<nav class="breadcrumbs mb-5">
+<nav class="text-sm text-gray-500 dark:text-gray-400 mb-4">
   {% for title, url in breadcrumbs %}
     {% if not forloop.last %}
-      <a href="{{ url }}">{{ title }}</a>
-      <span class="separator">/</span>
+      <a href="{{ url }}" class="hover:underline">{{ title }}</a>
+      <span class="mx-1">/</span>
     {% else %}
-      <span class="current">{{ title }}</span>
+      <span class="text-gray-900 dark:text-gray-100 font-medium">{{ title }}</span>
     {% endif %}
   {% endfor %}
 </nav>
 {% endif %}
 
-<div class="flex gap-10">
+<div class="flex gap-8">
   {# Main content #}
   <article class="flex-1 min-w-0">
-    <div class="flex flex-col xl:flex-row xl:items-center justify-between gap-3 mb-8">
+    <div class="flex flex-col xl:flex-row xl:items-center justify-between gap-3 mb-6">
       <h1>{{ page.title }}</h1>
       <div class="flex items-center gap-2 flex-shrink-0">
         {% if can_edit %}
@@ -30,10 +34,10 @@
           <a href="{% url 'propose_changes' path=page.content_path %}" class="btn-outline text-sm">Propose Changes</a>
         {% endif %}
         <div class="relative" x-data="dropdown">
-          {% if pending_proposal_count %}<span class="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full z-10 ring-2 ring-white dark:ring-gray-900"></span>{% endif %}
+          {% if pending_proposal_count %}<span class="absolute -top-1 -right-1 w-2.5 h-2.5 bg-red-500 rounded-full z-10"></span>{% endif %}
           <button @click="toggle" @click.outside="close" class="btn-outline text-sm" type="button">
             Actions
-            <svg class="w-3.5 h-3.5 ml-0.5 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+            <svg class="w-4 h-4 ml-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
           </button>
           <div x-show="open" x-cloak @click="close" class="dropdown-menu">
             {% if user.is_authenticated %}
@@ -53,11 +57,13 @@
               {% endif %}
             {% endif %}
             <a href="{% url 'page_history' path=page.content_path %}" class="dropdown-item">History</a>
+            <button x-data="copyMarkdown" @click="copy" class="dropdown-item" x-text="label"></button>
           </div>
         </div>
       </div>
     </div>
 
+    <textarea id="page-markdown-source" class="hidden" aria-hidden="true">{{ page.content }}</textarea>
     <div class="wiki-content">
       {{ rendered_content|safe }}
     </div>
@@ -120,12 +126,12 @@
 
   {# TOC sidebar #}
   {% if toc %}
-  <aside class="hidden lg:block w-56 flex-shrink-0">
-    <nav id="toc-nav" class="sticky top-6 text-sm">
-      <h3 class="text-xs font-semibold uppercase tracking-widest text-gray-400 dark:text-gray-500 mb-3 font-sans">
+  <aside class="hidden lg:block w-64 flex-shrink-0">
+    <nav id="toc-nav" class="sticky top-4 text-sm">
+      <h3 class="text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500 mb-3">
         On this page
       </h3>
-      <div class="space-y-0.5 text-gray-600 dark:text-gray-400">
+      <div class="space-y-1 text-gray-600 dark:text-gray-400">
         {{ toc|safe }}
       </div>
     </nav>
@@ -134,4 +140,9 @@
   <script src="{% static 'js/toc-highlight.js' %}" defer></script>
   {% endif %}
 </div>
+{% endblock %}
+
+{% block footer_scripts %}
+<script src="{% static 'js/highlight.min.js' %}"></script>
+<script src="{% static 'js/code-blocks.js' %}"></script>
 {% endblock %}
