@@ -24,6 +24,7 @@ from wiki.lib.permissions import (
     is_more_open_than,
 )
 from wiki.lib.ratelimiter import ratelimit_search, ratelimit_upload
+from wiki.lib.seo import build_breadcrumbs_jsonld, extract_description
 from wiki.subscriptions.tasks import notify_subscribers
 
 from .forms import PageForm
@@ -280,6 +281,22 @@ def _render_page_detail(request, page):
             status=ChangeProposal.Status.PENDING
         ).count()
 
+    # SEO
+    from django.conf import settings as django_settings
+
+    is_public = page.visibility == Page.Visibility.PUBLIC
+    page_description = extract_description(page.content)
+    breadcrumbs_json = ""
+    if is_public:
+        breadcrumbs_json = build_breadcrumbs_jsonld(
+            breadcrumbs, django_settings.BASE_URL
+        )
+    else:
+        request.seo_noindex = True
+
+    canonical_url = f"{django_settings.BASE_URL}{page.get_absolute_url()}"
+    request.seo_canonical = canonical_url
+
     return render(
         request,
         "pages/detail.html",
@@ -293,6 +310,10 @@ def _render_page_detail(request, page):
             "is_subscribed": is_subscribed,
             "subscribers": subscribers,
             "people": people,
+            "is_public": is_public,
+            "page_description": page_description,
+            "breadcrumbs_json": breadcrumbs_json,
+            "canonical_url": canonical_url,
         },
     )
 
