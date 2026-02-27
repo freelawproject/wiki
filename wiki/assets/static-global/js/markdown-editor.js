@@ -264,6 +264,21 @@ var initMarkdownEditor = (function() {
       });
     }
 
+    // ── Warn before leaving with unsaved changes ────────────
+    var initialContent = editor.value();
+    window.addEventListener('beforeunload', function(e) {
+      if (editor.value() !== initialContent) {
+        e.preventDefault();
+      }
+    });
+    // Disable the warning when the form is actually submitted
+    var form = document.getElementById('markdown-editor').closest('form');
+    if (form) {
+      form.addEventListener('submit', function() {
+        initialContent = editor.value();
+      });
+    }
+
     return editor;
   };
 })();
