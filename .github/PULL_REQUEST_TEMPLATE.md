@@ -19,8 +19,8 @@ This PR...
 - [ ] `skip-deploy` (skips everything below)
     <!-- Check here if the web tier can be skipped -->
     - [ ] `skip-web-deploy`
-    <!-- Check here if deployment to cron jobs can be skipped -->
-    - [ ] `skip-cronjob-deploy`
+    <!-- Check here if the daemon can be skipped -->
+    - [ ] `skip-daemon-deploy`
 
 <!-- **If deployment is required:** -->
 <!-- What extra steps are needed to deploy this beyond the standard deploy? -->
