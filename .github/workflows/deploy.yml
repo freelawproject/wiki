@@ -144,10 +144,10 @@ jobs:
       - name: Watch wiki-web rollout status
         run: kubectl rollout status -n ${{ env.EKS_NAMESPACE }} deployment/wiki-web
 
-  deploy-cronjobs:
+  deploy-daemon:
     needs: [get-pr-labels, setup-deploy]
     runs-on: ubuntu-latest
-    if: ${{ !contains(needs.get-pr-labels.outputs.labels, 'skip-cronjob-deploy') }}
+    if: ${{ !contains(needs.get-pr-labels.outputs.labels, 'skip-daemon-deploy') }}
     steps:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v5
@@ -158,22 +158,20 @@ jobs:
       - name: Create Kubeconfig with AWS CLI
         run: aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.EKS_CLUSTER_NAME }}
 
-      - name: Update cronjobs
-        run: |
-          CRONJOB_NAMES=$(kubectl get cronjobs -n ${{ env.EKS_NAMESPACE }} -o jsonpath='{.items.*.metadata.name}' -l image_type=web-prod);
-          for name in $CRONJOB_NAMES; do
-             kubectl set image -n ${{ env.EKS_NAMESPACE }} CronJob/$name job=freelawproject/wiki:${{ needs.setup-deploy.outputs.sha_short }}-prod;
-          done;
+      - name: Rollout wiki-daemon
+        run: kubectl set image -n ${{ env.EKS_NAMESPACE }} deployment/wiki-daemon daemon=freelawproject/wiki:${{ needs.setup-deploy.outputs.sha_short }}-prod
+      - name: Watch wiki-daemon rollout status
+        run: kubectl rollout status -n ${{ env.EKS_NAMESPACE }} deployment/wiki-daemon
 
   complete-deploy:
     needs:
       [
         deploy-web,
-        deploy-cronjobs,
+        deploy-daemon,
       ]
     runs-on: ubuntu-latest
     concurrency: production
     if: always()
     steps:
       - name: Deployment Complete
-        run: echo "All deployments and cronjob updates have finished."
+        run: echo "All deployments have finished."
