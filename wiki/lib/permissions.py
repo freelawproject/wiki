@@ -149,6 +149,76 @@ def can_view_page(user, page):
     return False
 
 
+def _viewable_directory_ids(user):
+    """Return the set of directory IDs the user can view.
+
+    Loads all directories (small table) and checks each via
+    can_view_directory(). Called once per search request.
+    """
+    from wiki.directories.models import Directory
+
+    return {
+        d.id for d in Directory.objects.all() if can_view_directory(user, d)
+    }
+
+
+def viewable_pages_q(user):
+    """Return a Q filter for pages the user can view.
+
+    Translates the can_view_page() logic into SQL-level filtering
+    so that LIMIT/OFFSET apply to already-filtered results.
+    """
+    from wiki.pages.models import Page
+
+    if is_system_owner(user):
+        return Q()
+
+    dir_ids = _viewable_directory_ids(user)
+    dir_gate = Q(directory__isnull=True) | Q(directory_id__in=dir_ids)
+
+    if not user.is_authenticated:
+        return Q(visibility=Page.Visibility.PUBLIC) & dir_gate
+
+    # Authenticated user
+    group_ids = _user_group_ids(user)
+
+    # Public or internal pages in viewable directories
+    public_internal = (
+        Q(visibility__in=[Page.Visibility.PUBLIC, Page.Visibility.INTERNAL])
+        & dir_gate
+    )
+
+    # Private pages the user owns (in viewable dirs)
+    private_owned = (
+        Q(visibility=Page.Visibility.PRIVATE, owner=user) & dir_gate
+    )
+
+    # Private pages with explicit page-level permission (user or groups)
+    perm_q = Q(permissions__user=user)
+    if group_ids:
+        perm_q = perm_q | Q(permissions__group_id__in=group_ids)
+    private_permitted = (
+        Q(visibility=Page.Visibility.PRIVATE) & perm_q & dir_gate
+    )
+
+    # Private pages with directory-level permission (inherited)
+    dir_perm_q = Q(directory__permissions__user=user)
+    if group_ids:
+        dir_perm_q = dir_perm_q | Q(
+            directory__permissions__group_id__in=group_ids
+        )
+    private_dir_permitted = (
+        Q(visibility=Page.Visibility.PRIVATE) & dir_perm_q & dir_gate
+    )
+
+    return (
+        public_internal
+        | private_owned
+        | private_permitted
+        | private_dir_permitted
+    )
+
+
 def can_edit_page(user, page):
     """Check if user can edit a page."""
     if not user.is_authenticated:
