@@ -6,20 +6,7 @@ from django.core.signing import Signer
 from django.urls import reverse
 
 from wiki.lib.permissions import can_view_page
-
-
-def _display_name(user):
-    """Return display name for a user, never showing a full email."""
-    if hasattr(user, "profile"):
-        try:
-            name = user.profile.display_name
-            if name:
-                return name
-        except Exception:
-            pass
-    if user.email and "@" in user.email:
-        return user.email.split("@")[0]
-    return user.username.split("@")[0]
+from wiki.lib.users import display_name
 
 
 def notify_subscribers(
@@ -70,7 +57,7 @@ def notify_subscribers(
             diff_line = f"Diff: {diff_url}\n\n"
 
         body = (
-            f"{_display_name(editor)} "
+            f"{display_name(editor)} "
             f'updated "{page.title}".\n\n'
             f"Change: {change_message or 'No description'}\n\n"
             f"View: {page_url}\n\n"
@@ -162,11 +149,11 @@ def process_mentions(
 
         send_mail(
             subject=(
-                f"[FLP Wiki] {_display_name(editor)} "
+                f"[FLP Wiki] {display_name(editor)} "
                 f'mentioned you in "{page.title}"'
             ),
             message=(
-                f"{_display_name(editor)} mentioned you in "
+                f"{display_name(editor)} mentioned you in "
                 f'"{page.title}".\n'
                 f"{snippet_text}\n"
                 f"View: {page_url}"
