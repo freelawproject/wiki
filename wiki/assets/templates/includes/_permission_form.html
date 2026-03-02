@@ -1,0 +1,32 @@
+  <div class="card" x-data="permissionForm">
+    <h2 class="text-lg font-semibold font-sans mb-4">Add Permission</h2>
+    <form method="post" class="space-y-3">
+      {% csrf_token %}
+      <div class="flex gap-4 text-sm">
+        <label class="flex items-center gap-1.5 cursor-pointer">
+          <input type="radio" name="target_type" value="user" :checked="isUser" @change="setTarget('user')" class="accent-primary-600"> User
+        </label>
+        <label class="flex items-center gap-1.5 cursor-pointer">
+          <input type="radio" name="target_type" value="group" :checked="isGroup" @change="setTarget('group')" class="accent-primary-600"> Group
+        </label>
+      </div>
+      <div x-show="isUser" class="relative">
+        <label for="id_username" class="block text-sm font-medium mb-1.5">Username</label>
+        {{ form.username }}
+        <div id="username-dropdown"
+             class="hidden absolute z-50 left-0 right-0 mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+        </div>
+      </div>
+      <div x-show="isGroup" x-cloak>
+        <label for="id_group" class="block text-sm font-medium mb-1.5">Group</label>
+        {{ form.group }}
+      </div>
+      <div class="flex items-end gap-3">
+        <div>
+          <label for="id_permission_type" class="block text-sm font-medium mb-1.5">Access Level</label>
+          {{ form.permission_type }}
+        </div>
+        <button type="submit" class="btn-primary whitespace-nowrap">Grant Access</button>
+      </div>
+    </form>
+  </div>

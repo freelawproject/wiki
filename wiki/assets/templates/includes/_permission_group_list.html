@@ -1,0 +1,32 @@
+{% if group_permissions %}
+<div class="mb-6">
+  <h2 class="text-lg font-semibold font-sans mb-3">Group Permissions</h2>
+  <div class="space-y-2">
+    {% for perm in group_permissions %}
+    <div class="card flex items-center justify-between py-3.5 px-5">
+      <div class="flex items-center gap-3">
+        <div class="w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center text-sm font-medium text-gray-600 dark:text-gray-300">
+          {{ perm.group.name|first }}
+        </div>
+        <div>
+          <span class="font-medium">{{ perm.group.name }}</span>
+          <span class="ml-2
+            {% if perm.permission_type == 'owner' %}badge-purple
+            {% elif perm.permission_type == 'edit' %}badge-blue
+            {% else %}badge-gray{% endif %}">
+            {% if perm.permission_type == 'owner' %}Admin{% else %}{{ perm.get_permission_type_display }}{% endif %}
+          </span>
+        </div>
+      </div>
+      <form method="post">
+        {% csrf_token %}
+        <button type="submit" name="remove" value="{{ perm.pk }}"
+                class="text-sm text-red-600 dark:text-red-400 hover:underline">
+          Remove
+        </button>
+      </form>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
