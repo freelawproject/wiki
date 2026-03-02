@@ -1,51 +1,248 @@
 {% extends "base.html" %}
+{% load humanize search_tags %}
 
 {% block title %}{% if query %}Search: {{ query }}{% else %}Search{% endif %} - FLP Wiki{% endblock %}
 
-{% block content %}
-<div class="max-w-3xl">
-  <h1 class="mb-6">Search</h1>
+{% block header %}<c-header is_search_page search_query="{{ query }}" search_sort="{{ current_sort }}" />{% endblock %}
 
-  <form method="get" class="mb-8">
-    <div class="flex gap-2">
-      <div class="flex-1 relative">
-        <svg xmlns="http://www.w3.org/2000/svg" class="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400 dark:text-gray-500 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-        </svg>
-        <input
-          type="search"
-          name="q"
-          value="{{ query }}"
-          placeholder="Search pages..."
-          class="input-text w-full pl-10 py-2.5"
-          autocomplete="off"
-          autofocus
-        >
+{% block content %}
+<div class="max-w-5xl">
+
+  {# ── Search tips ─────────────────────────────── #}
+  <div x-data="searchTips" class="mb-4">
+    <button @click="toggle" class="inline-flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 hover:text-primary-600 dark:hover:text-primary-400 transition-colors" x-text="buttonLabel">
+      Search tips
+    </button>
+    <div x-show="open" x-cloak class="mt-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 overflow-hidden">
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-1 p-4 text-sm">
+        <div class="flex items-baseline gap-2 py-1">
+          <code class="text-primary-600 dark:text-primary-400 shrink-0">"exact phrase"</code>
+          <span class="text-gray-500 dark:text-gray-400">Match exact phrase</span>
+        </div>
+        <div class="flex items-baseline gap-2 py-1">
+          <code class="text-primary-600 dark:text-primary-400 shrink-0">title:word</code>
+          <span class="text-gray-500 dark:text-gray-400">Search titles only</span>
+        </div>
+        <div class="flex items-baseline gap-2 py-1">
+          <code class="text-primary-600 dark:text-primary-400 shrink-0">content:word</code>
+          <span class="text-gray-500 dark:text-gray-400">Search content only</span>
+        </div>
+        <div class="flex items-baseline gap-2 py-1">
+          <code class="text-primary-600 dark:text-primary-400 shrink-0">dir:path</code>
+          <span class="text-gray-500 dark:text-gray-400">Filter by directory</span>
+        </div>
+        <div class="flex items-baseline gap-2 py-1">
+          <code class="text-primary-600 dark:text-primary-400 shrink-0">owner:name</code>
+          <span class="text-gray-500 dark:text-gray-400">Filter by owner</span>
+        </div>
+        <div class="flex items-baseline gap-2 py-1">
+          <code class="text-primary-600 dark:text-primary-400 shrink-0">is:public</code>
+          <span class="text-gray-500 dark:text-gray-400">Filter by visibility</span>
+        </div>
+        <div class="flex items-baseline gap-2 py-1">
+          <code class="text-primary-600 dark:text-primary-400 shrink-0">-word</code>
+          <span class="text-gray-500 dark:text-gray-400">Exclude term</span>
+        </div>
+        <div class="flex items-baseline gap-2 py-1">
+          <code class="text-primary-600 dark:text-primary-400 shrink-0">before:2026-01-01</code>
+          <span class="text-gray-500 dark:text-gray-400">Updated before date</span>
+        </div>
+        <div class="flex items-baseline gap-2 py-1">
+          <code class="text-primary-600 dark:text-primary-400 shrink-0">after:2025-06-01</code>
+          <span class="text-gray-500 dark:text-gray-400">Updated after date</span>
+        </div>
       </div>
-      <button type="submit" class="btn-primary px-6">Search</button>
     </div>
-  </form>
+  </div>
 
   {% if query %}
-  <div class="space-y-3">
-    {% for page in results %}
-    <a href="{{ page.get_absolute_url }}" class="card block py-4 px-5 hover:shadow-card-hover hover:border-primary-300 dark:hover:border-primary-600 transition-all no-underline">
-      <div class="font-medium text-gray-900 dark:text-gray-100">
-        {{ page.title }}
+    {# ── Results bar ─────────────────────────────── #}
+    <div class="flex items-center justify-between mb-4 pb-4 border-b border-gray-200 dark:border-gray-700">
+      <div class="flex items-center gap-3 min-w-0">
+        {% if total_count %}
+        <p class="text-sm font-medium text-gray-700 dark:text-gray-300">
+          {{ total_count }} result{{ total_count|pluralize }}
+        </p>
+        {% endif %}
+
+        {# ── Active filter chips ── #}
+        {% if active_filters %}
+        <div class="flex flex-wrap items-center gap-1.5">
+          {% for filter in active_filters %}
+          <a href="?q={{ query|urlencode }}&sort={{ current_sort }}{% for f in active_filters %}{% if f.type != filter.type %}&{{ f.type }}={{ f.value|urlencode }}{% endif %}{% endfor %}"
+             class="inline-flex items-center gap-1 pl-2.5 pr-1.5 py-0.5 rounded-full text-xs font-medium bg-primary-50 dark:bg-primary-900 text-primary-700 dark:text-primary-300 no-underline hover:bg-primary-100 dark:hover:bg-primary-800 transition-colors border border-primary-200 dark:border-primary-800">
+            {{ filter.label }}
+            <svg class="w-3 h-3 opacity-60" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+          </a>
+          {% endfor %}
+        </div>
+        {% endif %}
       </div>
-      <p class="text-sm text-gray-400 dark:text-gray-500 mt-1">
-        {{ page.get_absolute_url }}
-      </p>
-    </a>
-    {% empty %}
-    <div class="text-center py-12">
-      <svg class="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1">
-        <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-      </svg>
-      <p class="text-gray-500 dark:text-gray-400">No results found for &ldquo;{{ query }}&rdquo;</p>
+
+      {% if total_count %}
+      <div x-data="searchSort" class="shrink-0 ml-4">
+        <select @change="change" class="input-text text-xs py-1.5 px-2 pr-7">
+          {% for value, label in sort_options %}
+          <option value="{{ value }}" {% if value == current_sort %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      {% endif %}
     </div>
-    {% endfor %}
-  </div>
+
+    {# ── Two-column layout ───────────────────────── #}
+    <div class="flex gap-10">
+
+      {# ── Sidebar ── #}
+      {% if total_count %}
+      <aside class="hidden lg:block w-48 shrink-0">
+        <nav class="sticky top-6 space-y-5">
+
+          {# Visibility #}
+          {% if facets.visibility %}
+          <div>
+            <h3 class="text-[11px] font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500 mb-1.5">
+              Visibility
+            </h3>
+            <ul class="space-y-0.5">
+              {% for facet in facets.visibility %}
+              <li>
+                <a href="?q={{ query|urlencode }}&sort={{ current_sort }}&visibility={{ facet.visibility|urlencode }}"
+                   class="group flex items-center justify-between py-1 text-sm no-underline text-gray-600 dark:text-gray-400 hover:text-primary-600 dark:hover:text-primary-400 transition-colors">
+                  <span>{{ facet.visibility|title }}</span>
+                  <span class="text-[11px] tabular-nums text-gray-400 dark:text-gray-600 group-hover:text-primary-400">{{ facet.count }}</span>
+                </a>
+              </li>
+              {% endfor %}
+            </ul>
+          </div>
+          {% endif %}
+
+          {# Last edited #}
+          <div x-data="searchDates">
+            <h3 class="text-[11px] font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500 mb-1.5">
+              Last edited
+            </h3>
+            <ul class="space-y-0.5">
+              <li>
+                <button @click="applyPreset" data-days="7"
+                        class="py-1 text-sm text-gray-600 dark:text-gray-400 hover:text-primary-600 dark:hover:text-primary-400 transition-colors">
+                  Last 7 days
+                </button>
+              </li>
+              <li>
+                <button @click="applyPreset" data-days="30"
+                        class="py-1 text-sm text-gray-600 dark:text-gray-400 hover:text-primary-600 dark:hover:text-primary-400 transition-colors">
+                  Last 30 days
+                </button>
+              </li>
+              <li>
+                <button @click="applyPreset" data-days="90"
+                        class="py-1 text-sm text-gray-600 dark:text-gray-400 hover:text-primary-600 dark:hover:text-primary-400 transition-colors">
+                  Last 3 months
+                </button>
+              </li>
+              <li>
+                <button @click="applyPreset" data-days="365"
+                        class="py-1 text-sm text-gray-600 dark:text-gray-400 hover:text-primary-600 dark:hover:text-primary-400 transition-colors">
+                  Last year
+                </button>
+              </li>
+            </ul>
+          </div>
+
+          {# Directories #}
+          {% if facets.directories %}
+          <div>
+            <h3 class="text-[11px] font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500 mb-1.5">
+              Directories
+            </h3>
+            <ul class="space-y-0.5">
+              {% for facet in facets.directories %}
+              <li>
+                <a href="?q={{ query|urlencode }}&sort={{ current_sort }}&dir={{ facet.directory__path|urlencode }}"
+                   class="group flex items-center justify-between py-1 text-sm no-underline text-gray-600 dark:text-gray-400 hover:text-primary-600 dark:hover:text-primary-400 transition-colors">
+                  <span class="truncate">{{ facet.directory__title }}</span>
+                  <span class="text-[11px] tabular-nums text-gray-400 dark:text-gray-600 group-hover:text-primary-400 ml-2">{{ facet.count }}</span>
+                </a>
+              </li>
+              {% endfor %}
+            </ul>
+          </div>
+          {% endif %}
+
+        </nav>
+      </aside>
+      {% endif %}
+
+      {# ── Results ── #}
+      <div class="flex-1 min-w-0">
+        <div class="space-y-2">
+          {% for page in results %}
+          <a href="{{ page.get_absolute_url }}" class="block rounded-lg px-4 py-3.5 -mx-4 no-underline hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors group">
+            <div class="flex items-center gap-2 mb-0.5">
+              <h3 class="text-base font-medium text-gray-900 dark:text-gray-100 group-hover:text-primary-700 dark:group-hover:text-primary-400 transition-colors">
+                {{ page.title }}
+              </h3>
+              {% if page.visibility == "public" %}
+              <span class="inline-flex items-center gap-1 text-green-600 dark:text-green-400" title="Public">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M12 21a9.004 9.004 0 0 0 8.716-6.747M12 21a9.004 9.004 0 0 1-8.716-6.747M12 21c2.485 0 4.5-4.03 4.5-9S14.485 3 12 3m0 18c-2.485 0-4.5-4.03-4.5-9S9.515 3 12 3m0 0a8.997 8.997 0 0 1 7.843 4.582M12 3a8.997 8.997 0 0 0-7.843 4.582m15.686 0A11.953 11.953 0 0 1 12 10.5c-2.998 0-5.74-1.1-7.843-2.918m15.686 0A8.959 8.959 0 0 1 21 12c0 .778-.099 1.533-.284 2.253m0 0A17.919 17.919 0 0 1 12 16.5a17.92 17.92 0 0 1-8.716-2.247m0 0A9.015 9.015 0 0 1 3 12c0-1.605.42-3.113 1.157-4.418" />
+                </svg>
+                <span class="text-xs">Public</span>
+              </span>
+              {% elif page.visibility == "internal" %}
+              <span class="inline-flex items-center gap-1 text-yellow-600 dark:text-yellow-400" title="FLP Staff">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 21h16.5M4.5 3h15M5.25 3v18m13.5-18v18M9 6.75h1.5m-1.5 3h1.5m-1.5 3h1.5m3-6H15m-1.5 3H15m-1.5 3H15M9 21v-3.375c0-.621.504-1.125 1.125-1.125h3.75c.621 0 1.125.504 1.125 1.125V21" />
+                </svg>
+                <span class="text-xs">FLP Staff</span>
+              </span>
+              {% elif page.visibility == "private" %}
+              <span class="inline-flex items-center gap-1 text-gray-400 dark:text-gray-500" title="Private">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z" />
+                </svg>
+                <span class="text-xs">Private</span>
+              </span>
+              {% endif %}
+            </div>
+            {% if page.headline %}
+            <p class="text-sm text-gray-500 dark:text-gray-400 line-clamp-2 leading-relaxed">
+              {{ page.headline|strip_markdown }}
+            </p>
+            {% endif %}
+            <div class="flex items-center gap-2 mt-1.5 text-xs text-gray-400 dark:text-gray-500">
+              {% if page.directory %}
+              <span class="inline-flex items-center gap-1">
+                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 12.75V12A2.25 2.25 0 0 1 4.5 9.75h15A2.25 2.25 0 0 1 21.75 12v.75m-8.69-6.44-2.12-2.12a1.5 1.5 0 0 0-1.061-.44H4.5A2.25 2.25 0 0 0 2.25 6v12a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18V9a2.25 2.25 0 0 0-2.25-2.25h-5.379a1.5 1.5 0 0 1-1.06-.44Z" />
+                </svg>
+                {{ page.directory.path }}
+              </span>
+              <span class="text-gray-300 dark:text-gray-600">/</span>
+              {% endif %}
+              <span>Updated {{ page.updated_at|timesince }} ago</span>
+            </div>
+          </a>
+          {% empty %}
+          <div class="text-center py-16">
+            <svg class="w-10 h-10 text-gray-300 dark:text-gray-600 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+            <p class="text-sm text-gray-500 dark:text-gray-400">No results found for &ldquo;{{ query }}&rdquo;</p>
+            <p class="text-xs text-gray-400 dark:text-gray-500 mt-1">Try a different search term or remove some filters</p>
+          </div>
+          {% endfor %}
+        </div>
+
+        {% if page_obj %}
+        {% include "pages/_pagination.html" %}
+        {% endif %}
+      </div>
+    </div>
   {% endif %}
 </div>
 {% endblock %}
