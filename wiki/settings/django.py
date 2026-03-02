@@ -179,6 +179,11 @@ MESSAGE_TAGS = {
     message_constants.ERROR: "danger",
 }
 
+##########
+# Search #
+##########
+SEARCH_RESULTS_PER_PAGE = 20
+
 if TESTING:
     CACHES = {
         "default": {
