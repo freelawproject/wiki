@@ -161,6 +161,19 @@ class Page(models.Model):
             return f"/c/{self.directory.path}/{self.slug}"
         return f"/c/{self.slug}"
 
+    def create_revision(self, user, change_message=None):
+        """Create a new revision snapshot of this page."""
+        last = self.revisions.order_by("-revision_number").first()
+        rev_num = (last.revision_number + 1) if last else 1
+        return PageRevision.objects.create(
+            page=self,
+            title=self.title,
+            content=self.content,
+            change_message=change_message or self.change_message,
+            revision_number=rev_num,
+            created_by=user,
+        )
+
 
 class PageRevision(models.Model):
     """Full snapshot of a page at a point in time."""
