@@ -1964,3 +1964,255 @@ class TestCSPHeaders:
         r = client.get(f"/c/{page.slug}/")
         csp = r["Content-Security-Policy"]
         assert "'unsafe-eval'" not in csp
+
+
+# ── Search Permission Filtering ──────────────────────────
+
+
+class TestSearchPermissionFiltering:
+    def test_anon_sees_only_public_pages(self, client, user, db):
+        """Anonymous users should only see public pages."""
+        Page.objects.create(
+            title="Anon Public Page",
+            content="anonvisibility content",
+            owner=user,
+            created_by=user,
+            updated_by=user,
+            visibility=Page.Visibility.PUBLIC,
+        )
+        Page.objects.create(
+            title="Anon Private Page",
+            content="anonvisibility content",
+            owner=user,
+            created_by=user,
+            updated_by=user,
+            visibility=Page.Visibility.PRIVATE,
+        )
+        r = client.get("/search/?q=anonvisibility")
+        content = r.content.decode()
+        assert "Anon Public Page" in content
+        assert "Anon Private Page" not in content
+
+    def test_authenticated_sees_public_and_internal(self, client, user):
+        """Authenticated users see public and internal pages."""
+        pub = Page.objects.create(
+            title="Public Search Test",
+            content="searchterm alpha",
+            owner=user,
+            created_by=user,
+            updated_by=user,
+            visibility=Page.Visibility.PUBLIC,
+        )
+        internal = Page.objects.create(
+            title="Internal Search Test",
+            content="searchterm alpha",
+            owner=user,
+            created_by=user,
+            updated_by=user,
+            visibility=Page.Visibility.INTERNAL,
+        )
+        client.force_login(user)
+        r = client.get("/search/?q=searchterm")
+        content = r.content.decode()
+        assert pub.title in content
+        assert internal.title in content
+
+    def test_private_hidden_from_non_owner(
+        self, client, other_user, private_page
+    ):
+        """Private pages should not be visible to non-owners."""
+        client.force_login(other_user)
+        r = client.get("/search/?q=secret")
+        assert private_page.title not in r.content.decode()
+
+    def test_private_visible_to_owner(self, client, user, private_page):
+        """Private pages should be visible to the owner."""
+        client.force_login(user)
+        r = client.get("/search/?q=secret")
+        assert private_page.title in r.content.decode()
+
+    def test_page_in_private_dir_hidden(
+        self, client, other_user, private_directory, user
+    ):
+        """Pages in private directories should be hidden from non-owners."""
+        Page.objects.create(
+            title="Hidden Dir Page",
+            content="searchterm hidden",
+            directory=private_directory,
+            owner=user,
+            created_by=user,
+            updated_by=user,
+            visibility=Page.Visibility.PUBLIC,
+        )
+        client.force_login(other_user)
+        r = client.get("/search/?q=searchterm")
+        assert "Hidden Dir Page" not in r.content.decode()
+
+    def test_system_owner_sees_everything(
+        self, client, owner_user, private_page
+    ):
+        """System owner should see all pages including private."""
+        client.force_login(owner_user)
+        r = client.get("/search/?q=secret")
+        assert private_page.title in r.content.decode()
+
+    def test_pagination_returns_correct_count(self, client, user):
+        """Regression: all matching public pages should be findable
+        across paginated results (previously lost after position 25)."""
+        for i in range(30):
+            Page.objects.create(
+                title=f"Bulk Page {i}",
+                content="bulksearchterm content",
+                owner=user,
+                created_by=user,
+                updated_by=user,
+                visibility=Page.Visibility.PUBLIC,
+            )
+        client.force_login(user)
+        r = client.get("/search/?q=bulksearchterm")
+        assert "30 results" in r.content.decode()
+
+
+# ── Search View ──────────────────────────────────────────
+
+
+class TestSearchView:
+    def test_empty_query_renders_form(self, client, user):
+        """Empty query should render the search form without results."""
+        client.force_login(user)
+        r = client.get("/search/")
+        assert r.status_code == 200
+        assert b"Search" in r.content
+
+    def test_basic_search_returns_results(self, client, user, page):
+        """Basic text query should return matching pages."""
+        client.force_login(user)
+        r = client.get("/search/?q=Welcome")
+        assert r.status_code == 200
+        assert page.title in r.content.decode()
+
+    def test_search_snippet_in_results(self, client, user, page):
+        """Results should contain highlighted snippets with <mark> tags."""
+        client.force_login(user)
+        r = client.get("/search/?q=Welcome")
+        assert b"<mark>" in r.content
+
+    def test_search_sort_edited_desc(self, client, user, page):
+        """Sort=edited_desc should not error and should return results."""
+        client.force_login(user)
+        r = client.get("/search/?q=Welcome&sort=edited_desc")
+        assert r.status_code == 200
+        assert page.title in r.content.decode()
+
+    def test_search_pagination(self, client, user):
+        """Pages beyond the first page should be accessible."""
+        for i in range(25):
+            Page.objects.create(
+                title=f"Paginated Page {i}",
+                content="paginationterm content",
+                owner=user,
+                created_by=user,
+                updated_by=user,
+                visibility=Page.Visibility.PUBLIC,
+            )
+        client.force_login(user)
+        r = client.get("/search/?q=paginationterm&page=2")
+        assert r.status_code == 200
+        content = r.content.decode()
+        assert "Paginated Page" in content
+
+    def test_facets_show_directories(self, client, user, sub_directory):
+        """Facet sidebar should show directories for matching pages."""
+        Page.objects.create(
+            title="Facet Test Page",
+            content="facetterm content",
+            directory=sub_directory,
+            owner=user,
+            created_by=user,
+            updated_by=user,
+            visibility=Page.Visibility.PUBLIC,
+        )
+        client.force_login(user)
+        r = client.get("/search/?q=facetterm")
+        content = r.content.decode()
+        assert "Engineering" in content
+
+    def test_url_dir_filter_narrows_results(
+        self, client, user, sub_directory, root_directory
+    ):
+        """URL dir= filter should narrow results to that directory."""
+        Page.objects.create(
+            title="Engineering Page",
+            content="narrowterm content",
+            directory=sub_directory,
+            owner=user,
+            created_by=user,
+            updated_by=user,
+            visibility=Page.Visibility.PUBLIC,
+        )
+        Page.objects.create(
+            title="Other Page",
+            content="narrowterm content",
+            owner=user,
+            created_by=user,
+            updated_by=user,
+            visibility=Page.Visibility.PUBLIC,
+        )
+        client.force_login(user)
+        r = client.get("/search/?q=narrowterm&dir=engineering")
+        content = r.content.decode()
+        assert "Engineering Page" in content
+        assert "Other Page" not in content
+
+    def test_phrase_search(self, client, user):
+        """Quoted phrase syntax should match exact phrases."""
+        Page.objects.create(
+            title="Phrase Match Page",
+            content="the quick brown fox jumps over",
+            owner=user,
+            created_by=user,
+            updated_by=user,
+            visibility=Page.Visibility.PUBLIC,
+        )
+        client.force_login(user)
+        r = client.get('/search/?q="quick brown fox"')
+        assert "Phrase Match Page" in r.content.decode()
+
+    def test_exclude_search(self, client, user):
+        """Minus prefix should exclude pages containing that term."""
+        Page.objects.create(
+            title="Keep This Page",
+            content="excludetest content",
+            owner=user,
+            created_by=user,
+            updated_by=user,
+            visibility=Page.Visibility.PUBLIC,
+        )
+        Page.objects.create(
+            title="Exclude This Draft",
+            content="excludetest draft content",
+            owner=user,
+            created_by=user,
+            updated_by=user,
+            visibility=Page.Visibility.PUBLIC,
+        )
+        client.force_login(user)
+        r = client.get("/search/?q=excludetest -draft")
+        content = r.content.decode()
+        assert "Keep This Page" in content
+        assert "Exclude This Draft" not in content
+
+    def test_visibility_icon_shown(self, client, user):
+        """Internal/private pages should show visibility icons."""
+        Page.objects.create(
+            title="Internal Icon Page",
+            content="badgeterm content",
+            owner=user,
+            created_by=user,
+            updated_by=user,
+            visibility=Page.Visibility.INTERNAL,
+        )
+        client.force_login(user)
+        r = client.get("/search/?q=badgeterm")
+        # Building icon has title="FLP Staff"
+        assert b'title="FLP Staff"' in r.content

@@ -32,6 +32,39 @@ document.addEventListener('alpine:init', () => {
     },
   }))
 
+  // Search tips toggle
+  Alpine.data('searchTips', () => ({
+    open: false,
+    toggle() { this.open = !this.open },
+    get buttonLabel() {
+      return this.open ? 'Hide search tips' : 'Search tips'
+    },
+  }))
+
+  // Search sort dropdown
+  Alpine.data('searchSort', () => ({
+    change(event) {
+      var url = new URL(window.location.href)
+      url.searchParams.set('sort', event.target.value)
+      url.searchParams.delete('page')
+      window.location.href = url.toString()
+    },
+  }))
+
+  // Search date range preset filter
+  Alpine.data('searchDates', () => ({
+    applyPreset(event) {
+      var days = parseInt(event.currentTarget.getAttribute('data-days'), 10)
+      var d = new Date()
+      d.setDate(d.getDate() - days)
+      var url = new URL(window.location.href)
+      url.searchParams.set('after', d.toISOString().slice(0, 10))
+      url.searchParams.delete('before')
+      url.searchParams.delete('page')
+      window.location.href = url.toString()
+    },
+  }))
+
   // Proposal review — editor and deny toggles
   Alpine.data('proposalReview', () => ({
     showEditor: false,

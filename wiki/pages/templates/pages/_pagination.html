@@ -1,0 +1,44 @@
+{% if page_obj.has_other_pages %}
+<nav aria-label="Search results pagination" class="flex justify-center mt-8">
+  <ul class="flex items-center gap-1">
+    {% if page_obj.has_previous %}
+    <li>
+      <a href="?{{ pagination_params }}&page={{ page_obj.previous_page_number }}"
+         class="px-3 py-2 rounded text-sm border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 no-underline text-gray-600 dark:text-gray-400">
+        Previous
+      </a>
+    </li>
+    {% endif %}
+
+    {% for num in page_obj.paginator.page_range %}
+      {% if page_obj.number == num %}
+      <li>
+        <span class="px-3 py-2 rounded text-sm bg-primary-600 text-white font-medium">
+          {{ num }}
+        </span>
+      </li>
+      {% elif num == 1 or num == page_obj.paginator.num_pages or num >= page_obj.number|add:"-2" and num <= page_obj.number|add:"2" %}
+      <li>
+        <a href="?{{ pagination_params }}&page={{ num }}"
+           class="px-3 py-2 rounded text-sm border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 no-underline text-gray-600 dark:text-gray-400">
+          {{ num }}
+        </a>
+      </li>
+      {% elif num == 2 or num == page_obj.paginator.num_pages|add:"-1" %}
+      <li>
+        <span class="px-2 py-2 text-sm text-gray-400">...</span>
+      </li>
+      {% endif %}
+    {% endfor %}
+
+    {% if page_obj.has_next %}
+    <li>
+      <a href="?{{ pagination_params }}&page={{ page_obj.next_page_number }}"
+         class="px-3 py-2 rounded text-sm border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 no-underline text-gray-600 dark:text-gray-400">
+        Next
+      </a>
+    </li>
+    {% endif %}
+  </ul>
+</nav>
+{% endif %}
