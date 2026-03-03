@@ -32,6 +32,9 @@ DATABASES = {
         "OPTIONS": {
             "sslmode": env("DB_SSL_MODE", default="require"),
         },
+        "TEST": {
+            "NAME": env("TEST_DB_NAME", default="test_wiki"),
+        },
     },
 }
 

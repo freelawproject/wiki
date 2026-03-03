@@ -89,6 +89,16 @@ docker exec wiki-django python -m pytest wiki/pages/tests.py::TestClassName -v
 docker exec wiki-django python -m pytest wiki/pages/tests.py::TestClassName::test_method -v
 ```
 
+### Parallel Test Runs
+
+To run tests in multiple terminals simultaneously, give each a unique test database name via `TEST_DB_NAME`. Use `$$` (the host shell's PID) to automatically get a unique suffix per terminal:
+
+```bash
+docker exec -e TEST_DB_NAME=test_wiki_$$ wiki-django python -m pytest wiki/pages/ -v
+```
+
+This works because each terminal has a stable, unique shell PID. Without `TEST_DB_NAME`, concurrent runs will collide on the default `test_wiki` database.
+
 ### Testing Guidelines
 
 - Use pytest with Django's test client (not unittest-style TestCase)
