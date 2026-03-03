@@ -3,19 +3,7 @@
 from django.conf import settings
 from django.core.mail import EmailMessage
 
-
-def _display_name(user):
-    """Return display name for a user, never showing a full email."""
-    if hasattr(user, "profile"):
-        try:
-            name = user.profile.display_name
-            if name:
-                return name
-        except Exception:
-            pass
-    if user.email and "@" in user.email:
-        return user.email.split("@")[0]
-    return user.username.split("@")[0]
+from wiki.lib.users import display_name
 
 
 def notify_owner_of_proposal(proposal_id):
@@ -35,7 +23,7 @@ def notify_owner_of_proposal(proposal_id):
     review_url = f"{base}/c/{page.content_path}/proposals/{proposal.id}/"
 
     if proposal.proposed_by:
-        proposer_name = _display_name(proposal.proposed_by)
+        proposer_name = display_name(proposal.proposed_by)
     else:
         proposer_name = proposal.proposer_email or "An anonymous user"
 
@@ -75,7 +63,7 @@ def notify_proposer_of_decision(proposal_id):
     page_url = f"{base}{page.get_absolute_url()}"
 
     reviewer_name = (
-        _display_name(proposal.reviewed_by)
+        display_name(proposal.reviewed_by)
         if proposal.reviewed_by
         else "A reviewer"
     )

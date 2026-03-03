@@ -1,4 +1,5 @@
 import json
+import re
 from pathlib import Path as FilePath
 
 from django.contrib import messages
@@ -37,8 +38,24 @@ from .models import (
     SlugRedirect,
 )
 
+
+def _parse_page_path(path: str) -> str:
+    """Return the page slug from a URL path."""
+    return path.strip("/").split("/")[-1]
+
+
+def _build_dir_segments(directory):
+    """Build breadcrumb path segments for a directory."""
+    segments = []
+    d = directory
+    while d and d.path:
+        segments.insert(0, {"path": d.path, "title": d.title})
+        d = d.parent
+    return segments
+
+
 # Matches @username (word chars only, not followed by @)
-_MENTION_RE = __import__("re").compile(r"@([a-zA-Z][a-zA-Z0-9._-]*)")
+_MENTION_RE = re.compile(r"@([a-zA-Z][a-zA-Z0-9._-]*)")
 
 
 def _extract_mentions(text):
@@ -61,6 +78,22 @@ def _collect_grant_access(post_data):
             if level in ("view", "edit"):
                 grants[username] = level
     return grants
+
+
+def _process_mentions_and_grants(page, request):
+    """Extract @mentions from page content/change_message and process grants."""
+    from wiki.subscriptions.tasks import process_mentions
+
+    mentioned = _extract_mentions(page.content)
+    mentioned += _extract_mentions(page.change_message)
+    grant_access = _collect_grant_access(request.POST)
+    if mentioned:
+        process_mentions(
+            page.id,
+            request.user.id,
+            mentioned,
+            grant_access_to=grant_access,
+        )
 
 
 def _resolve_or_create_directory(dir_path, user):
@@ -112,8 +145,7 @@ def resolve_path(request, path):
         return directory_detail(request, path)
 
     # 2. Try as a page (last segment = slug)
-    segments = clean_path.split("/")
-    slug = segments[-1]
+    slug = clean_path.split("/")[-1]
 
     page = (
         Page.objects.filter(slug=slug)
@@ -137,8 +169,7 @@ def resolve_path(request, path):
 
 def page_detail(request, path):
     """Display a wiki page. Handles slug redirects and view counting."""
-    segments = path.strip("/").split("/")
-    slug = segments[-1]
+    slug = _parse_page_path(path)
 
     page = (
         Page.objects.filter(slug=slug)
@@ -367,12 +398,6 @@ def page_create(request, path=""):
                 "Change the directory visibility first, or use a "
                 "more restrictive setting for this page.",
             )
-            dir_segments = []
-            if directory:
-                d = directory
-                while d and d.path:
-                    dir_segments.insert(0, {"path": d.path, "title": d.title})
-                    d = d.parent
             return render(
                 request,
                 "pages/form.html",
@@ -380,7 +405,9 @@ def page_create(request, path=""):
                     "form": form,
                     "directory": directory,
                     "editing": False,
-                    "dir_segments_json": json.dumps(dir_segments),
+                    "dir_segments_json": json.dumps(
+                        _build_dir_segments(directory)
+                    ),
                 },
             )
 
@@ -394,12 +421,6 @@ def page_create(request, path=""):
                 "visibility is Private. Change the visibility first, "
                 "or use Restricted editability.",
             )
-            dir_segments = []
-            if directory:
-                d = directory
-                while d and d.path:
-                    dir_segments.insert(0, {"path": d.path, "title": d.title})
-                    d = d.parent
             return render(
                 request,
                 "pages/form.html",
@@ -407,7 +428,9 @@ def page_create(request, path=""):
                     "form": form,
                     "directory": directory,
                     "editing": False,
-                    "dir_segments_json": json.dumps(dir_segments),
+                    "dir_segments_json": json.dumps(
+                        _build_dir_segments(directory)
+                    ),
                 },
             )
 
@@ -417,13 +440,8 @@ def page_create(request, path=""):
         page.save()
 
         # Create initial revision
-        PageRevision.objects.create(
-            page=page,
-            title=page.title,
-            content=page.content,
-            change_message=page.change_message or "Initial creation",
-            revision_number=1,
-            created_by=request.user,
+        page.create_revision(
+            request.user, page.change_message or "Initial creation"
         )
 
         # Auto-subscribe the creator
@@ -432,29 +450,10 @@ def page_create(request, path=""):
         PageSubscription.objects.get_or_create(user=request.user, page=page)
 
         # Process @mentions
-        from wiki.subscriptions.tasks import process_mentions
-
-        mentioned = _extract_mentions(page.content)
-        mentioned += _extract_mentions(page.change_message)
-        grant_access = _collect_grant_access(request.POST)
-        if mentioned:
-            process_mentions(
-                page.id,
-                request.user.id,
-                mentioned,
-                grant_access_to=grant_access,
-            )
+        _process_mentions_and_grants(page, request)
 
         messages.success(request, f'Page "{page.title}" created.')
         return redirect(page.get_absolute_url())
-
-    # Build directory path segments for the location picker
-    dir_segments = []
-    if directory:
-        d = directory
-        while d and d.path:
-            dir_segments.insert(0, {"path": d.path, "title": d.title})
-            d = d.parent
 
     return render(
         request,
@@ -463,7 +462,7 @@ def page_create(request, path=""):
             "form": form,
             "directory": directory,
             "editing": False,
-            "dir_segments_json": json.dumps(dir_segments),
+            "dir_segments_json": json.dumps(_build_dir_segments(directory)),
         },
     )
 
@@ -471,8 +470,7 @@ def page_create(request, path=""):
 @login_required
 def page_edit(request, path):
     """Edit an existing page."""
-    segments = path.strip("/").split("/")
-    slug = segments[-1]
+    slug = _parse_page_path(path)
     page = get_object_or_404(Page, slug=slug)
 
     if not can_edit_page(request.user, page):
@@ -532,12 +530,6 @@ def page_edit(request, path):
                 "Change the directory visibility first, or use a "
                 "more restrictive setting for this page.",
             )
-            dir_segments = []
-            if page.directory:
-                d = page.directory
-                while d and d.path:
-                    dir_segments.insert(0, {"path": d.path, "title": d.title})
-                    d = d.parent
             return render(
                 request,
                 "pages/form.html",
@@ -545,7 +537,9 @@ def page_edit(request, path):
                     "form": form,
                     "page": page,
                     "editing": True,
-                    "dir_segments_json": json.dumps(dir_segments),
+                    "dir_segments_json": json.dumps(
+                        _build_dir_segments(page.directory)
+                    ),
                 },
             )
 
@@ -559,12 +553,6 @@ def page_edit(request, path):
                 "visibility is Private. Change the visibility first, "
                 "or use Restricted editability.",
             )
-            dir_segments = []
-            if page.directory:
-                d = page.directory
-                while d and d.path:
-                    dir_segments.insert(0, {"path": d.path, "title": d.title})
-                    d = d.parent
             return render(
                 request,
                 "pages/form.html",
@@ -572,7 +560,9 @@ def page_edit(request, path):
                     "form": form,
                     "page": page,
                     "editing": True,
-                    "dir_segments_json": json.dumps(dir_segments),
+                    "dir_segments_json": json.dumps(
+                        _build_dir_segments(page.directory)
+                    ),
                 },
             )
 
@@ -586,54 +576,25 @@ def page_edit(request, path):
             )
 
         # Create revision
-        last_rev = page.revisions.order_by("-revision_number").first()
-        rev_num = (last_rev.revision_number + 1) if last_rev else 1
-        PageRevision.objects.create(
-            page=page,
-            title=page.title,
-            content=page.content,
-            change_message=page.change_message,
-            revision_number=rev_num,
-            created_by=request.user,
-        )
+        rev = page.create_revision(request.user)
 
         # Notify subscribers
-        from wiki.subscriptions.tasks import (
-            notify_subscribers,
-            process_mentions,
-        )
-
         notify_subscribers(
             page.id,
             request.user.id,
             page.change_message,
-            prev_rev=rev_num - 1 if rev_num > 1 else None,
-            new_rev=rev_num,
+            prev_rev=rev.revision_number - 1
+            if rev.revision_number > 1
+            else None,
+            new_rev=rev.revision_number,
         )
 
         # Process @mentions from content + change message
-        mentioned = _extract_mentions(page.content)
-        mentioned += _extract_mentions(page.change_message)
-        grant_access = _collect_grant_access(request.POST)
-        if mentioned:
-            process_mentions(
-                page.id,
-                request.user.id,
-                mentioned,
-                grant_access_to=grant_access,
-            )
+        _process_mentions_and_grants(page, request)
 
         release_lock_for_page(page)
         messages.success(request, f'Page "{page.title}" updated.')
         return redirect(page.get_absolute_url())
-
-    # Build directory path segments for the location picker
-    dir_segments = []
-    if page.directory:
-        d = page.directory
-        while d and d.path:
-            dir_segments.insert(0, {"path": d.path, "title": d.title})
-            d = d.parent
 
     return render(
         request,
@@ -642,7 +603,9 @@ def page_edit(request, path):
             "form": form,
             "page": page,
             "editing": True,
-            "dir_segments_json": json.dumps(dir_segments),
+            "dir_segments_json": json.dumps(
+                _build_dir_segments(page.directory)
+            ),
         },
     )
 
@@ -650,8 +613,7 @@ def page_edit(request, path):
 @login_required
 def page_move(request, path):
     """Move a page to a different directory."""
-    segments = path.strip("/").split("/")
-    slug = segments[-1]
+    slug = _parse_page_path(path)
     page = get_object_or_404(Page, slug=slug)
 
     if not can_edit_page(request.user, page):
@@ -707,8 +669,7 @@ def page_move(request, path):
 @login_required
 def page_delete(request, path):
     """Delete a page (owner/admin only)."""
-    segments = path.strip("/").split("/")
-    slug = segments[-1]
+    slug = _parse_page_path(path)
     page = get_object_or_404(Page, slug=slug)
 
     from wiki.lib.permissions import is_system_owner
@@ -751,8 +712,7 @@ def page_delete(request, path):
 @login_required
 def page_permissions(request, path):
     """Manage permissions for a page."""
-    segments = path.strip("/").split("/")
-    slug = segments[-1]
+    slug = _parse_page_path(path)
     page = get_object_or_404(Page, slug=slug)
 
     if not can_edit_page(request.user, page):
@@ -866,8 +826,7 @@ def page_permissions(request, path):
 
 def page_history(request, path):
     """Show revision history for a page."""
-    segments = path.strip("/").split("/")
-    slug = segments[-1]
+    slug = _parse_page_path(path)
     page = get_object_or_404(Page, slug=slug)
 
     if not can_view_page(request.user, page):
@@ -884,8 +843,7 @@ def page_history(request, path):
 
 def page_diff(request, path, v1, v2):
     """Show diff between two versions."""
-    segments = path.strip("/").split("/")
-    slug = segments[-1]
+    slug = _parse_page_path(path)
     page = get_object_or_404(Page, slug=slug)
 
     if not can_view_page(request.user, page):
@@ -914,8 +872,7 @@ def page_diff(request, path, v1, v2):
 @login_required
 def page_revert(request, path, rev_num):
     """Revert a page to a previous revision (creates a new revision)."""
-    segments = path.strip("/").split("/")
-    slug = segments[-1]
+    slug = _parse_page_path(path)
     page = get_object_or_404(Page, slug=slug)
 
     if not can_edit_page(request.user, page):
@@ -933,23 +890,16 @@ def page_revert(request, path, rev_num):
         page.updated_by = request.user
         page.save()
 
-        last_rev = page.revisions.order_by("-revision_number").first()
-        new_rev_num = (last_rev.revision_number + 1) if last_rev else 1
-        PageRevision.objects.create(
-            page=page,
-            title=page.title,
-            content=page.content,
-            change_message=page.change_message,
-            revision_number=new_rev_num,
-            created_by=request.user,
-        )
+        rev = page.create_revision(request.user)
 
         notify_subscribers(
             page.id,
             request.user.id,
             page.change_message,
-            prev_rev=new_rev_num - 1 if new_rev_num > 1 else None,
-            new_rev=new_rev_num,
+            prev_rev=rev.revision_number - 1
+            if rev.revision_number > 1
+            else None,
+            new_rev=rev.revision_number,
         )
 
         messages.success(
