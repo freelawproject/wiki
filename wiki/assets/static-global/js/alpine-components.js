@@ -88,9 +88,12 @@ document.addEventListener('alpine:init', () => {
     },
 
     get wrapperMaxWidth() {
-      return this.expanded
-        ? 'max-w-3xl'
-        : 'max-w-[12rem] lg:max-w-[14rem]'
+      var exp = this.expanded
+      return {
+        'max-w-3xl': exp,
+        'max-w-[12rem]': !exp,
+        'lg:max-w-[14rem]': !exp,
+      }
     },
 
     get showDirDropdown() {
@@ -228,6 +231,29 @@ document.addEventListener('alpine:init', () => {
           container.appendChild(el)
         })(self.chips[i], i)
       }
+    },
+  }))
+
+  // Feedback tabs — comment vs propose on unified feedback page
+  Alpine.data('feedbackTabs', () => ({
+    tab: 'comment',
+
+    init() {
+      var active = this.$el.getAttribute('data-active-tab')
+      if (active === 'propose') this.tab = 'propose'
+    },
+
+    setComment() { this.tab = 'comment' },
+    setPropose() { this.tab = 'propose' },
+
+    get isComment() { return this.tab === 'comment' },
+    get isPropose() { return this.tab === 'propose' },
+
+    get commentTabClass() {
+      return this.tab === 'comment' ? 'tab-item-active' : 'tab-item'
+    },
+    get proposeTabClass() {
+      return this.tab === 'propose' ? 'tab-item-active' : 'tab-item'
     },
   }))
 
