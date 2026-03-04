@@ -20,9 +20,7 @@ def notify_owner_of_comment(comment_id):
         return
 
     base = settings.BASE_URL
-    review_url = (
-        f"{base}/c/{page.content_path}/comments/{comment.id}/"
-    )
+    review_url = f"{base}/c/{page.content_path}/comments/{comment.id}/"
 
     if comment.author:
         commenter_name = display_name(comment.author)

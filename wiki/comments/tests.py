@@ -5,7 +5,6 @@ from django.core import mail
 from django.test import Client
 
 from wiki.comments.models import PageComment
-from wiki.pages.models import Page, PageRevision
 from wiki.proposals.models import ChangeProposal
 
 
@@ -34,9 +33,7 @@ class TestSubmitComment:
         assert comment.message == "This page needs updating."
         assert comment.status == "pending"
 
-    def test_submit_comment_sends_owner_email(
-        self, client, other_user, page
-    ):
+    def test_submit_comment_sends_owner_email(self, client, other_user, page):
         """Submitting a comment emails the page owner."""
         client.force_login(other_user)
         client.post(
@@ -65,9 +62,7 @@ class TestSubmitComment:
         assert comment.author is None
         assert comment.author_email == "anon@example.com"
 
-    def test_anon_cannot_comment_on_private_page(
-        self, client, private_page
-    ):
+    def test_anon_cannot_comment_on_private_page(self, client, private_page):
         """An anonymous user gets 404 for a private page."""
         r = client.get(f"/c/{private_page.slug}/feedback/")
         assert r.status_code == 404
@@ -91,17 +86,13 @@ class TestSubmitComment:
 class TestCommentDetail:
     def test_detail_requires_login(self, client, page):
         """Comment detail requires authentication."""
-        comment = PageComment.objects.create(
-            page=page, message="Test comment"
-        )
+        comment = PageComment.objects.create(page=page, message="Test comment")
         r = client.get(f"/c/{page.slug}/comments/{comment.pk}/")
         assert r.status_code == 302  # redirect to login
 
     def test_editor_sees_comment_detail(self, client, user, page):
         """Editor can view a comment."""
-        comment = PageComment.objects.create(
-            page=page, message="Test comment"
-        )
+        comment = PageComment.objects.create(page=page, message="Test comment")
         client.force_login(user)
         r = client.get(f"/c/{page.slug}/comments/{comment.pk}/")
         assert r.status_code == 200
@@ -109,18 +100,14 @@ class TestCommentDetail:
 
     def test_non_editor_gets_404(self, client, other_user, page):
         """Non-editors cannot view comment details."""
-        comment = PageComment.objects.create(
-            page=page, message="Test comment"
-        )
+        comment = PageComment.objects.create(page=page, message="Test comment")
         client.force_login(other_user)
         r = client.get(f"/c/{page.slug}/comments/{comment.pk}/")
         assert r.status_code == 404
 
     def test_editor_sees_reply_form_on_pending(self, client, user, page):
         """Editor sees reply form for pending comments."""
-        comment = PageComment.objects.create(
-            page=page, message="Need help"
-        )
+        comment = PageComment.objects.create(page=page, message="Need help")
         client.force_login(user)
         r = client.get(f"/c/{page.slug}/comments/{comment.pk}/")
         assert b"Send Reply" in r.content
@@ -159,9 +146,7 @@ class TestCommentReply:
         assert comment.replied_by == user
         assert comment.replied_at is not None
         # Check email notification
-        reply_emails = [
-            m for m in mail.outbox if other_user.email in m.to
-        ]
+        reply_emails = [m for m in mail.outbox if other_user.email in m.to]
         assert len(reply_emails) == 1
         assert "Reply" in reply_emails[0].subject
 
@@ -178,18 +163,12 @@ class TestCommentReply:
             f"/c/{page.slug}/comments/{comment.pk}/reply/",
             {"reply": "Thanks for the feedback."},
         )
-        anon_emails = [
-            m for m in mail.outbox if "anon@example.com" in m.to
-        ]
+        anon_emails = [m for m in mail.outbox if "anon@example.com" in m.to]
         assert len(anon_emails) == 1
 
-    def test_reply_requires_edit_permission(
-        self, client, other_user, page
-    ):
+    def test_reply_requires_edit_permission(self, client, other_user, page):
         """Non-editors cannot reply to comments."""
-        comment = PageComment.objects.create(
-            page=page, message="Test"
-        )
+        comment = PageComment.objects.create(page=page, message="Test")
         client.force_login(other_user)
         r = client.post(
             f"/c/{page.slug}/comments/{comment.pk}/reply/",
@@ -218,30 +197,20 @@ class TestCommentReply:
 class TestCommentResolve:
     def test_resolve_marks_resolved(self, client, user, page):
         """Resolving sets status to resolved."""
-        comment = PageComment.objects.create(
-            page=page, message="Fix needed"
-        )
+        comment = PageComment.objects.create(page=page, message="Fix needed")
         client.force_login(user)
-        r = client.post(
-            f"/c/{page.slug}/comments/{comment.pk}/resolve/"
-        )
+        r = client.post(f"/c/{page.slug}/comments/{comment.pk}/resolve/")
         assert r.status_code == 302
         comment.refresh_from_db()
         assert comment.status == "resolved"
         assert comment.resolved_by == user
         assert comment.resolved_at is not None
 
-    def test_resolve_requires_edit_permission(
-        self, client, other_user, page
-    ):
+    def test_resolve_requires_edit_permission(self, client, other_user, page):
         """Non-editors cannot resolve comments."""
-        comment = PageComment.objects.create(
-            page=page, message="Test"
-        )
+        comment = PageComment.objects.create(page=page, message="Test")
         client.force_login(other_user)
-        r = client.post(
-            f"/c/{page.slug}/comments/{comment.pk}/resolve/"
-        )
+        r = client.post(f"/c/{page.slug}/comments/{comment.pk}/resolve/")
         assert r.status_code == 404
 
     def test_already_resolved_returns_404(self, client, user, page):
@@ -252,9 +221,7 @@ class TestCommentResolve:
             status=PageComment.Status.RESOLVED,
         )
         client.force_login(user)
-        r = client.post(
-            f"/c/{page.slug}/comments/{comment.pk}/resolve/"
-        )
+        r = client.post(f"/c/{page.slug}/comments/{comment.pk}/resolve/")
         assert r.status_code == 404
 
 
@@ -292,9 +259,7 @@ class TestReviewQueue:
         assert r.status_code == 200
         assert b"Please update this section" in r.content
 
-    def test_excludes_non_editable_pages(
-        self, client, other_user, page
-    ):
+    def test_excludes_non_editable_pages(self, client, other_user, page):
         """Review queue excludes pages the user cannot edit."""
         PageComment.objects.create(
             page=page,
@@ -318,9 +283,7 @@ class TestReviewQueue:
         """When page ownership changes, the new owner sees existing
         pending feedback in their review queue."""
         # Create feedback while user is owner
-        PageComment.objects.create(
-            page=page, message="Old comment"
-        )
+        PageComment.objects.create(page=page, message="Old comment")
         # Transfer ownership
         page.owner = other_user
         page.save()
@@ -360,9 +323,7 @@ class TestNavbarBadge:
 
 
 class TestPageDetailCommentCount:
-    def test_comment_count_in_feedback_badge(
-        self, client, user, page
-    ):
+    def test_comment_count_in_feedback_badge(self, client, user, page):
         """Editor sees comment count included in feedback badge."""
         PageComment.objects.create(page=page, message="Comment 1")
         PageComment.objects.create(page=page, message="Comment 2")
