@@ -493,34 +493,34 @@ your query will appear above pages that only mention it in the body.
 - **Case doesn't matter**: Searching for "Docker" and "docker"
   gives the same results.
 
+### Advanced filters
+
+You can add structured filters to your search query. Type a
+filter followed by a space and it will become a visual chip in
+the search bar.
+
+| Filter | Example | Description |
+|--------|---------|-------------|
+| `"exact phrase"` | `"deploy guide"` | Match an exact phrase |
+| `in:path` | `in:engineering` | Filter by directory |
+| `title:word` | `title:setup` | Search titles only |
+| `content:word` | `content:docker` | Search content only |
+| `owner:name` | `owner:alice` | Filter by page owner |
+| `is:visibility` | `is:public` | Filter by visibility (`public`, `internal`, `private`) |
+| `before:date` | `before:2026-01-01` | Updated before date (UTC) |
+| `after:date` | `after:2025-06-01` | Updated after date (UTC) |
+| `-word` | `-draft` | Exclude pages containing a term |
+
+Filters can be combined: `in:engineering owner:alice "deploy guide"`
+
+Date filters use **UTC** timestamps. For example, `after:2026-03-01`
+matches pages updated on or after March 1, 2026 at midnight UTC.
+
 ### Permission filtering
 
 Search results respect page permissions. You'll only see pages
 you have access to view. Private pages you don't have permission
 for won't appear in your results, even if they match your query.
-
-### How it works under the hood
-
-For the technically curious: the wiki uses PostgreSQL's built-in
-full-text search rather than a separate search engine. Here's how
-it works:
-
-1. Each page has a **search vector** — a pre-computed index of all
-   the words in its title and content, stored as a PostgreSQL
-   `tsvector` column.
-2. Title words are given **weight A** (highest priority) and content
-   words are given **weight B**, so title matches rank higher.
-3. When you search, your query is converted to a `tsquery` and
-   matched against these vectors using a **GIN index** for speed.
-4. Results are ranked by relevance using PostgreSQL's `ts_rank`
-   function.
-5. Search vectors are refreshed periodically (every 10 minutes) by
-   a background job, so brand-new pages may take a few minutes to
-   become searchable.
-
-This approach keeps the architecture simple — no external search
-service to manage — while providing fast, ranked full-text search
-across all wiki content.
 """,
     },
     {
