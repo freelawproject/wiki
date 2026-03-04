@@ -5,92 +5,117 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 
+from wiki.comments.forms import CommentForm
+from wiki.comments.models import PageComment
+from wiki.comments.tasks import notify_owner_of_comment
+from wiki.lib.page_utils import get_page_from_path
 from wiki.lib.permissions import can_edit_page, can_view_page
-from wiki.pages.models import Page, PageRevision
+from wiki.pages.models import PageRevision
 
 from .forms import ProposalForm
 from .models import ChangeProposal
 from .tasks import notify_owner_of_proposal, notify_proposer_of_decision
 
 
-def _get_page_from_path(path):
-    """Resolve a content path to a Page object."""
-    segments = path.strip("/").split("/")
-    slug = segments[-1]
-    return get_object_or_404(Page, slug=slug)
-
-
-def propose_changes(request, path):
-    """Submit a proposed change to a page."""
-    page = _get_page_from_path(path)
+def page_feedback(request, path):
+    """Unified feedback page: comment or propose changes."""
+    page = get_page_from_path(path)
 
     if not can_view_page(request.user, page):
         raise Http404
 
-    # If user can edit, redirect to the edit page instead
+    # Editors/owners cannot submit feedback — they can edit directly
     if can_edit_page(request.user, page):
-        return redirect("page_edit", path=page.content_path)
+        raise Http404
 
-    form = ProposalForm(
-        request.POST or None,
-        is_authenticated=request.user.is_authenticated,
+    is_auth = request.user.is_authenticated
+    comment_form = CommentForm(is_authenticated=is_auth)
+    proposal_form = ProposalForm(
+        is_authenticated=is_auth,
         initial={
             "proposed_title": page.title,
             "proposed_content": page.content,
         },
     )
+    active_tab = "comment"
 
-    if request.method == "POST" and form.is_valid():
-        proposal = form.save(commit=False)
-        proposal.page = page
-        if request.user.is_authenticated:
-            proposal.proposed_by = request.user
-        proposal.save()
-
-        notify_owner_of_proposal(proposal.id)
-
-        messages.success(
-            request,
-            "Your proposed changes have been submitted for review.",
-        )
-        return redirect(page.get_absolute_url())
+    if request.method == "POST":
+        if "submit_comment" in request.POST:
+            comment_form = CommentForm(request.POST, is_authenticated=is_auth)
+            if comment_form.is_valid():
+                comment = comment_form.save(commit=False)
+                comment.page = page
+                if is_auth:
+                    comment.author = request.user
+                comment.save()
+                notify_owner_of_comment(comment.id)
+                messages.success(request, "Your comment has been submitted.")
+                return redirect(page.get_absolute_url())
+        elif "submit_proposal" in request.POST:
+            active_tab = "propose"
+            proposal_form = ProposalForm(
+                request.POST, is_authenticated=is_auth
+            )
+            if proposal_form.is_valid():
+                proposal = proposal_form.save(commit=False)
+                proposal.page = page
+                if is_auth:
+                    proposal.proposed_by = request.user
+                proposal.save()
+                notify_owner_of_proposal(proposal.id)
+                messages.success(
+                    request,
+                    "Your proposed changes have been submitted for review.",
+                )
+                return redirect(page.get_absolute_url())
 
     return render(
         request,
-        "proposals/propose.html",
+        "proposals/feedback.html",
         {
-            "form": form,
             "page": page,
+            "comment_form": comment_form,
+            "proposal_form": proposal_form,
+            "active_tab": active_tab,
         },
     )
 
 
 @login_required
 def proposal_list(request, path):
-    """List proposals for a page (for editors/owners)."""
-    page = _get_page_from_path(path)
+    """List proposals and comments for a page (for editors/owners)."""
+    page = get_page_from_path(path)
 
     if not can_edit_page(request.user, page):
         messages.error(
             request,
-            "You don't have permission to review proposals for this page.",
+            "You don't have permission to review feedback for this page.",
         )
         return redirect(page.get_absolute_url())
 
-    pending = page.proposals.filter(
+    pending_proposals = page.proposals.filter(
         status=ChangeProposal.Status.PENDING
     ).select_related("proposed_by")
-    reviewed = page.proposals.exclude(
+    reviewed_proposals = page.proposals.exclude(
         status=ChangeProposal.Status.PENDING
     ).select_related("proposed_by", "reviewed_by")
+
+    pending_comments = page.comments.filter(
+        status=PageComment.Status.PENDING
+    ).select_related("author")
+    resolved_comments = page.comments.exclude(
+        status=PageComment.Status.PENDING
+    ).select_related("author", "resolved_by")
 
     return render(
         request,
         "proposals/list.html",
         {
             "page": page,
-            "pending": pending,
-            "reviewed": reviewed,
+            "pending_proposals": pending_proposals,
+            "reviewed_proposals": reviewed_proposals,
+            "pending_comments": pending_comments,
+            "resolved_comments": resolved_comments,
         },
     )
 
@@ -98,7 +123,7 @@ def proposal_list(request, path):
 @login_required
 def proposal_review(request, path, pk):
     """Review a single proposal with diff view."""
-    page = _get_page_from_path(path)
+    page = get_page_from_path(path)
 
     if not can_edit_page(request.user, page):
         messages.error(
@@ -128,7 +153,7 @@ def proposal_review(request, path, pk):
 @login_required
 def proposal_accept(request, path, pk):
     """Accept a proposal, applying changes to the page."""
-    page = _get_page_from_path(path)
+    page = get_page_from_path(path)
 
     if not can_edit_page(request.user, page):
         messages.error(
@@ -192,7 +217,7 @@ def proposal_accept(request, path, pk):
 @login_required
 def proposal_deny(request, path, pk):
     """Deny a proposal with an optional reason."""
-    page = _get_page_from_path(path)
+    page = get_page_from_path(path)
 
     if not can_edit_page(request.user, page):
         messages.error(request, "You don't have permission to deny proposals.")
