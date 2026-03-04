@@ -296,3 +296,87 @@ def can_edit_directory(user, directory):
         d = d.parent
 
     return False
+
+
+def editable_page_ids(user):
+    """Return the set of page IDs the user can edit.
+
+    Used by the review queue to find all pages with pending feedback.
+    """
+    from wiki.directories.models import Directory, DirectoryPermission
+    from wiki.pages.models import Page, PagePermission
+
+    if not user.is_authenticated:
+        return set()
+
+    if is_system_owner(user):
+        return set(Page.objects.values_list("id", flat=True))
+
+    ids = set()
+
+    # Pages the user owns
+    ids.update(Page.objects.filter(owner=user).values_list("id", flat=True))
+
+    # Pages with editability="internal" (any authenticated user can edit)
+    ids.update(
+        Page.objects.filter(editability="internal").values_list(
+            "id", flat=True
+        )
+    )
+
+    # Pages with explicit EDIT/OWNER PagePermission
+    edit_types = [
+        PagePermission.PermissionType.EDIT,
+        PagePermission.PermissionType.OWNER,
+    ]
+    ids.update(
+        PagePermission.objects.filter(
+            _user_or_group_q(user),
+            permission_type__in=edit_types,
+        ).values_list("page_id", flat=True)
+    )
+
+    # Pages in directories the user owns or has EDIT/OWNER permission on
+    dir_edit_types = [
+        DirectoryPermission.PermissionType.EDIT,
+        DirectoryPermission.PermissionType.OWNER,
+    ]
+
+    # Directories user owns
+    owned_dir_ids = set(
+        Directory.objects.filter(owner=user).values_list("id", flat=True)
+    )
+
+    # Directories with explicit permission
+    perm_dir_ids = set(
+        DirectoryPermission.objects.filter(
+            _user_or_group_q(user),
+            permission_type__in=dir_edit_types,
+        ).values_list("directory_id", flat=True)
+    )
+
+    editable_dir_ids = owned_dir_ids | perm_dir_ids
+
+    # Walk children via BFS to include all descendant directories
+    if editable_dir_ids:
+        all_dirs = list(Directory.objects.values_list("id", "parent_id"))
+        children_map = {}
+        for did, pid in all_dirs:
+            children_map.setdefault(pid, []).append(did)
+
+        queue = list(editable_dir_ids)
+        visited = set(editable_dir_ids)
+        while queue:
+            current = queue.pop(0)
+            for child_id in children_map.get(current, []):
+                if child_id not in visited:
+                    visited.add(child_id)
+                    queue.append(child_id)
+
+        ids.update(
+            Page.objects.filter(directory_id__in=visited).values_list(
+                "id", flat=True
+            )
+        )
+
+    return ids

@@ -1,4 +1,4 @@
-"""Tests for the proposals app: propose, review, accept, deny."""
+"""Tests for the proposals app: feedback page, review, accept, deny."""
 
 import pytest
 from django.core import mail
@@ -37,38 +37,38 @@ def editable_page(user):
     return p
 
 
-# ── Propose Changes ────────────────────────────────────────
+# ── Feedback Page ─────────────────────────────────────────
 
 
-class TestProposeChanges:
-    def test_propose_page_loads_for_viewer(self, client, other_user, page):
-        """A user who can view but not edit sees the propose form."""
+class TestFeedbackPage:
+    def test_feedback_page_loads_for_viewer(self, client, other_user, page):
+        """A user who can view but not edit sees the feedback form."""
         client.force_login(other_user)
-        r = client.get(f"/c/{page.slug}/propose/")
+        r = client.get(f"/c/{page.slug}/feedback/")
         assert r.status_code == 200
-        assert b"Propose Changes" in r.content
+        assert b"Feedback" in r.content
 
-    def test_propose_redirects_editor_to_edit(self, client, user, page):
-        """A user who can edit is redirected to the edit page."""
+    def test_feedback_gives_editor_404(self, client, user, page):
+        """An editor/owner gets 404 on the feedback page."""
         client.force_login(user)
-        r = client.get(f"/c/{page.slug}/propose/")
-        assert r.status_code == 302
-        assert "/edit/" in r.url
+        r = client.get(f"/c/{page.slug}/feedback/")
+        assert r.status_code == 404
 
     def test_propose_form_prefilled(self, client, other_user, page):
         """The propose form is pre-filled with the current page content."""
         client.force_login(other_user)
-        r = client.get(f"/c/{page.slug}/propose/")
+        r = client.get(f"/c/{page.slug}/feedback/")
         content = r.content.decode()
         assert page.title in content
         assert page.content in content
 
     def test_submit_proposal(self, client, other_user, page):
-        """A viewer can submit a proposal."""
+        """A viewer can submit a proposal via the feedback page."""
         client.force_login(other_user)
         r = client.post(
-            f"/c/{page.slug}/propose/",
+            f"/c/{page.slug}/feedback/",
             {
+                "submit_proposal": "1",
                 "proposed_title": "Getting Started v2",
                 "proposed_content": "Updated content",
                 "change_message": "Improved intro",
@@ -84,8 +84,9 @@ class TestProposeChanges:
         """Submitting a proposal emails the page owner."""
         client.force_login(other_user)
         client.post(
-            f"/c/{page.slug}/propose/",
+            f"/c/{page.slug}/feedback/",
             {
+                "submit_proposal": "1",
                 "proposed_title": page.title,
                 "proposed_content": "Fix typo",
                 "change_message": "Typo fix",
@@ -98,8 +99,9 @@ class TestProposeChanges:
     def test_anon_can_propose_on_public_page(self, client, page):
         """An anonymous user can propose changes on a public page."""
         r = client.post(
-            f"/c/{page.slug}/propose/",
+            f"/c/{page.slug}/feedback/",
             {
+                "submit_proposal": "1",
                 "proposed_title": page.title,
                 "proposed_content": "Anon edit",
                 "change_message": "Anon fix",
@@ -113,7 +115,7 @@ class TestProposeChanges:
 
     def test_anon_cannot_propose_on_private_page(self, client, private_page):
         """An anonymous user gets 404 for a private page."""
-        r = client.get(f"/c/{private_page.slug}/propose/")
+        r = client.get(f"/c/{private_page.slug}/feedback/")
         assert r.status_code == 404
 
 
@@ -391,22 +393,23 @@ class TestProposalDeny:
 # ── Page Detail Integration ────────────────────────────────
 
 
-class TestPageDetailProposalButtons:
-    def test_non_editor_sees_propose_button(self, client, other_user, page):
-        """A viewer who can't edit sees the Propose Changes button."""
+class TestPageDetailFeedbackButtons:
+    def test_non_editor_sees_feedback_button(self, client, other_user, page):
+        """A viewer who can't edit sees the Feedback button."""
         client.force_login(other_user)
         r = client.get(f"/c/{page.slug}")
-        assert b"Propose Changes" in r.content
+        assert b"Feedback" in r.content
 
-    def test_editor_does_not_see_propose_button(self, client, user, page):
-        """The page owner sees Edit, not Propose Changes."""
+    def test_editor_does_not_see_feedback_button(self, client, user, page):
+        """The page owner sees Edit, not Feedback."""
         client.force_login(user)
         r = client.get(f"/c/{page.slug}")
-        assert b"Propose Changes" not in r.content
-        assert b"Edit" in r.content
+        content = r.content.decode()
+        assert ">Edit<" in content
+        assert "page_feedback" not in content
 
-    def test_editor_sees_proposal_count(self, client, user, other_user, page):
-        """The owner sees 'Proposals (1)' when pending proposals exist."""
+    def test_editor_sees_feedback_count(self, client, user, other_user, page):
+        """The owner sees 'Feedback (1)' when pending proposals exist."""
         ChangeProposal.objects.create(
             page=page,
             proposed_by=other_user,
@@ -416,25 +419,24 @@ class TestPageDetailProposalButtons:
         )
         client.force_login(user)
         r = client.get(f"/c/{page.slug}")
-        assert b"Proposals (1)" in r.content
+        assert b"Feedback (1)" in r.content
 
-    def test_no_proposal_badge_when_none_pending(self, client, user, page):
-        """No proposals badge shown when there are none."""
+    def test_no_feedback_badge_when_none_pending(self, client, user, page):
+        """No feedback badge shown when there are none."""
         client.force_login(user)
         r = client.get(f"/c/{page.slug}")
-        assert b"Proposals (" not in r.content
+        assert b"Feedback (" not in r.content
 
 
-# ── FLP Staff Editability + Proposals Interaction ─────────
+# ── FLP Staff Editability + Feedback Interaction ─────────
 
 
-class TestFLPEditableRedirectsPropose:
-    def test_flp_editable_user_redirected_to_edit(
+class TestFLPEditableFeedback:
+    def test_flp_editable_user_gets_404_on_feedback(
         self, client, other_user, editable_page
     ):
-        """A logged-in user on an FLP-editable page is redirected
-        from propose to edit (since they can edit)."""
+        """A logged-in user on an FLP-editable page gets 404
+        on feedback (since they can edit directly)."""
         client.force_login(other_user)
-        r = client.get(f"/c/{editable_page.slug}/propose/")
-        assert r.status_code == 302
-        assert "/edit/" in r.url
+        r = client.get(f"/c/{editable_page.slug}/feedback/")
+        assert r.status_code == 404

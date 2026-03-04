@@ -4,9 +4,9 @@ from . import views
 
 urlpatterns = [
     path(
-        "<path:path>/propose/",
-        views.propose_changes,
-        name="propose_changes",
+        "<path:path>/feedback/",
+        views.page_feedback,
+        name="page_feedback",
     ),
     path(
         "<path:path>/proposals/",

@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Feedback for "{{ page.title }}" - FLP Wiki{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="{% static 'css/font-awesome.min.css' %}">
+<link rel="stylesheet" href="{% static 'css/easymde.min.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl" x-data="feedbackTabs" data-active-tab="{{ active_tab }}">
+  <h1 class="text-2xl mb-2">Feedback</h1>
+  <p class="text-gray-600 dark:text-gray-400 mb-6">
+    Share feedback on <strong>"{{ page.title }}"</strong>. The page owner will review your submission.
+  </p>
+
+  <nav class="tab-nav mb-6">
+    <button type="button" @click="setComment" :class="commentTabClass">Leave a Comment</button>
+    <button type="button" @click="setPropose" :class="proposeTabClass">Propose Changes</button>
+  </nav>
+
+  {# Comment tab #}
+  <div x-show="isComment">
+    <form method="post" class="space-y-4">
+      {% csrf_token %}
+      <div>
+        <label for="id_message" class="block text-sm font-medium mb-1">
+          Your Comment <span class="text-red-500">*</span>
+        </label>
+        {{ comment_form.message }}
+        {% if comment_form.message.errors %}
+        <p class="text-red-600 dark:text-red-400 text-sm mt-1">{{ comment_form.message.errors.0 }}</p>
+        {% endif %}
+      </div>
+      {% if comment_form.author_email %}
+      <div>
+        <label for="id_author_email" class="block text-sm font-medium mb-1">
+          Your Email <span class="text-gray-400">(optional)</span>
+        </label>
+        {{ comment_form.author_email }}
+        <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+          To receive a notification when the owner replies.
+        </p>
+      </div>
+      {% endif %}
+      <div class="flex gap-3">
+        <button type="submit" name="submit_comment" class="btn-primary">Submit Comment</button>
+        <a href="{{ page.get_absolute_url }}" class="btn-outline">Cancel</a>
+      </div>
+    </form>
+  </div>
+
+  {# Propose Changes tab #}
+  <div x-show="isPropose" x-cloak>
+    <form method="post" class="space-y-4">
+      {% csrf_token %}
+      <div>
+        <label for="id_proposed_title" class="block text-sm font-medium mb-1">Title</label>
+        {{ proposal_form.proposed_title }}
+        {% if proposal_form.proposed_title.errors %}
+        <p class="text-red-600 dark:text-red-400 text-sm mt-1">{{ proposal_form.proposed_title.errors.0 }}</p>
+        {% endif %}
+      </div>
+
+      <div>
+        <label for="id_proposed_content" class="block text-sm font-medium mb-1">Content</label>
+        {{ proposal_form.proposed_content }}
+      </div>
+
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+          <label for="id_change_message" class="block text-sm font-medium mb-1">
+            What did you change? <span class="text-red-500">*</span>
+          </label>
+          {{ proposal_form.change_message }}
+          {% if proposal_form.change_message.errors %}
+          <p class="text-red-600 dark:text-red-400 text-sm mt-1">{{ proposal_form.change_message.errors.0 }}</p>
+          {% endif %}
+        </div>
+        {% if proposal_form.proposer_email %}
+        <div>
+          <label for="id_proposer_email" class="block text-sm font-medium mb-1">
+            Your Email <span class="text-gray-400">(optional)</span>
+          </label>
+          {{ proposal_form.proposer_email }}
+          <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+            To receive a notification when your proposal is reviewed.
+          </p>
+        </div>
+        {% endif %}
+      </div>
+
+      <div class="flex gap-3">
+        <button type="submit" name="submit_proposal" class="btn-primary">Submit Proposal</button>
+        <a href="{{ page.get_absolute_url }}" class="btn-outline">Cancel</a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block footer_scripts %}
+<script src="{% static 'js/easymde.min.js' %}"></script>
+<script type="application/json" id="editor-config">
+{
+  "csrfToken": "{{ csrf_token }}"
+}
+</script>
+<script src="{% static 'js/mention-dropdown.js' %}"></script>
+<script src="{% static 'js/markdown-editor.js' %}"></script>
+{% endblock %}

@@ -305,11 +305,16 @@ def _render_page_detail(request, page):
 
     can_edit = can_edit_page(request.user, page)
     pending_proposal_count = 0
+    pending_comment_count = 0
     if can_edit:
+        from wiki.comments.models import PageComment
         from wiki.proposals.models import ChangeProposal
 
         pending_proposal_count = page.proposals.filter(
             status=ChangeProposal.Status.PENDING
+        ).count()
+        pending_comment_count = page.comments.filter(
+            status=PageComment.Status.PENDING
         ).count()
 
     # SEO
@@ -337,6 +342,7 @@ def _render_page_detail(request, page):
             "toc": toc,
             "can_edit": can_edit,
             "pending_proposal_count": pending_proposal_count,
+            "pending_comment_count": pending_comment_count,
             "breadcrumbs": breadcrumbs,
             "is_subscribed": is_subscribed,
             "subscribers": subscribers,
