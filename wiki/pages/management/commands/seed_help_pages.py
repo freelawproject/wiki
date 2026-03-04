@@ -51,12 +51,12 @@ If someone else is currently editing the page, you'll see a warning
 with their name and when they started. You can choose to **Edit
 Anyway** to override their lock.
 
-### Proposing changes
+### Providing feedback
 
 Don't have edit access to a page? You can still contribute by
-clicking **Propose Changes** to submit a change proposal. The page
-owner will be notified and can review, accept, or deny your
-proposal. See #proposals-guide for details.
+clicking **Feedback** to leave a comment or propose content changes.
+The page owner will be notified and can review your submission.
+See #proposals-guide for details.
 
 ### Subscribing to changes
 
@@ -97,7 +97,7 @@ one up.
 - #directories-guide — Working with directories
 - #revisions-guide — Revision history, diffing, and reverting
 - #notifications-guide — @mentions, subscriptions, and emails
-- #proposals-guide — Proposing changes to pages
+- #proposals-guide — Comments, proposals, and the review queue
 - #permissions-guide — Understanding visibility and permissions
 - #admin-guide — Admin features and user management
 - #search-guide — How search works
@@ -414,7 +414,7 @@ and admin features.
 
 Additional users can be promoted to admin from the
 [Admin Management](/u/admins/) page (accessible from the
-**Admin** link in the header). Admins have:
+gear icon in the header). Admins have:
 
 - Full access to all wiki content
 - Access to the Django admin panel
@@ -815,24 +815,44 @@ directly in your email app.
 """,
     },
     {
-        "title": "Proposals Guide",
+        "title": "Feedback & Proposals Guide",
         "slug": "proposals-guide",
         "content": """\
-## Proposing Changes
+## Feedback & Proposals
 
-The proposals feature lets anyone suggest edits to a page, even
-if they don't have edit permission. This is useful for corrections,
-additions, or improvements from people outside the page's usual
-editors.
+The wiki has two ways for anyone to contribute to a page they
+can't edit: **comments** for quick feedback and **proposals** for
+suggesting content changes. Both are accessed from the
+**Feedback** button on any page you don't have edit access to.
 
-### How to propose a change
+### Leaving a comment
 
-1. Navigate to the page you want to suggest changes to
-2. Click **Propose Changes** (this appears instead of **Edit**
-   when you don't have edit access)
-3. Edit the content in the Markdown editor
-4. Write a change message explaining your proposed changes
-5. Click **Submit Proposal**
+Comments are a lightweight way to ask a question, flag an issue,
+or suggest an improvement without editing the page yourself.
+
+1. Navigate to the page
+2. Click **Feedback**
+3. Write your comment in the **Leave a Comment** tab
+4. Optionally provide your email address (if not signed in) so
+   the editor can reply to you
+5. Click **Submit Comment**
+
+The page owner is notified by email. They can reply to your
+comment (you'll get an email notification if you provided one)
+and then resolve it when it's been addressed.
+
+### Proposing content changes
+
+Proposals let you suggest specific edits to a page's title and
+content. The page owner sees a side-by-side diff of exactly what
+you changed.
+
+1. Navigate to the page
+2. Click **Feedback**
+3. Switch to the **Propose Changes** tab
+4. Edit the title and content in the Markdown editor
+5. Write a change message explaining your proposed changes
+6. Click **Submit Proposal**
 
 If you're not signed in, you can optionally provide your email
 address so you'll be notified when the proposal is reviewed.
@@ -840,44 +860,65 @@ address so you'll be notified when the proposal is reviewed.
 ### What happens next
 
 - The page owner receives an **email notification** about the
-  new proposal
-- A **red badge** appears on the page indicating pending proposals
-- The proposal waits in a queue for review
+  new comment or proposal
+- A **red badge** appears on the page's Actions menu indicating
+  pending feedback
+- The item waits in a queue for review
+
+### The review queue
+
+Editors and page owners have a unified **review queue** that
+collects all pending comments and proposals across every page
+they can edit. When you have pending items to review, a
+clipboard icon with a red dot appears in the header navigation.
+
+Click it to see all pending items — comments are shown in blue
+and proposals in yellow. Each links to the detail view where
+you can take action.
+
+### Reviewing comments (for editors)
+
+From the review queue or the page's **Feedback** link:
+
+1. Click a comment to view it
+2. Optionally write a **reply** — the commenter will be notified
+   by email
+3. Click **Resolve** to dismiss the comment once it's been
+   addressed
 
 ### Reviewing proposals (for editors)
 
-If you have edit permission on a page with pending proposals:
+From the review queue or the page's **Feedback** link:
 
-1. Click the **Proposals** link on the page (look for the red
-   badge indicating the count of pending proposals)
-2. You'll see a list of pending and previously reviewed proposals
-3. Click on a proposal to see a **side-by-side diff** comparing
+1. Click a proposal to see a **side-by-side diff** comparing
    the current page content with the proposed changes
+2. **Accept** — applies the changes to the page (you can tweak
+   the content before accepting). This creates a new revision
+   and notifies all subscribers.
+3. **Deny** — rejects the proposal. You can include a reason,
+   which is sent to the proposer by email.
 
-### Accepting a proposal
+### Who can leave feedback?
 
-When reviewing a proposal, click **Accept** to apply the changes.
-You can optionally modify the proposed content before accepting.
-Accepting a proposal:
+Anyone who can **view** a page but **cannot edit** it can leave
+comments and propose changes. This includes:
 
-- Updates the page content with the proposed changes
-- Creates a new revision in the page's history
-- Notifies all subscribers about the change
-- Sends an email to the proposer letting them know it was accepted
+- Signed-in users without edit permission
+- Anonymous visitors on public pages
 
-### Denying a proposal
-
-Click **Deny** to reject a proposal. You can include a reason,
-which will be sent to the proposer via email so they understand
-why the change wasn't accepted.
+Editors and owners don't see the Feedback button — they can edit
+directly.
 
 ### Tips
 
+- Use **comments** for quick questions, typo reports, or
+  suggestions that don't require a specific edit
+- Use **proposals** when you know exactly what the content should
+  look like
 - Write clear change messages so reviewers understand what you
   changed and why
-- If you have a lot of changes to suggest, consider breaking them
-  into smaller, focused proposals
-- Proposals don't expire — they stay pending until reviewed
+- Comments and proposals don't expire — they stay pending until
+  reviewed
 """,
     },
     {
@@ -909,7 +950,7 @@ Admin users have elevated privileges similar to the system owner:
 ### Managing admins
 
 Visit the [Admin Management](/u/admins/) page (accessible from the
-**Admin** link in the header navigation). From there you can:
+gear icon in the header navigation). From there you can:
 
 - See a list of all users and their roles
 - **Promote** a user to admin by clicking the promote button next

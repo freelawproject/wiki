@@ -1,19 +1,46 @@
 {% extends "base.html" %}
 {% load wiki_tags %}
 
-{% block title %}Proposals for "{{ page.title }}" - FLP Wiki{% endblock %}
+{% block title %}Feedback for "{{ page.title }}" - FLP Wiki{% endblock %}
 
 {% block content %}
 <div class="max-w-4xl">
-  <h1 class="text-2xl mb-2">Proposals</h1>
+  <h1 class="text-2xl mb-2">Feedback</h1>
   <p class="text-gray-600 dark:text-gray-400 mb-6">
-    Change proposals for <a href="{{ page.get_absolute_url }}" class="hover:underline font-medium">{{ page.title }}</a>
+    Feedback for <a href="{{ page.get_absolute_url }}" class="hover:underline font-medium">{{ page.title }}</a>
   </p>
 
-  {% if pending %}
-  <h2 class="text-lg font-semibold mb-3">Pending Review</h2>
+  {% if pending_comments %}
+  <h2 class="text-lg font-semibold mb-3">Pending Comments</h2>
   <div class="space-y-3 mb-8">
-    {% for proposal in pending %}
+    {% for comment in pending_comments %}
+    <a href="{% url 'comment_detail' path=page.content_path pk=comment.pk %}"
+       class="block p-4 border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 rounded-lg hover:border-blue-400 dark:hover:border-blue-600 transition-colors no-underline">
+      <div class="flex items-center justify-between">
+        <div>
+          <span class="font-medium text-gray-900 dark:text-gray-100">{{ comment.message|truncatewords:25 }}</span>
+          <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">
+            {% if comment.author %}
+              by {{ comment.author|display_name }}
+            {% elif comment.author_email %}
+              by {{ comment.author_email }}
+            {% else %}
+              by anonymous
+            {% endif %}
+            &middot; {{ comment.created_at|timesince }} ago
+          </p>
+        </div>
+        <span class="badge-blue">Pending</span>
+      </div>
+    </a>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if pending_proposals %}
+  <h2 class="text-lg font-semibold mb-3">Pending Proposals</h2>
+  <div class="space-y-3 mb-8">
+    {% for proposal in pending_proposals %}
     <a href="{% url 'proposal_review' path=page.content_path pk=proposal.pk %}"
        class="block p-4 border border-yellow-200 dark:border-yellow-800 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg hover:border-yellow-400 dark:hover:border-yellow-600 transition-colors no-underline">
       <div class="flex items-center justify-between">
@@ -37,10 +64,37 @@
   </div>
   {% endif %}
 
-  {% if reviewed %}
-  <h2 class="text-lg font-semibold mb-3">Reviewed</h2>
+  {% if resolved_comments %}
+  <h2 class="text-lg font-semibold mb-3">Resolved Comments</h2>
   <div class="space-y-3 mb-8">
-    {% for proposal in reviewed %}
+    {% for comment in resolved_comments %}
+    <a href="{% url 'comment_detail' path=page.content_path pk=comment.pk %}"
+       class="block p-4 border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 rounded-lg hover:border-gray-400 dark:hover:border-gray-500 transition-colors no-underline">
+      <div class="flex items-center justify-between">
+        <div>
+          <span class="font-medium text-gray-900 dark:text-gray-100">{{ comment.message|truncatewords:25 }}</span>
+          <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">
+            {% if comment.author %}
+              by {{ comment.author|display_name }}
+            {% elif comment.author_email %}
+              by {{ comment.author_email }}
+            {% else %}
+              by anonymous
+            {% endif %}
+            &middot; {{ comment.created_at|timesince }} ago
+          </p>
+        </div>
+        <span class="badge-green">Resolved</span>
+      </div>
+    </a>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if reviewed_proposals %}
+  <h2 class="text-lg font-semibold mb-3">Reviewed Proposals</h2>
+  <div class="space-y-3 mb-8">
+    {% for proposal in reviewed_proposals %}
     <a href="{% url 'proposal_review' path=page.content_path pk=proposal.pk %}"
        class="block p-4 border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 rounded-lg hover:border-gray-400 dark:hover:border-gray-500 transition-colors no-underline">
       <div class="flex items-center justify-between">
@@ -68,8 +122,8 @@
   </div>
   {% endif %}
 
-  {% if not pending and not reviewed %}
-  <p class="text-gray-500 dark:text-gray-400">No proposals yet.</p>
+  {% if not pending_comments and not pending_proposals and not resolved_comments and not reviewed_proposals %}
+  <p class="text-gray-500 dark:text-gray-400">No feedback yet.</p>
   {% endif %}
 
   <div class="mt-6">

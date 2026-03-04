@@ -30,6 +30,7 @@ urlpatterns = [
     path("u/logout/", logout_view, name="logout"),
     path("u/settings/", include("wiki.users.urls_settings")),
     path("u/admins/", include("wiki.users.urls_admin")),
+    path("u/review/", include("wiki.users.urls_review")),
     path("search/", include("wiki.pages.urls_search")),
     path("api/", include("wiki.pages.urls_api")),
     path("files/", include("wiki.pages.urls_files")),
@@ -48,6 +49,7 @@ if settings.DEVELOPMENT:
 
 # Content catch-all — must be last
 urlpatterns += [
+    path("c/", include("wiki.comments.urls")),
     path("c/", include("wiki.proposals.urls")),
     path("c/", include("wiki.directories.urls")),
     path("c/", include("wiki.pages.urls")),
