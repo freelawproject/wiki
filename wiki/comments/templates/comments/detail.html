@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% load wiki_tags %}
+
+{% block title %}Comment on "{{ page.title }}" - FLP Wiki{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl">
+  <h1 class="text-2xl mb-2">Comment</h1>
+  <p class="text-gray-600 dark:text-gray-400 mb-6">
+    On <a href="{{ page.get_absolute_url }}" class="hover:underline font-medium">{{ page.title }}</a>
+  </p>
+
+  <div class="card mb-6">
+    <div class="flex items-center justify-between mb-3">
+      <div class="text-sm text-gray-500 dark:text-gray-400">
+        {% if comment.author %}
+          {{ comment.author|display_name }}
+        {% elif comment.author_email %}
+          {{ comment.author_email }}
+        {% else %}
+          Anonymous
+        {% endif %}
+        &middot; {{ comment.created_at|timesince }} ago
+      </div>
+      {% if comment.status == "pending" %}
+        <span class="badge-yellow">Pending</span>
+      {% else %}
+        <span class="badge-green">Resolved</span>
+      {% endif %}
+    </div>
+    <p class="whitespace-pre-wrap">{{ comment.message }}</p>
+  </div>
+
+  {% if comment.reply %}
+  <div class="card mb-6 border-l-4 border-primary-400 dark:border-primary-600">
+    <div class="text-sm text-gray-500 dark:text-gray-400 mb-2">
+      Reply by
+      {% if comment.replied_by %}{{ comment.replied_by|display_name }}{% else %}editor{% endif %}
+      &middot; {{ comment.replied_at|timesince }} ago
+    </div>
+    <p class="whitespace-pre-wrap">{{ comment.reply }}</p>
+  </div>
+  {% endif %}
+
+  {% if comment.status == "pending" %}
+    {% if not comment.reply %}
+    <div class="mb-6">
+      <h2 class="text-lg font-semibold mb-3">Reply</h2>
+      <form method="post" action="{% url 'comment_reply' path=page.content_path pk=comment.pk %}" class="space-y-3">
+        {% csrf_token %}
+        {{ reply_form.reply }}
+        {% if reply_form.reply.errors %}
+        <p class="text-red-600 dark:text-red-400 text-sm">{{ reply_form.reply.errors.0 }}</p>
+        {% endif %}
+        <button type="submit" class="btn-primary">Send Reply</button>
+      </form>
+    </div>
+    {% endif %}
+
+    <div class="border-t border-gray-200 dark:border-gray-700 pt-4">
+      <form method="post" action="{% url 'comment_resolve' path=page.content_path pk=comment.pk %}">
+        {% csrf_token %}
+        <button type="submit" class="btn-outline text-sm">Resolve</button>
+      </form>
+    </div>
+  {% else %}
+    <div class="p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
+      <p class="font-medium">
+        Resolved
+        {% if comment.resolved_by %} by {{ comment.resolved_by|display_name }}{% endif %}
+        {% if comment.resolved_at %} &middot; {{ comment.resolved_at|timesince }} ago{% endif %}
+      </p>
+    </div>
+  {% endif %}
+
+  <div class="mt-6">
+    <a href="{{ page.get_absolute_url }}" class="btn-outline text-sm">Back to Page</a>
+  </div>
+</div>
+{% endblock %}
