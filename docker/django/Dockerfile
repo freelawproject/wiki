@@ -53,7 +53,7 @@ RUN mkdir -p /opt/wiki/wiki/assets/static/
 USER root
 RUN chmod +x /opt/wiki/docker/django/docker-entrypoint.sh
 RUN chown www-data:www-data /opt/wiki/docker/django/docker-entrypoint.sh
-RUN chown -R www-data:www-data /opt/wiki 
+RUN chown -R www-data:www-data /opt/wiki
 
 
 USER www-data
