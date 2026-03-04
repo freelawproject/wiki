@@ -1,6 +1,14 @@
 {% extends "base.html" %}
 {% load static wiki_tags %}
 
+{% block header %}
+{% if page.directory and page.directory.path %}
+<c-header search_dir_path="{{ page.directory.path }}" search_dir_title="{{ page.directory.title }}" />
+{% else %}
+<c-header />
+{% endif %}
+{% endblock %}
+
 {% block title %}{{ page.title }} - FLP Wiki{% endblock %}
 
 {% if page_description %}

@@ -1,6 +1,14 @@
 {% extends "base.html" %}
 {% load static %}
 
+{% block header %}
+{% if directory.path %}
+<c-header search_dir_path="{{ directory.path }}" search_dir_title="{{ directory.title }}" />
+{% else %}
+<c-header />
+{% endif %}
+{% endblock %}
+
 {% block title %}{{ directory.title|default:"Home" }} - FLP Wiki{% endblock %}
 
 {% if directory_description %}
