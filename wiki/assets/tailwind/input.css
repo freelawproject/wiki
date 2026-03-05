@@ -181,7 +181,7 @@
            bg-primary-50/30 dark:bg-primary-900/10 py-3 pr-4 rounded-r-lg;
   }
   .wiki-content table {
-    @apply border-collapse w-full my-5;
+    @apply border-collapse my-5 block overflow-x-auto w-full;
   }
   .wiki-content th {
     @apply bg-gray-50 dark:bg-gray-800/80 border border-gray-200 dark:border-gray-700
@@ -244,7 +244,7 @@
   }
   .breadcrumbs a {
     @apply text-gray-500 dark:text-gray-400 hover:text-primary-600 dark:hover:text-primary-400
-           no-underline hover:underline transition-colors;
+           no-underline hover:underline transition-colors py-1;
   }
   .breadcrumbs .separator {
     @apply mx-1 text-gray-300 dark:text-gray-600 select-none;
@@ -278,6 +278,17 @@
 }
 
 @layer components {
+  /* EasyMDE / CodeMirror responsive containment */
+  .EasyMDEContainer {
+    @apply max-w-full;
+  }
+  .EasyMDEContainer .CodeMirror {
+    max-width: 100%;
+  }
+  .EasyMDEContainer .CodeMirror-scroll {
+    max-width: 100%;
+  }
+
   /* EasyMDE / CodeMirror dark mode overrides */
   @media (prefers-color-scheme: dark) {
     .EasyMDEContainer .CodeMirror {
