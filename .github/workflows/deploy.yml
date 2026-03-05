@@ -159,7 +159,7 @@ jobs:
         run: aws eks update-kubeconfig --region ${{ env.AWS_REGION }} --name ${{ env.EKS_CLUSTER_NAME }}
 
       - name: Rollout wiki-daemon
-        run: kubectl set image -n ${{ env.EKS_NAMESPACE }} deployment/wiki-daemon daemon=freelawproject/wiki:${{ needs.setup-deploy.outputs.sha_short }}-prod
+        run: kubectl set image -n ${{ env.EKS_NAMESPACE }} deployment/wiki-daemon wiki-daemon=freelawproject/wiki:${{ needs.setup-deploy.outputs.sha_short }}-prod
       - name: Watch wiki-daemon rollout status
         run: kubectl rollout status -n ${{ env.EKS_NAMESPACE }} deployment/wiki-daemon
 
