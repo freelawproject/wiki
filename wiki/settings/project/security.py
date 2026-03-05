@@ -75,6 +75,9 @@ else:
 
     s3 = f"https://{AWS_S3_CUSTOM_DOMAIN}/"
     CONTENT_SECURITY_POLICY["DIRECTIVES"]["default-src"].append(s3)
+    CONTENT_SECURITY_POLICY["DIRECTIVES"]["script-src"].append(s3)
+    CONTENT_SECURITY_POLICY["DIRECTIVES"]["style-src"].append(s3)
     CONTENT_SECURITY_POLICY["DIRECTIVES"]["img-src"].append(s3)
+    CONTENT_SECURITY_POLICY["DIRECTIVES"]["font-src"].append(s3)
     CONTENT_SECURITY_POLICY["DIRECTIVES"]["connect-src"].append(s3)
     CONTENT_SECURITY_POLICY["DIRECTIVES"]["upgrade-insecure-requests"] = True
