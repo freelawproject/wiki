@@ -48,9 +48,7 @@ class TestPathConflictHelpers:
         self, nested_directory, root_directory
     ):
         # "devops" under root is not "engineering/devops"
-        assert not page_path_conflicts_with_directory(
-            "devops", root_directory
-        )
+        assert not page_path_conflicts_with_directory("devops", root_directory)
 
 
 class TestPageSlugAvoidsDirectoryCollision:
@@ -95,9 +93,7 @@ class TestDirectoryCreateBlocksPageCollision:
         with that slug already exists in 'engineering'."""
         client.force_login(user)
         resp = client.post(
-            reverse(
-                "directory_create_in_dir", kwargs={"path": "engineering"}
-            ),
+            reverse("directory_create_in_dir", kwargs={"path": "engineering"}),
             {"title": "Coding Standards", "visibility": "public"},
         )
         # Should re-render the form with an error, not redirect
@@ -109,9 +105,7 @@ class TestDirectoryCreateBlocksPageCollision:
     ):
         client.force_login(user)
         resp = client.post(
-            reverse(
-                "directory_create_in_dir", kwargs={"path": "engineering"}
-            ),
+            reverse("directory_create_in_dir", kwargs={"path": "engineering"}),
             {"title": "New Dir", "visibility": "public"},
         )
         assert resp.status_code == 302
@@ -170,9 +164,7 @@ class TestDirectoryMoveBlocksPageCollision:
         )
         client.force_login(user)
         resp = client.post(
-            reverse(
-                "directory_move", kwargs={"path": "engineering/devops"}
-            ),
+            reverse("directory_move", kwargs={"path": "engineering/devops"}),
             {"parent": root_directory.pk},
         )
         assert resp.status_code == 200

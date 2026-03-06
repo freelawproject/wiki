@@ -39,9 +39,7 @@ def directory_path_conflicts_with_page(dir_path):
     slug = dir_path.rsplit("/", 1)[-1]
     parent_path = dir_path.rsplit("/", 1)[0] if "/" in dir_path else ""
 
-    return Page.objects.filter(
-        slug=slug, directory__path=parent_path
-    ).exists()
+    return Page.objects.filter(slug=slug, directory__path=parent_path).exists()
 
 
 def compute_page_slug(title, exclude_pk=None):
