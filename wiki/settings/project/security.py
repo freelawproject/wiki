@@ -26,7 +26,7 @@ CONTENT_SECURITY_POLICY = {
     "DIRECTIVES": {
         "default-src": [SELF],
         # Uses @alpinejs/csp build — no unsafe-eval needed.
-        "script-src": [SELF],
+        "script-src": [SELF, "https://plausible.io/"],
         # Needed for style="" HTML attributes in templates.
         "style-src": [SELF, "'unsafe-inline'"],
         "img-src": [
@@ -35,7 +35,7 @@ CONTENT_SECURITY_POLICY = {
             "data:",
         ],
         "font-src": [SELF],
-        "connect-src": [SELF],
+        "connect-src": [SELF, "https://plausible.io/"],
         "frame-src": ["'none'"],
         "object-src": ["'none'"],
         "base-uri": [SELF],
