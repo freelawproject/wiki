@@ -4,6 +4,8 @@ from django.contrib.postgres.search import SearchVector, SearchVectorField
 from django.db import models
 from django.utils.text import slugify
 
+from wiki.lib.path_utils import page_path_conflicts_with_directory
+
 
 class Page(models.Model):
     """A wiki page with markdown content."""
@@ -93,8 +95,10 @@ class Page(models.Model):
             new_slug = slugify(self.title)
             base_slug = new_slug
             counter = 1
-            while (
-                Page.objects.filter(slug=new_slug).exclude(pk=self.pk).exists()
+            while Page.objects.filter(slug=new_slug).exclude(
+                pk=self.pk
+            ).exists() or page_path_conflicts_with_directory(
+                new_slug, self.directory
             ):
                 counter += 1
                 new_slug = f"{base_slug}-{counter}"

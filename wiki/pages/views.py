@@ -16,6 +16,7 @@ from wiki.lib.edit_lock import (
     release_lock_for_page,
 )
 from wiki.lib.markdown import render_markdown
+from wiki.lib.path_utils import page_path_conflicts_with_directory
 from wiki.lib.permissions import (
     can_edit_directory,
     can_edit_page,
@@ -648,6 +649,18 @@ def page_move(request, path):
                 "Cannot move a page into a more restrictive directory. "
                 "Change the page visibility first, or choose a "
                 "directory that matches.",
+            )
+            return render(
+                request,
+                "pages/move.html",
+                {"form": form, "page": page},
+            )
+
+        if page_path_conflicts_with_directory(page.slug, new_directory):
+            messages.error(
+                request,
+                "A directory already exists at that path. "
+                "Rename the page or choose a different directory.",
             )
             return render(
                 request,
