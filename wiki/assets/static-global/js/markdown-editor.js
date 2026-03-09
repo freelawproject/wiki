@@ -27,12 +27,69 @@ var initMarkdownEditor = (function() {
         alert('File too large. Maximum size is 1 GB.');
         return;
       }
-      var fd = new FormData(); fd.append('file', file);
-      fetch('/api/upload/', { method: 'POST', headers: { 'X-CSRFToken': csrfToken }, body: fd })
-        .then(function(r) { return r.json(); }).then(function(data) {
-          if (data.error) { alert(data.error); return; }
-          if (data.markdown) { var cm = editor.codemirror; cm.replaceRange(data.markdown + '\n', cm.getCursor()); }
-        });
+
+      // Insert animated placeholder at cursor
+      var cm = editor.codemirror;
+      var cursor = cm.getCursor();
+      var placeholder = '⏳ Uploading ' + file.name + '...';
+      cm.replaceRange(placeholder + '\n', cursor);
+      var placeholderLine = cursor.line;
+
+      // Animate the ellipsis while uploading
+      var dots = 0;
+      var animInterval = setInterval(function() {
+        dots = (dots + 1) % 4;
+        var text = '⏳ Uploading ' + file.name + '.'.repeat(dots + 1);
+        cm.replaceRange(text,
+          { line: placeholderLine, ch: 0 },
+          { line: placeholderLine, ch: cm.getLine(placeholderLine).length }
+        );
+      }, 400);
+
+      // Use XHR for upload progress tracking
+      var xhr = new XMLHttpRequest();
+      xhr.open('POST', '/api/upload/');
+      xhr.setRequestHeader('X-CSRFToken', csrfToken);
+
+      xhr.upload.addEventListener('progress', function(e) {
+        if (!e.lengthComputable) return;
+        var pct = Math.round(e.loaded / e.total * 100);
+        var text = '⏳ Uploading ' + file.name + ' (' + pct + '%)';
+        cm.replaceRange(text,
+          { line: placeholderLine, ch: 0 },
+          { line: placeholderLine, ch: cm.getLine(placeholderLine).length }
+        );
+      });
+
+      xhr.addEventListener('load', function() {
+        clearInterval(animInterval);
+        var lineEnd = cm.getLine(placeholderLine).length;
+        if (xhr.status >= 200 && xhr.status < 300) {
+          var data = JSON.parse(xhr.responseText);
+          if (data.error) {
+            cm.replaceRange('', { line: placeholderLine, ch: 0 }, { line: placeholderLine + 1, ch: 0 });
+            alert(data.error);
+          } else if (data.markdown) {
+            cm.replaceRange(data.markdown,
+              { line: placeholderLine, ch: 0 },
+              { line: placeholderLine, ch: lineEnd }
+            );
+          }
+        } else {
+          cm.replaceRange('', { line: placeholderLine, ch: 0 }, { line: placeholderLine + 1, ch: 0 });
+          alert('Upload failed (status ' + xhr.status + ')');
+        }
+      });
+
+      xhr.addEventListener('error', function() {
+        clearInterval(animInterval);
+        cm.replaceRange('', { line: placeholderLine, ch: 0 }, { line: placeholderLine + 1, ch: 0 });
+        alert('Upload failed — network error');
+      });
+
+      var fd = new FormData();
+      fd.append('file', file);
+      xhr.send(fd);
     }
 
     // ── EasyMDE Editor ──────────────────────────────────────
