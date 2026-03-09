@@ -84,7 +84,8 @@ else:
     CONTENT_SECURITY_POLICY["DIRECTIVES"]["font-src"].append(s3)
     CONTENT_SECURITY_POLICY["DIRECTIVES"]["connect-src"].append(s3)
 
-    # Private bucket hosts user-uploaded images (served via signed URLs)
+    # Private bucket: direct browser uploads (presigned POST) and
+    # image serving (signed URL redirects)
     s3_private = f"https://{AWS_PRIVATE_STORAGE_BUCKET_NAME}.s3.amazonaws.com/"
     CONTENT_SECURITY_POLICY["DIRECTIVES"]["img-src"].append(s3_private)
     CONTENT_SECURITY_POLICY["DIRECTIVES"]["connect-src"].append(s3_private)

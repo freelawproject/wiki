@@ -1,3 +1,5 @@
+import uuid
+
 from django.conf import settings
 from django.contrib.postgres.indexes import GinIndex
 from django.contrib.postgres.search import SearchVector, SearchVectorField
@@ -291,6 +293,24 @@ class FileUpload(models.Model):
 
     def __str__(self):
         return self.original_filename
+
+
+class PendingUpload(models.Model):
+    """Tracks authorized presigned S3 uploads awaiting confirmation."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    s3_key = models.CharField(max_length=500)
+    original_filename = models.CharField(max_length=255)
+    content_type = models.CharField(max_length=100, blank=True)
+    expected_size = models.PositiveBigIntegerField()
+    uploaded_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Pending: {self.original_filename}"
 
 
 class SlugRedirect(models.Model):
