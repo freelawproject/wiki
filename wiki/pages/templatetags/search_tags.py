@@ -13,8 +13,8 @@ register = template.Library()
 # stripping.  We temporarily swap them out, strip, then restore.
 _MARK_OPEN = re.compile(r"<mark>")
 _MARK_CLOSE = re.compile(r"</mark>")
-_PLACEHOLDER_OPEN = "\x00MARK_OPEN\x00"
-_PLACEHOLDER_CLOSE = "\x00MARK_CLOSE\x00"
+_PLACEHOLDER_OPEN = "\x00MARKOPEN\x00"
+_PLACEHOLDER_CLOSE = "\x00MARKCLOSE\x00"
 
 
 @register.filter

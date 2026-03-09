@@ -11,9 +11,11 @@ class TestStripMarkdown:
         assert strip_markdown("") == ""
         assert strip_markdown(None) == ""
 
-    def test_strips_headings(self):
-        assert "Title" not in strip_markdown("# Title\n\nBody text.")
-        assert "Body text." in strip_markdown("# Title\n\nBody text.")
+    def test_strips_heading_markers(self):
+        result = strip_markdown("# Title\n\nBody text.")
+        assert "Title" in result
+        assert "#" not in result
+        assert "Body text." in result
 
     def test_strips_fenced_code_blocks(self):
         md = "Before.\n\n```python\nprint('hi')\n```\n\nAfter."

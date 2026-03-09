@@ -130,7 +130,7 @@ def resolve_wiki_links(content):
 
 _FENCED_CODE_RE = re.compile(r"```[\s\S]*?```")
 _INLINE_CODE_RE = re.compile(r"`([^`]+)`")
-_HEADING_RE = re.compile(r"^#{1,6}\s+.*$", re.MULTILINE)
+_HEADING_RE = re.compile(r"^#{1,6}\s+", re.MULTILINE)
 _IMAGE_RE = re.compile(r"!\[[^\]]*\]\([^)]*\)")
 _LINK_RE = re.compile(r"\[([^\]]+)\]\([^)]+\)")
 _BOLD_ITALIC_RE = re.compile(r"\*{1,3}|_{1,3}")
@@ -146,9 +146,9 @@ _WHITESPACE_RE = re.compile(r"\s+")
 def strip_markdown(text: str) -> str:
     """Convert markdown to plain text by removing all formatting syntax.
 
-    Strips headings, code blocks, links, emphasis, images, HTML tags,
-    blockquotes, list markers, and horizontal rules. Link and inline-code
-    text content is preserved.
+    Strips heading markers, code blocks, links, emphasis, images, HTML
+    tags, blockquotes, list markers, and horizontal rules. Heading text,
+    link text, and inline-code content are preserved.
     """
     if not text:
         return ""
