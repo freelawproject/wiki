@@ -10,8 +10,8 @@ else:
     AWS_SES_REGION_NAME = "us-west-2"
     AWS_SES_REGION_ENDPOINT = "email.us-west-2.amazonaws.com"
 
-SERVER_EMAIL = "FLP Wiki <noreply@free.law>"
-DEFAULT_FROM_EMAIL = "FLP Wiki <noreply@free.law>"
+SERVER_EMAIL = "FLP Wiki <noreply@wiki.free.law>"
+DEFAULT_FROM_EMAIL = "FLP Wiki <noreply@wiki.free.law>"
 
 # Magic link expiry in minutes
 MAGIC_LINK_EXPIRY_MINUTES = 15

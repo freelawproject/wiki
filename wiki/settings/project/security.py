@@ -26,7 +26,7 @@ CONTENT_SECURITY_POLICY = {
     "DIRECTIVES": {
         "default-src": [SELF],
         # Uses @alpinejs/csp build — no unsafe-eval needed.
-        "script-src": [SELF],
+        "script-src": [SELF, "https://plausible.io/"],
         # Needed for style="" HTML attributes in templates.
         "style-src": [SELF, "'unsafe-inline'"],
         "img-src": [
@@ -35,7 +35,7 @@ CONTENT_SECURITY_POLICY = {
             "data:",
         ],
         "font-src": [SELF],
-        "connect-src": [SELF],
+        "connect-src": [SELF, "https://plausible.io/"],
         "frame-src": ["'none'"],
         "object-src": ["'none'"],
         "base-uri": [SELF],
@@ -71,10 +71,22 @@ else:
 
     # SECURITY: In production, allow S3 domain for file serving
     # and force HTTPS for all resources.
-    from ..third_party.aws import AWS_S3_CUSTOM_DOMAIN
+    from ..third_party.aws import (
+        AWS_PRIVATE_STORAGE_BUCKET_NAME,
+        AWS_S3_CUSTOM_DOMAIN,
+    )
 
     s3 = f"https://{AWS_S3_CUSTOM_DOMAIN}/"
     CONTENT_SECURITY_POLICY["DIRECTIVES"]["default-src"].append(s3)
+    CONTENT_SECURITY_POLICY["DIRECTIVES"]["script-src"].append(s3)
+    CONTENT_SECURITY_POLICY["DIRECTIVES"]["style-src"].append(s3)
     CONTENT_SECURITY_POLICY["DIRECTIVES"]["img-src"].append(s3)
+    CONTENT_SECURITY_POLICY["DIRECTIVES"]["font-src"].append(s3)
     CONTENT_SECURITY_POLICY["DIRECTIVES"]["connect-src"].append(s3)
+
+    # Private bucket hosts user-uploaded images (served via signed URLs)
+    s3_private = f"https://{AWS_PRIVATE_STORAGE_BUCKET_NAME}.s3.amazonaws.com/"
+    CONTENT_SECURITY_POLICY["DIRECTIVES"]["img-src"].append(s3_private)
+    CONTENT_SECURITY_POLICY["DIRECTIVES"]["connect-src"].append(s3_private)
+
     CONTENT_SECURITY_POLICY["DIRECTIVES"]["upgrade-insecure-requests"] = True

@@ -1,6 +1,14 @@
 {% extends "base.html" %}
 {% load static %}
 
+{% block header %}
+{% if directory.path %}
+<c-header search_dir_path="{{ directory.path }}" search_dir_title="{{ directory.title }}" />
+{% else %}
+<c-header />
+{% endif %}
+{% endblock %}
+
 {% block title %}{{ directory.title|default:"Home" }} - FLP Wiki{% endblock %}
 
 {% if directory_description %}
@@ -123,17 +131,14 @@
   {# Pages #}
   {% if pages %}
   {# Sort controls #}
-  <div class="flex items-center justify-between mb-3">
+  <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
     <h2 class="text-lg font-semibold font-sans">Pages</h2>
-    <div class="text-sm text-gray-500 dark:text-gray-400 flex items-center gap-1">
-      <span class="text-gray-400 dark:text-gray-500 mr-1">Sort:</span>
-      {% if current_sort == "title" %}<strong class="text-gray-900 dark:text-gray-100">Title</strong>{% else %}<a href="?sort=title" class="hover:underline">Title</a>{% endif %}
-      <span class="text-gray-300 dark:text-gray-600">|</span>
-      {% if current_sort == "updated" %}<strong class="text-gray-900 dark:text-gray-100">Last edited</strong>{% else %}<a href="?sort=updated" class="hover:underline">Last edited</a>{% endif %}
-      <span class="text-gray-300 dark:text-gray-600">|</span>
-      {% if current_sort == "created" %}<strong class="text-gray-900 dark:text-gray-100">Created</strong>{% else %}<a href="?sort=created" class="hover:underline">Created</a>{% endif %}
-      <span class="text-gray-300 dark:text-gray-600">|</span>
-      {% if current_sort == "views" %}<strong class="text-gray-900 dark:text-gray-100">Most viewed</strong>{% else %}<a href="?sort=views" class="hover:underline">Most viewed</a>{% endif %}
+    <div class="text-sm flex items-center gap-1.5 flex-wrap">
+      <span class="text-gray-400 dark:text-gray-500 text-xs uppercase tracking-wide mr-0.5">Sort</span>
+      {% if current_sort == "title" %}<span class="px-2 py-1 rounded-md text-xs font-medium bg-primary-100 text-primary-700 dark:bg-primary-900/40 dark:text-primary-300">Title</span>{% else %}<a href="?sort=title" class="px-2 py-1 rounded-md text-xs text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 no-underline hover:no-underline transition-colors">Title</a>{% endif %}
+      {% if current_sort == "updated" %}<span class="px-2 py-1 rounded-md text-xs font-medium bg-primary-100 text-primary-700 dark:bg-primary-900/40 dark:text-primary-300">Last edited</span>{% else %}<a href="?sort=updated" class="px-2 py-1 rounded-md text-xs text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 no-underline hover:no-underline transition-colors">Last edited</a>{% endif %}
+      {% if current_sort == "created" %}<span class="px-2 py-1 rounded-md text-xs font-medium bg-primary-100 text-primary-700 dark:bg-primary-900/40 dark:text-primary-300">Created</span>{% else %}<a href="?sort=created" class="px-2 py-1 rounded-md text-xs text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 no-underline hover:no-underline transition-colors">Created</a>{% endif %}
+      {% if current_sort == "views" %}<span class="px-2 py-1 rounded-md text-xs font-medium bg-primary-100 text-primary-700 dark:bg-primary-900/40 dark:text-primary-300">Most viewed</span>{% else %}<a href="?sort=views" class="px-2 py-1 rounded-md text-xs text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 no-underline hover:no-underline transition-colors">Most viewed</a>{% endif %}
     </div>
   </div>
   <div class="grid gap-2">

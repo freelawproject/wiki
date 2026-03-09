@@ -22,8 +22,8 @@ class TestParseQuery:
         assert result.phrases == ["first phrase", "second phrase"]
         assert result.text == ""
 
-    def test_dir_filter(self):
-        result = parse_query("setup dir:engineering")
+    def test_in_filter(self):
+        result = parse_query("setup in:engineering")
         assert result.directories == ["engineering"]
         assert result.text == "setup"
 
@@ -81,7 +81,7 @@ class TestParseQuery:
 
     def test_mixed_filters_and_text(self):
         result = parse_query(
-            'deploy "production guide" dir:engineering owner:alice -draft'
+            'deploy "production guide" in:engineering owner:alice -draft'
         )
         assert result.text == "deploy"
         assert "production guide" in result.phrases
@@ -99,8 +99,8 @@ class TestParseQuery:
         result = parse_query("   ")
         assert result.text == ""
 
-    def test_multiple_dirs(self):
-        result = parse_query("setup dir:engineering dir:devops")
+    def test_multiple_in_filters(self):
+        result = parse_query("setup in:engineering in:devops")
         assert result.directories == ["engineering", "devops"]
 
     def test_empty_quoted_phrase_ignored(self):

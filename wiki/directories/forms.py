@@ -2,6 +2,7 @@ from django import forms
 from django.contrib.auth.models import Group
 from django.utils.text import slugify
 
+from wiki.lib.path_utils import directory_path_conflicts_with_page
 from wiki.lib.permissions import can_view_directory
 
 from .models import Directory, DirectoryPermission
@@ -127,6 +128,10 @@ class DirectoryCreateForm(forms.ModelForm):
         if Directory.objects.filter(path=full_path).exists():
             raise forms.ValidationError(
                 f'A directory named "{title}" already exists in this location.'
+            )
+        if directory_path_conflicts_with_page(full_path):
+            raise forms.ValidationError(
+                f'A page named "{title}" already exists at this path.'
             )
         return title
 

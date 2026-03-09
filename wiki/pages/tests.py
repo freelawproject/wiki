@@ -2159,7 +2159,7 @@ class TestSearchView:
             visibility=Page.Visibility.PUBLIC,
         )
         client.force_login(user)
-        r = client.get("/search/?q=narrowterm&dir=engineering")
+        r = client.get("/search/?q=narrowterm&in=engineering")
         content = r.content.decode()
         assert "Engineering Page" in content
         assert "Other Page" not in content

@@ -32,6 +32,9 @@ DATABASES = {
         "OPTIONS": {
             "sslmode": env("DB_SSL_MODE", default="require"),
         },
+        "TEST": {
+            "NAME": env("TEST_DB_NAME", default="test_wiki"),
+        },
     },
 }
 
@@ -92,6 +95,7 @@ TEMPLATES = [
                 "django.template.context_processors.request",
                 "django.template.context_processors.static",
                 "wiki.lib.context_processors.inject_settings",
+                "wiki.lib.context_processors.inject_review_pending",
             ),
             "debug": DEBUG,
         },
@@ -134,6 +138,7 @@ INSTALLED_APPS = [
     "wiki.directories",
     "wiki.users",
     "wiki.subscriptions",
+    "wiki.comments",
     "wiki.proposals",
     "wiki.groups",
     "tailwind",

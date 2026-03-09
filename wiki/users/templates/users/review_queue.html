@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% load wiki_tags %}
+
+{% block title %}Review Queue - FLP Wiki{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl">
+  <h1 class="text-2xl mb-2">Review Queue</h1>
+  <p class="text-gray-600 dark:text-gray-400 mb-6">
+    {% if proposal_count or comment_count %}
+      {{ proposal_count }} pending proposal{{ proposal_count|pluralize }},
+      {{ comment_count }} pending comment{{ comment_count|pluralize }}
+    {% else %}
+      No pending items to review.
+    {% endif %}
+  </p>
+
+  {% if items %}
+  <div class="space-y-3">
+    {% for item in items %}
+      {% if item.item_type == "comment" %}
+      <a href="{% url 'comment_detail' path=item.page.content_path pk=item.pk %}"
+         class="block p-4 border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 rounded-lg hover:border-blue-400 dark:hover:border-blue-600 transition-colors no-underline">
+        <div class="flex items-start justify-between gap-4">
+          <div class="min-w-0">
+            <p class="text-xs text-gray-500 dark:text-gray-400 mb-1">
+              Comment on <strong>{{ item.page.title }}</strong>
+            </p>
+            <span class="font-medium text-gray-900 dark:text-gray-100">{{ item.message|truncatewords:25 }}</span>
+            <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">
+              {% if item.author %}
+                by {{ item.author|display_name }}
+              {% elif item.author_email %}
+                by {{ item.author_email }}
+              {% else %}
+                by anonymous
+              {% endif %}
+              &middot; {{ item.created_at|timesince }} ago
+            </p>
+          </div>
+          <span class="badge-blue shrink-0">Comment</span>
+        </div>
+      </a>
+      {% else %}
+      <a href="{% url 'proposal_review' path=item.page.content_path pk=item.pk %}"
+         class="block p-4 border border-yellow-200 dark:border-yellow-800 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg hover:border-yellow-400 dark:hover:border-yellow-600 transition-colors no-underline">
+        <div class="flex items-start justify-between gap-4">
+          <div class="min-w-0">
+            <p class="text-xs text-gray-500 dark:text-gray-400 mb-1">
+              Proposal for <strong>{{ item.page.title }}</strong>
+            </p>
+            <span class="font-medium text-gray-900 dark:text-gray-100">{{ item.change_message }}</span>
+            <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">
+              {% if item.proposed_by %}
+                by {{ item.proposed_by|display_name }}
+              {% elif item.proposer_email %}
+                by {{ item.proposer_email }}
+              {% else %}
+                by anonymous
+              {% endif %}
+              &middot; {{ item.created_at|timesince }} ago
+            </p>
+          </div>
+          <span class="badge-yellow shrink-0">Proposal</span>
+        </div>
+      </a>
+      {% endif %}
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

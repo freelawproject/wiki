@@ -3,7 +3,7 @@
 
 {% block title %}{% if query %}Search: {{ query }}{% else %}Search{% endif %} - FLP Wiki{% endblock %}
 
-{% block header %}<c-header is_search_page search_query="{{ query }}" search_sort="{{ current_sort }}" />{% endblock %}
+{% block header %}<c-header is_search_page search_query="{{ search_query_text }}" search_sort="{{ current_sort }}" search_dir_path="{{ search_dir_path }}" search_dir_title="{{ search_dir_title }}" initial_chips="{{ initial_chips_json }}" />{% endblock %}
 
 {% block content %}
 <div class="max-w-5xl">
@@ -28,7 +28,7 @@
           <span class="text-gray-500 dark:text-gray-400">Search content only</span>
         </div>
         <div class="flex items-baseline gap-2 py-1">
-          <code class="text-primary-600 dark:text-primary-400 shrink-0">dir:path</code>
+          <code class="text-primary-600 dark:text-primary-400 shrink-0">in:path</code>
           <span class="text-gray-500 dark:text-gray-400">Filter by directory</span>
         </div>
         <div class="flex items-baseline gap-2 py-1">
@@ -45,12 +45,15 @@
         </div>
         <div class="flex items-baseline gap-2 py-1">
           <code class="text-primary-600 dark:text-primary-400 shrink-0">before:2026-01-01</code>
-          <span class="text-gray-500 dark:text-gray-400">Updated before date</span>
+          <span class="text-gray-500 dark:text-gray-400">Updated before date (UTC)</span>
         </div>
         <div class="flex items-baseline gap-2 py-1">
           <code class="text-primary-600 dark:text-primary-400 shrink-0">after:2025-06-01</code>
-          <span class="text-gray-500 dark:text-gray-400">Updated after date</span>
+          <span class="text-gray-500 dark:text-gray-400">Updated after date (UTC)</span>
         </div>
+      </div>
+      <div class="border-t border-gray-200 dark:border-gray-700 px-4 py-2.5 text-xs text-gray-400 dark:text-gray-500">
+        <a href="{% url 'resolve_path' path='help/search-guide' %}" class="text-primary-600 dark:text-primary-400 hover:underline">Full search documentation</a>
       </div>
     </div>
   </div>
@@ -162,7 +165,7 @@
             <ul class="space-y-0.5">
               {% for facet in facets.directories %}
               <li>
-                <a href="?q={{ query|urlencode }}&sort={{ current_sort }}&dir={{ facet.directory__path|urlencode }}"
+                <a href="?q={{ query|urlencode }}&sort={{ current_sort }}&in={{ facet.directory__path|urlencode }}"
                    class="group flex items-center justify-between py-1 text-sm no-underline text-gray-600 dark:text-gray-400 hover:text-primary-600 dark:hover:text-primary-400 transition-colors">
                   <span class="truncate">{{ facet.directory__title }}</span>
                   <span class="text-[11px] tabular-nums text-gray-400 dark:text-gray-600 group-hover:text-primary-400 ml-2">{{ facet.count }}</span>

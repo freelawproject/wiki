@@ -9,6 +9,9 @@ class PrivateS3Storage(S3Boto3Storage):
     """S3 storage for private file uploads (wiki page attachments)."""
 
     default_acl = "private"
+    custom_domain = (
+        None  # Override global AWS_S3_CUSTOM_DOMAIN so urls are signed
+    )
     querystring_auth = True
     querystring_expire = 300  # 5-minute signed URLs
 

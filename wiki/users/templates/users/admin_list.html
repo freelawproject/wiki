@@ -19,39 +19,43 @@
 
   <div class="space-y-2">
     {% for u in users %}
-    <div class="card flex items-center justify-between py-3.5 px-5">
-      <div class="flex items-center gap-3">
+    <div class="card flex flex-col sm:flex-row sm:items-center justify-between gap-3 py-3.5 px-5">
+      <div class="flex items-center gap-3 min-w-0">
         {% if u.profile.gravatar_url %}
-        <img src="{{ u.profile.gravatar_url }}" alt="" class="w-8 h-8 rounded-full">
+        <img src="{{ u.profile.gravatar_url }}" alt="" class="w-8 h-8 rounded-full shrink-0">
         {% else %}
-        <div class="w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center text-sm font-medium text-gray-600 dark:text-gray-300">
+        <div class="w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center text-sm font-medium text-gray-600 dark:text-gray-300 shrink-0">
           {{ u.email|first }}
         </div>
         {% endif %}
-        <div>
-          <span class="font-medium">{{ u|display_name }}</span>
-          <span class="text-sm text-gray-400 dark:text-gray-500 ml-1">({{ u.email }})</span>
-          {% if u.is_staff %}
-          <span class="badge-purple ml-2">Admin</span>
-          {% endif %}
-          {% if not u.is_active %}
-          <span class="badge-red ml-2">Archived</span>
-          {% endif %}
-          {% if system_owner and u.id == system_owner.id %}
-          <span class="badge-blue ml-1">System Owner</span>
-          {% endif %}
+        <div class="min-w-0">
+          <div class="flex items-center gap-1.5 flex-wrap">
+            <span class="font-medium truncate">{{ u|display_name }}</span>
+            <span class="text-sm text-gray-400 dark:text-gray-500 truncate">({{ u.email }})</span>
+          </div>
+          <div class="flex items-center gap-1.5 mt-0.5 flex-wrap">
+            {% if u.is_staff %}
+            <span class="badge-purple">Admin</span>
+            {% endif %}
+            {% if not u.is_active %}
+            <span class="badge-red">Archived</span>
+            {% endif %}
+            {% if system_owner and u.id == system_owner.id %}
+            <span class="badge-blue">System Owner</span>
+            {% endif %}
+          </div>
         </div>
       </div>
       {% if not system_owner or u.id != system_owner.id %}
-      <div class="flex items-center gap-3">
+      <div class="flex items-center gap-2 shrink-0 ml-11 sm:ml-0">
         <form method="post" action="{% url 'admin_toggle' pk=u.pk %}">
           {% csrf_token %}
           {% if u.is_staff %}
-            <button type="submit" class="text-sm text-red-600 dark:text-red-400 hover:underline">
+            <button type="submit" class="text-sm py-1.5 px-3 rounded-md text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
               Remove Admin
             </button>
           {% else %}
-            <button type="submit" class="text-sm text-primary-600 dark:text-primary-400 hover:underline">
+            <button type="submit" class="text-sm py-1.5 px-3 rounded-md text-primary-600 dark:text-primary-400 hover:bg-primary-50 dark:hover:bg-primary-900/20 transition-colors">
               Make Admin
             </button>
           {% endif %}
@@ -59,11 +63,11 @@
         <form method="post" action="{% url 'admin_archive_toggle' pk=u.pk %}">
           {% csrf_token %}
           {% if u.is_active %}
-            <button type="submit" class="text-sm text-red-600 dark:text-red-400 hover:underline">
+            <button type="submit" class="text-sm py-1.5 px-3 rounded-md text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors">
               Archive
             </button>
           {% else %}
-            <button type="submit" class="text-sm text-primary-600 dark:text-primary-400 hover:underline">
+            <button type="submit" class="text-sm py-1.5 px-3 rounded-md text-primary-600 dark:text-primary-400 hover:bg-primary-50 dark:hover:bg-primary-900/20 transition-colors">
               Unarchive
             </button>
           {% endif %}

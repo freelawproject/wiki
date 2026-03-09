@@ -33,7 +33,7 @@ class ParsedQuery:
 # Patterns
 _PHRASE_RE = re.compile(r'"([^"]*)"')
 _FILTER_RE = re.compile(
-    r"\b(title|content|dir|owner|visibility|is|before|after):(\S+)"
+    r"\b(title|content|in|owner|visibility|is|before|after):(\S+)"
 )
 _EXCLUDE_RE = re.compile(r"(?:^|\s)-(\S+)")
 
@@ -71,7 +71,7 @@ def parse_query(raw: str) -> ParsedQuery:
             result.title_terms.append(value)
         elif key == "content":
             result.content_terms.append(value)
-        elif key == "dir":
+        elif key == "in":
             result.directories.append(value)
         elif key == "owner":
             result.owners.append(value)

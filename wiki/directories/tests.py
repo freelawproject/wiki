@@ -361,12 +361,9 @@ class TestDirectorySort:
     def test_default_sort_is_title(self, client, page):
         r = client.get("/c/")
         assert r.status_code == 200
-        assert b"Sort:" in r.content
-        # "Title" should be bold (active)
-        assert (
-            b'<strong class="text-gray-900 dark:text-gray-100">Title</strong>'
-            in r.content
-        )
+        assert b"Sort" in r.content
+        # "Title" should be highlighted (active pill)
+        assert b">Title</span>" in r.content
 
     def test_sort_updated_reorders_pages(self, client, user, root_directory):
         from datetime import timedelta
@@ -443,11 +440,8 @@ class TestDirectorySort:
     def test_invalid_sort_falls_back_to_title(self, client, page):
         r = client.get("/c/?sort=bogus")
         assert r.status_code == 200
-        # Should fall back to title (bold)
-        assert (
-            b'<strong class="text-gray-900 dark:text-gray-100">Title</strong>'
-            in r.content
-        )
+        # Should fall back to title (active pill)
+        assert b">Title</span>" in r.content
 
     def test_sort_controls_hidden_when_empty(self, client, db):
         r = client.get("/c/")
@@ -467,10 +461,8 @@ class TestDirectorySort:
         )
         r = client.get("/c/engineering?sort=updated")
         assert r.status_code == 200
-        assert (
-            b'<strong class="text-gray-900 dark:text-gray-100">Last edited</strong>'
-            in r.content
-        )
+        # "Last edited" should be the active pill
+        assert b">Last edited</span>" in r.content
 
 
 class TestDirectorySearchAPI:

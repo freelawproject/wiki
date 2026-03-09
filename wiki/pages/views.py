@@ -16,6 +16,7 @@ from wiki.lib.edit_lock import (
     release_lock_for_page,
 )
 from wiki.lib.markdown import render_markdown
+from wiki.lib.path_utils import page_path_conflicts_with_directory
 from wiki.lib.permissions import (
     can_edit_directory,
     can_edit_page,
@@ -305,11 +306,16 @@ def _render_page_detail(request, page):
 
     can_edit = can_edit_page(request.user, page)
     pending_proposal_count = 0
+    pending_comment_count = 0
     if can_edit:
+        from wiki.comments.models import PageComment
         from wiki.proposals.models import ChangeProposal
 
         pending_proposal_count = page.proposals.filter(
             status=ChangeProposal.Status.PENDING
+        ).count()
+        pending_comment_count = page.comments.filter(
+            status=PageComment.Status.PENDING
         ).count()
 
     # SEO
@@ -337,6 +343,7 @@ def _render_page_detail(request, page):
             "toc": toc,
             "can_edit": can_edit,
             "pending_proposal_count": pending_proposal_count,
+            "pending_comment_count": pending_comment_count,
             "breadcrumbs": breadcrumbs,
             "is_subscribed": is_subscribed,
             "subscribers": subscribers,
@@ -642,6 +649,18 @@ def page_move(request, path):
                 "Cannot move a page into a more restrictive directory. "
                 "Change the page visibility first, or choose a "
                 "directory that matches.",
+            )
+            return render(
+                request,
+                "pages/move.html",
+                {"form": form, "page": page},
+            )
+
+        if page_path_conflicts_with_directory(page.slug, new_directory):
+            messages.error(
+                request,
+                "A directory already exists at that path. "
+                "Rename the page or choose a different directory.",
             )
             return render(
                 request,

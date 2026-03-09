@@ -17,6 +17,7 @@ wiki/
 ├── pages/             # Page CRUD, uploads, search, file serving
 ├── directories/       # Directory tree and permissions
 ├── users/             # Magic link auth, profiles, admin management
+├── comments/          # Page comments/feedback
 ├── proposals/         # Change proposals workflow
 ├── subscriptions/     # Page/directory email subscriptions
 ├── groups/            # Group management
@@ -56,12 +57,14 @@ wiki/
 
 5. **Unused code**: MUST delete unused code. Don't leave commented-out code.
 
-6. **Type hints**: Encouraged for new code but not yet enforced project-wide.
+6. **No code duplication**: MUST NOT duplicate logic across apps. Extract shared utilities to `wiki/lib/` and import them. If two apps need the same helper, it belongs in `wiki/lib/`.
 
-7. **JavaScript vendoring**: MUST vendor all JS libraries locally in `wiki/assets/static-global/js/`.
+7. **Type hints**: Encouraged for new code but not yet enforced project-wide.
+
+8. **JavaScript vendoring**: MUST vendor all JS libraries locally in `wiki/assets/static-global/js/`.
    NEVER load JS from CDNs at runtime.
 
-8. **Alpine.js (CSP build)**: The project uses `@alpinejs/csp`, which does NOT support inline
+9. **Alpine.js (CSP build)**: The project uses `@alpinejs/csp`, which does NOT support inline
    JavaScript expressions in templates. MUST follow these rules:
    - Register all components in `wiki/assets/static-global/js/alpine-components.js` using `Alpine.data()`
    - Use `x-data="componentName"` (not inline objects like `x-data="{ open: false }"`)
@@ -88,6 +91,16 @@ docker exec wiki-django python -m pytest wiki/pages/tests.py::TestClassName -v
 # Run a specific test method
 docker exec wiki-django python -m pytest wiki/pages/tests.py::TestClassName::test_method -v
 ```
+
+### Parallel Test Runs
+
+To run tests in multiple terminals simultaneously, give each a unique test database name via `TEST_DB_NAME`. Use `$$` (the host shell's PID) to automatically get a unique suffix per terminal:
+
+```bash
+docker exec -e TEST_DB_NAME=test_wiki_$$ wiki-django python -m pytest wiki/pages/ -v
+```
+
+This works because each terminal has a stable, unique shell PID. Without `TEST_DB_NAME`, concurrent runs will collide on the default `test_wiki` database.
 
 ### Testing Guidelines
 

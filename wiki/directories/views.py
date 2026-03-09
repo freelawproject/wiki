@@ -11,6 +11,7 @@ from wiki.lib.edit_lock import (
     release_lock_for_directory,
 )
 from wiki.lib.markdown import render_markdown
+from wiki.lib.path_utils import directory_path_conflicts_with_page
 from wiki.lib.permissions import (
     can_edit_directory,
     can_view_directory,
@@ -548,12 +549,15 @@ def directory_move(request, path):
 
     if request.method == "POST" and form.is_valid():
         new_parent = form.cleaned_data["parent"]
-        _move_directory(directory, new_parent)
-        messages.success(
-            request,
-            f'Moved "{directory.title}" to {new_parent.title}.',
-        )
-        return redirect(directory.get_absolute_url())
+        error = _move_directory(directory, new_parent)
+        if error:
+            messages.error(request, error)
+        else:
+            messages.success(
+                request,
+                f'Moved "{directory.title}" to {new_parent.title}.',
+            )
+            return redirect(directory.get_absolute_url())
 
     return render(
         request,
@@ -563,17 +567,31 @@ def directory_move(request, path):
 
 
 def _move_directory(directory, new_parent):
-    """Move a directory to a new parent, updating all descendant paths."""
+    """Move a directory to a new parent, updating all descendant paths.
+
+    Returns an error message string if the move would cause a path
+    collision, or None on success.
+    """
     from django.utils.text import slugify
 
-    directory.parent = new_parent
     slug = slugify(directory.title)
-    if new_parent.path:
-        directory.path = f"{new_parent.path}/{slug}"
-    else:
-        directory.path = slug
+    new_path = f"{new_parent.path}/{slug}" if new_parent.path else slug
+
+    if (
+        Directory.objects.filter(path=new_path)
+        .exclude(pk=directory.pk)
+        .exists()
+    ):
+        return f'A directory named "{directory.title}" already exists in the destination.'
+
+    if directory_path_conflicts_with_page(new_path):
+        return f'A page named "{directory.title}" already exists at the destination path.'
+
+    directory.parent = new_parent
+    directory.path = new_path
     directory.save()
     _update_descendant_paths(directory)
+    return None
 
 
 def _update_descendant_paths(directory):
