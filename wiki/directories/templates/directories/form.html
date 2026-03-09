@@ -84,7 +84,8 @@
 <script src="{% static 'js/easymde.min.js' %}"></script>
 <script type="application/json" id="editor-config">
 {
-  "csrfToken": "{{ csrf_token }}"
+  "csrfToken": "{{ csrf_token }}",
+  "directUpload": {% if not DEBUG %}true{% else %}false{% endif %}
 }
 </script>
 <script src="{% static 'js/mention-dropdown.js' %}"></script>

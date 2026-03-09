@@ -6,7 +6,7 @@ from django.contrib.sessions.models import Session
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 
-from wiki.pages.models import FileUpload
+from wiki.pages.models import FileUpload, PendingUpload
 from wiki.users.models import UserProfile
 
 
@@ -18,6 +18,7 @@ class Command(BaseCommand):
         self._clear_expired_sessions(now)
         self._clear_expired_magic_tokens(now)
         self._delete_orphaned_uploads(now)
+        self._delete_stale_pending_uploads(now)
         self._clear_expired_edit_locks()
 
     def _clear_expired_sessions(self, now):
@@ -51,6 +52,28 @@ class Command(BaseCommand):
             upload.delete()
             count += 1
         self.stdout.write(f"Deleted {count} orphaned upload(s).")
+
+    def _delete_stale_pending_uploads(self, now):
+        cutoff = now - timedelta(hours=2)
+        stale = PendingUpload.objects.filter(created_at__lt=cutoff)
+        count = 0
+        for pending in stale:
+            # Try to clean up the S3 object if it exists
+            try:
+                from django.conf import settings
+
+                from wiki.lib.storage import get_s3_client
+
+                client = get_s3_client()
+                client.delete_object(
+                    Bucket=settings.AWS_PRIVATE_STORAGE_BUCKET_NAME,
+                    Key=pending.s3_key,
+                )
+            except Exception:
+                pass  # Best effort; object may not exist
+            pending.delete()
+            count += 1
+        self.stdout.write(f"Deleted {count} stale pending upload(s).")
 
     def _clear_expired_edit_locks(self):
         from wiki.lib.edit_lock import cleanup_expired_locks

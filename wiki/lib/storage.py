@@ -1,4 +1,16 @@
+import boto3
 from storages.backends.s3boto3 import S3Boto3Storage, S3ManifestStaticStorage
+
+
+def get_s3_client():
+    """Return a boto3 S3 client configured with project credentials."""
+    from django.conf import settings
+
+    return boto3.client(
+        "s3",
+        aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
+        aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
+    )
 
 
 class SubDirectoryS3ManifestStaticStorage(S3ManifestStaticStorage):

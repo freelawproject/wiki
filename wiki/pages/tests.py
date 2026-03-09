@@ -20,6 +20,7 @@ from wiki.pages.models import (
     PageLink,
     PageRevision,
     PageViewTally,
+    PendingUpload,
     SlugRedirect,
 )
 from wiki.pages.tasks import sync_page_view_counts, update_search_vectors
@@ -475,6 +476,190 @@ class TestFileUpload:
         )
         r = client.post("/api/upload/", {"file": f})
         assert r.status_code == 200
+
+
+class TestPresignUpload:
+    """Tests for the presigned S3 upload flow."""
+
+    def _presign(self, client, payload):
+        return client.post(
+            "/api/upload/presign/",
+            json.dumps(payload),
+            content_type="application/json",
+        )
+
+    def test_presign_returns_url_and_fields(self, client, user, settings):
+        """Presign endpoint returns a presigned POST URL and pending ID."""
+        settings.AWS_PRIVATE_STORAGE_BUCKET_NAME = "test-bucket"
+        client.force_login(user)
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(
+                "wiki.lib.storage.get_s3_client",
+                lambda: _mock_s3_client(),
+            )
+            r = self._presign(
+                client,
+                {
+                    "filename": "photo.png",
+                    "content_type": "image/png",
+                    "size": 1024,
+                },
+            )
+        assert r.status_code == 200
+        data = json.loads(r.content)
+        assert "presigned" in data
+        assert "url" in data["presigned"]
+        assert "fields" in data["presigned"]
+        assert "pending_id" in data
+        assert PendingUpload.objects.filter(id=data["pending_id"]).exists()
+
+    def test_presign_blocked_extension(self, client, user):
+        client.force_login(user)
+        r = self._presign(
+            client,
+            {
+                "filename": "malware.exe",
+                "content_type": "application/octet-stream",
+                "size": 100,
+            },
+        )
+        assert r.status_code == 400
+        assert b"not allowed" in r.content
+
+    def test_presign_size_too_large(self, client, user):
+        client.force_login(user)
+        r = self._presign(
+            client,
+            {
+                "filename": "huge.zip",
+                "content_type": "application/zip",
+                "size": 2 * 1024**3,
+            },
+        )
+        assert r.status_code == 400
+
+    def test_presign_requires_auth(self, client):
+        r = self._presign(
+            client,
+            {"filename": "test.png", "content_type": "image/png", "size": 100},
+        )
+        assert r.status_code == 302  # redirect to login
+
+    def test_presign_no_filename(self, client, user):
+        client.force_login(user)
+        r = self._presign(client, {"content_type": "image/png", "size": 100})
+        assert r.status_code == 400
+
+
+class TestConfirmUpload:
+    """Tests for the upload confirmation step."""
+
+    def test_confirm_creates_file_upload(self, client, user, settings):
+        settings.AWS_PRIVATE_STORAGE_BUCKET_NAME = "test-bucket"
+        client.force_login(user)
+        pending = PendingUpload.objects.create(
+            s3_key="uploads/2026/03/abc_photo.png",
+            original_filename="photo.png",
+            content_type="image/png",
+            expected_size=1024,
+            uploaded_by=user,
+        )
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(
+                "wiki.lib.storage.get_s3_client",
+                lambda: _mock_s3_client(),
+            )
+            r = client.post(
+                "/api/upload/confirm/",
+                json.dumps({"pending_id": str(pending.id)}),
+                content_type="application/json",
+            )
+        assert r.status_code == 200
+        data = json.loads(r.content)
+        assert "![photo.png]" in data["markdown"]
+        upload = FileUpload.objects.get(
+            original_filename="photo.png", uploaded_by=user
+        )
+        assert upload.file.name == "uploads/2026/03/abc_photo.png"
+        assert not PendingUpload.objects.filter(id=pending.id).exists()
+
+    def test_confirm_non_image_returns_link(self, client, user, settings):
+        settings.AWS_PRIVATE_STORAGE_BUCKET_NAME = "test-bucket"
+        client.force_login(user)
+        pending = PendingUpload.objects.create(
+            s3_key="uploads/2026/03/abc_report.pdf",
+            original_filename="report.pdf",
+            content_type="application/pdf",
+            expected_size=1024,
+            uploaded_by=user,
+        )
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(
+                "wiki.lib.storage.get_s3_client",
+                lambda: _mock_s3_client(),
+            )
+            r = client.post(
+                "/api/upload/confirm/",
+                json.dumps({"pending_id": str(pending.id)}),
+                content_type="application/json",
+            )
+        data = json.loads(r.content)
+        assert "[report.pdf]" in data["markdown"]
+        assert "!" not in data["markdown"]
+
+    def test_confirm_wrong_user_rejected(
+        self, client, user, other_user, settings
+    ):
+        settings.AWS_PRIVATE_STORAGE_BUCKET_NAME = "test-bucket"
+        pending = PendingUpload.objects.create(
+            s3_key="uploads/2026/03/abc_photo.png",
+            original_filename="photo.png",
+            content_type="image/png",
+            expected_size=1024,
+            uploaded_by=user,
+        )
+        client.force_login(other_user)
+        r = client.post(
+            "/api/upload/confirm/",
+            json.dumps({"pending_id": str(pending.id)}),
+            content_type="application/json",
+        )
+        assert r.status_code == 404
+
+    def test_confirm_requires_auth(self, client, user):
+        pending = PendingUpload.objects.create(
+            s3_key="uploads/2026/03/abc.png",
+            original_filename="test.png",
+            content_type="image/png",
+            expected_size=100,
+            uploaded_by=user,
+        )
+        r = client.post(
+            "/api/upload/confirm/",
+            json.dumps({"pending_id": str(pending.id)}),
+            content_type="application/json",
+        )
+        assert r.status_code == 302
+
+
+def _mock_s3_client():
+    """Return a mock S3 client for testing presigned upload flow."""
+
+    class MockS3Client:
+        def generate_presigned_post(self, **kwargs):
+            return {
+                "url": "https://test-bucket.s3.amazonaws.com/",
+                "fields": {"key": kwargs["Key"], "Content-Type": "image/png"},
+            }
+
+        def head_object(self, **kwargs):
+            return {"ContentLength": 1024}
+
+        class exceptions:
+            class ClientError(Exception):
+                pass
+
+    return MockS3Client()
 
 
 class TestPageSearchAutocomplete:
