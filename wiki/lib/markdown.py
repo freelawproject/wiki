@@ -126,6 +126,49 @@ def resolve_wiki_links(content):
     return WIKI_LINK_RE.sub(replace_link, content)
 
 
+# ── Markdown stripping (plain-text extraction) ──────────────────────
+
+_FENCED_CODE_RE = re.compile(r"```[\s\S]*?```")
+_INLINE_CODE_RE = re.compile(r"`([^`]+)`")
+_HEADING_RE = re.compile(r"^#{1,6}\s+", re.MULTILINE)
+_IMAGE_RE = re.compile(r"!\[[^\]]*\]\([^)]*\)")
+_LINK_RE = re.compile(r"\[([^\]]+)\]\([^)]+\)")
+_BOLD_ITALIC_RE = re.compile(r"\*{1,3}|_{1,3}")
+_STRIKETHROUGH_RE = re.compile(r"~~")
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
+_HR_RE = re.compile(r"^[-*_]{3,}\s*$", re.MULTILINE)
+_BLOCKQUOTE_RE = re.compile(r"^>\s?", re.MULTILINE)
+_UL_RE = re.compile(r"^[\s]*[-*+]\s+", re.MULTILINE)
+_OL_RE = re.compile(r"^[\s]*\d+\.\s+", re.MULTILINE)
+_WHITESPACE_RE = re.compile(r"\s+")
+
+
+def strip_markdown(text: str) -> str:
+    """Convert markdown to plain text by removing all formatting syntax.
+
+    Strips heading markers, code blocks, links, emphasis, images, HTML
+    tags, blockquotes, list markers, and horizontal rules. Heading text,
+    link text, and inline-code content are preserved.
+    """
+    if not text:
+        return ""
+
+    text = _FENCED_CODE_RE.sub("", text)
+    text = _INLINE_CODE_RE.sub(r"\1", text)
+    text = _HEADING_RE.sub("", text)
+    text = _IMAGE_RE.sub("", text)
+    text = _LINK_RE.sub(r"\1", text)
+    text = _BOLD_ITALIC_RE.sub("", text)
+    text = _STRIKETHROUGH_RE.sub("", text)
+    text = _HTML_TAG_RE.sub("", text)
+    text = _HR_RE.sub("", text)
+    text = _BLOCKQUOTE_RE.sub("", text)
+    text = _UL_RE.sub("", text)
+    text = _OL_RE.sub("", text)
+    text = _WHITESPACE_RE.sub(" ", text).strip()
+    return text
+
+
 def render_markdown(content):
     """Render markdown content to HTML with wiki link resolution and TOC."""
     content = resolve_wiki_links(content)
