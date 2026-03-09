@@ -8,6 +8,8 @@ from . import views
 urlpatterns = [
     path("preview/", views.page_preview_htmx, name="page_preview"),
     path("upload/", views.file_upload_htmx, name="file_upload"),
+    path("upload/presign/", views.presign_upload, name="presign_upload"),
+    path("upload/confirm/", views.confirm_upload, name="confirm_upload"),
     path("page-search/", views.page_search_htmx, name="page_search"),
     path(
         "dir-search/",

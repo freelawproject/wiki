@@ -1,5 +1,7 @@
 import json
 import re
+import uuid
+from datetime import datetime
 from pathlib import Path as FilePath
 
 from django.contrib import messages
@@ -8,6 +10,7 @@ from django.http import Http404, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils.html import escape
+from django.utils.text import get_valid_filename
 from django.views.decorators.http import require_POST
 
 from wiki.lib.edit_lock import (
@@ -36,6 +39,7 @@ from .models import (
     PagePermission,
     PageRevision,
     PageViewTally,
+    PendingUpload,
     SlugRedirect,
 )
 
@@ -1052,12 +1056,14 @@ BLOCKED_EXTENSIONS = {
 }
 
 
+MAX_UPLOAD_SIZE = 1024 * 1024 * 1024  # 1 GB
+
+
 @require_POST
 @login_required
 @ratelimit_upload
 def file_upload_htmx(request):
-    """Handle file upload via HTMX, return markdown syntax."""
-
+    """Handle file upload via Django (dev mode, local FileSystemStorage)."""
     uploaded_file = request.FILES.get("file")
     if not uploaded_file:
         return JsonResponse({"error": "No file provided"}, status=400)
@@ -1068,8 +1074,7 @@ def file_upload_htmx(request):
             {"error": f"File type '{ext}' is not allowed."}, status=400
         )
 
-    max_size = 1024 * 1024 * 1024  # 1 GB
-    if uploaded_file.size > max_size:
+    if uploaded_file.size > MAX_UPLOAD_SIZE:
         return JsonResponse(
             {"error": "File too large. Maximum size is 1 GB."}, status=400
         )
@@ -1081,7 +1086,117 @@ def file_upload_htmx(request):
         content_type=uploaded_file.content_type or "",
     )
 
-    # Return markdown syntax for the uploaded file
+    return JsonResponse({"markdown": _file_upload_markdown(upload)})
+
+
+@require_POST
+@login_required
+@ratelimit_upload
+def presign_upload(request):
+    """Return a presigned S3 POST so the browser can upload directly."""
+    from django.conf import settings
+
+    from wiki.lib.storage import get_s3_client
+
+    try:
+        body = json.loads(request.body)
+    except (json.JSONDecodeError, ValueError):
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+    filename = body.get("filename", "")
+    content_type = body.get("content_type", "") or "application/octet-stream"
+    size = body.get("size", 0)
+
+    if not filename:
+        return JsonResponse({"error": "No filename provided"}, status=400)
+
+    ext = FilePath(filename).suffix.lower()
+    if ext in BLOCKED_EXTENSIONS:
+        return JsonResponse(
+            {"error": f"File type '{ext}' is not allowed."}, status=400
+        )
+
+    if not size or size > MAX_UPLOAD_SIZE:
+        return JsonResponse(
+            {"error": "File too large. Maximum size is 1 GB."}, status=400
+        )
+
+    # Build S3 key: uploads/YYYY/MM/<uuid>_<sanitized_filename>
+    now = datetime.now()
+    safe_name = get_valid_filename(filename)
+    s3_key = f"uploads/{now:%Y}/{now:%m}/{uuid.uuid4()}_{safe_name}"
+
+    pending = PendingUpload.objects.create(
+        s3_key=s3_key,
+        original_filename=filename,
+        content_type=content_type,
+        expected_size=size,
+        uploaded_by=request.user,
+    )
+
+    client = get_s3_client()
+    presigned = client.generate_presigned_post(
+        Bucket=settings.AWS_PRIVATE_STORAGE_BUCKET_NAME,
+        Key=s3_key,
+        Fields={"Content-Type": content_type},
+        Conditions=[
+            ["content-length-range", 1, MAX_UPLOAD_SIZE],
+            {"Content-Type": content_type},
+        ],
+        ExpiresIn=3600,  # 1 hour for large uploads on slow connections
+    )
+
+    return JsonResponse(
+        {"presigned": presigned, "pending_id": str(pending.id)}
+    )
+
+
+@require_POST
+@login_required
+def confirm_upload(request):
+    """Confirm a direct-to-S3 upload and create the FileUpload record."""
+    from django.conf import settings
+
+    from wiki.lib.storage import get_s3_client
+
+    try:
+        body = json.loads(request.body)
+    except (json.JSONDecodeError, ValueError):
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+    pending_id = body.get("pending_id", "")
+    pending = get_object_or_404(
+        PendingUpload, id=pending_id, uploaded_by=request.user
+    )
+
+    # Verify the object actually landed in S3
+    client = get_s3_client()
+    try:
+        client.head_object(
+            Bucket=settings.AWS_PRIVATE_STORAGE_BUCKET_NAME,
+            Key=pending.s3_key,
+        )
+    except client.exceptions.ClientError:
+        return JsonResponse(
+            {"error": "File not found in storage. Upload may have failed."},
+            status=400,
+        )
+
+    upload = FileUpload(
+        uploaded_by=request.user,
+        original_filename=pending.original_filename,
+        content_type=pending.content_type,
+    )
+    upload.file.name = pending.s3_key
+    upload.save()
+
+    pending.delete()
+
+    return JsonResponse({"markdown": _file_upload_markdown(upload)})
+
+
+def _file_upload_markdown(upload):
+    """Return markdown syntax for a FileUpload."""
     file_url = reverse(
         "file_serve",
         kwargs={
@@ -1090,11 +1205,8 @@ def file_upload_htmx(request):
         },
     )
     if upload.content_type and upload.content_type.startswith("image/"):
-        md = f"![{upload.original_filename}]({file_url})"
-    else:
-        md = f"[{upload.original_filename}]({file_url})"
-
-    return JsonResponse({"markdown": md})
+        return f"![{upload.original_filename}]({file_url})"
+    return f"[{upload.original_filename}]({file_url})"
 
 
 def file_serve(request, file_id, filename):
