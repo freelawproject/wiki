@@ -19,77 +19,162 @@ var initMarkdownEditor = (function() {
   return function initMarkdownEditor(config) {
     var csrfToken = config.csrfToken;
     var pageSlug = config.pageSlug || '';
+    var directUpload = config.directUpload || false;
 
     // ── File upload (defined early so toolbar action can reference it) ──
     var editor; // forward declaration
-    function handleFileUpload(file) {
-      if (file.size > 1024 * 1024 * 1024) {
-        alert('File too large. Maximum size is 1 GB.');
-        return;
-      }
 
-      // Insert animated placeholder at cursor
-      var cm = editor.codemirror;
+    // Shared helpers for placeholder management
+    function insertPlaceholder(cm, filename) {
       var cursor = cm.getCursor();
-      var placeholder = '⏳ Uploading ' + file.name + '...';
-      cm.replaceRange(placeholder + '\n', cursor);
-      var placeholderLine = cursor.line;
-
-      // Animate the ellipsis while uploading
+      var text = '⏳ Uploading ' + filename + '...';
+      cm.replaceRange(text + '\n', cursor);
+      var line = cursor.line;
       var dots = 0;
-      var animInterval = setInterval(function() {
+      var interval = setInterval(function() {
         dots = (dots + 1) % 4;
-        var text = '⏳ Uploading ' + file.name + '.'.repeat(dots + 1);
-        cm.replaceRange(text,
-          { line: placeholderLine, ch: 0 },
-          { line: placeholderLine, ch: cm.getLine(placeholderLine).length }
+        var t = '⏳ Uploading ' + filename + '.'.repeat(dots + 1);
+        cm.replaceRange(t,
+          { line: line, ch: 0 },
+          { line: line, ch: cm.getLine(line).length }
         );
       }, 400);
+      return { line: line, interval: interval };
+    }
 
-      // Use XHR for upload progress tracking
+    function updatePlaceholderProgress(cm, ph, filename, pct) {
+      var text = '⏳ Uploading ' + filename + ' (' + pct + '%)';
+      cm.replaceRange(text,
+        { line: ph.line, ch: 0 },
+        { line: ph.line, ch: cm.getLine(ph.line).length }
+      );
+    }
+
+    function replacePlaceholder(cm, ph, markdown) {
+      clearInterval(ph.interval);
+      cm.replaceRange(markdown,
+        { line: ph.line, ch: 0 },
+        { line: ph.line, ch: cm.getLine(ph.line).length }
+      );
+    }
+
+    function removePlaceholder(cm, ph) {
+      clearInterval(ph.interval);
+      cm.replaceRange('',
+        { line: ph.line, ch: 0 },
+        { line: ph.line + 1, ch: 0 }
+      );
+    }
+
+    // Upload directly to S3 via presigned POST (production)
+    function handleDirectUpload(file) {
+      var cm = editor.codemirror;
+      var ph = insertPlaceholder(cm, file.name);
+
+      // Step 1: Get presigned POST from Django
+      fetch('/api/upload/presign/', {
+        method: 'POST',
+        headers: { 'X-CSRFToken': csrfToken, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          filename: file.name,
+          content_type: file.type || 'application/octet-stream',
+          size: file.size
+        })
+      }).then(function(r) { return r.json(); }).then(function(data) {
+        if (data.error) { removePlaceholder(cm, ph); alert(data.error); return; }
+
+        // Step 2: Upload directly to S3
+        var fd = new FormData();
+        var fields = data.presigned.fields;
+        Object.keys(fields).forEach(function(k) { fd.append(k, fields[k]); });
+        fd.append('file', file); // Must be last
+
+        var xhr = new XMLHttpRequest();
+        xhr.open('POST', data.presigned.url);
+
+        xhr.upload.addEventListener('progress', function(e) {
+          if (!e.lengthComputable) return;
+          updatePlaceholderProgress(cm, ph, file.name, Math.round(e.loaded / e.total * 100));
+        });
+
+        xhr.addEventListener('load', function() {
+          if (xhr.status < 200 || xhr.status >= 300) {
+            removePlaceholder(cm, ph);
+            alert('Upload to storage failed (status ' + xhr.status + ')');
+            return;
+          }
+
+          // Step 3: Confirm with Django
+          fetch('/api/upload/confirm/', {
+            method: 'POST',
+            headers: { 'X-CSRFToken': csrfToken, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ pending_id: data.pending_id })
+          }).then(function(r) { return r.json(); }).then(function(confirm) {
+            if (confirm.error) { removePlaceholder(cm, ph); alert(confirm.error); return; }
+            replacePlaceholder(cm, ph, confirm.markdown);
+          }).catch(function() {
+            removePlaceholder(cm, ph);
+            alert('Failed to confirm upload');
+          });
+        });
+
+        xhr.addEventListener('error', function() {
+          removePlaceholder(cm, ph);
+          alert('Upload failed — network error');
+        });
+
+        xhr.send(fd);
+      }).catch(function() {
+        removePlaceholder(cm, ph);
+        alert('Failed to start upload');
+      });
+    }
+
+    // Upload through Django (development, local filesystem)
+    function handleLocalUpload(file) {
+      var cm = editor.codemirror;
+      var ph = insertPlaceholder(cm, file.name);
+
       var xhr = new XMLHttpRequest();
       xhr.open('POST', '/api/upload/');
       xhr.setRequestHeader('X-CSRFToken', csrfToken);
 
       xhr.upload.addEventListener('progress', function(e) {
         if (!e.lengthComputable) return;
-        var pct = Math.round(e.loaded / e.total * 100);
-        var text = '⏳ Uploading ' + file.name + ' (' + pct + '%)';
-        cm.replaceRange(text,
-          { line: placeholderLine, ch: 0 },
-          { line: placeholderLine, ch: cm.getLine(placeholderLine).length }
-        );
+        updatePlaceholderProgress(cm, ph, file.name, Math.round(e.loaded / e.total * 100));
       });
 
       xhr.addEventListener('load', function() {
-        clearInterval(animInterval);
-        var lineEnd = cm.getLine(placeholderLine).length;
         if (xhr.status >= 200 && xhr.status < 300) {
           var data = JSON.parse(xhr.responseText);
-          if (data.error) {
-            cm.replaceRange('', { line: placeholderLine, ch: 0 }, { line: placeholderLine + 1, ch: 0 });
-            alert(data.error);
-          } else if (data.markdown) {
-            cm.replaceRange(data.markdown,
-              { line: placeholderLine, ch: 0 },
-              { line: placeholderLine, ch: lineEnd }
-            );
-          }
+          if (data.error) { removePlaceholder(cm, ph); alert(data.error); return; }
+          if (data.markdown) { replacePlaceholder(cm, ph, data.markdown); }
         } else {
-          cm.replaceRange('', { line: placeholderLine, ch: 0 }, { line: placeholderLine + 1, ch: 0 });
+          removePlaceholder(cm, ph);
           alert('Upload failed (status ' + xhr.status + ')');
         }
       });
 
       xhr.addEventListener('error', function() {
-        clearInterval(animInterval);
-        cm.replaceRange('', { line: placeholderLine, ch: 0 }, { line: placeholderLine + 1, ch: 0 });
+        removePlaceholder(cm, ph);
         alert('Upload failed — network error');
       });
 
       var fd = new FormData();
       fd.append('file', file);
       xhr.send(fd);
+    }
+
+    function handleFileUpload(file) {
+      if (file.size > 1024 * 1024 * 1024) {
+        alert('File too large. Maximum size is 1 GB.');
+        return;
+      }
+      if (directUpload) {
+        handleDirectUpload(file);
+      } else {
+        handleLocalUpload(file);
+      }
     }
 
     // ── EasyMDE Editor ──────────────────────────────────────
