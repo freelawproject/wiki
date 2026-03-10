@@ -9,6 +9,13 @@ from django.utils.text import slugify
 from wiki.lib.path_utils import page_path_conflicts_with_directory
 
 
+class ActivePageManager(models.Manager):
+    """Default manager — excludes soft-deleted pages."""
+
+    def get_queryset(self):
+        return super().get_queryset().filter(is_deleted=False)
+
+
 class Page(models.Model):
     """A wiki page with markdown content."""
 
@@ -22,7 +29,7 @@ class Page(models.Model):
         INTERNAL = "internal", "FLP Staff"
 
     title = models.CharField(max_length=255)
-    slug = models.SlugField(max_length=255, unique=True)
+    slug = models.SlugField(max_length=255)
     content = models.TextField(blank=True)
     directory = models.ForeignKey(
         "directories.Directory",
@@ -67,12 +74,31 @@ class Page(models.Model):
     search_vector = SearchVectorField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    is_deleted = models.BooleanField(default=False)
+    deleted_at = models.DateTimeField(null=True, blank=True)
+    deleted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="deleted_pages",
+    )
+
+    objects = ActivePageManager()
+    all_objects = models.Manager()
 
     class Meta:
         indexes = [
             models.Index(fields=["slug"]),
             models.Index(fields=["directory", "slug"]),
             GinIndex(fields=["search_vector"]),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["slug"],
+                condition=models.Q(is_deleted=False),
+                name="unique_active_slug",
+            ),
         ]
 
     def __str__(self):
@@ -85,8 +111,9 @@ class Page(models.Model):
             needs_slug = True
         elif self.pk:
             # Existing page: regenerate slug only if title changed
+            # Use all_objects so this works when restoring deleted pages
             old_title = (
-                Page.objects.filter(pk=self.pk)
+                Page.all_objects.filter(pk=self.pk)
                 .values_list("title", flat=True)
                 .first()
             )
@@ -97,6 +124,7 @@ class Page(models.Model):
             new_slug = slugify(self.title)
             base_slug = new_slug
             counter = 1
+            # Check active pages only (deleted slugs are free to reuse)
             while Page.objects.filter(slug=new_slug).exclude(
                 pk=self.pk
             ).exists() or page_path_conflicts_with_directory(
@@ -109,6 +137,15 @@ class Page(models.Model):
         super().save(*args, **kwargs)
         self._update_search_vector()
         self._update_page_links(**kwargs)
+
+    def soft_delete(self, user):
+        """Soft-delete this page instead of permanently removing it."""
+        from django.utils import timezone
+
+        self.is_deleted = True
+        self.deleted_at = timezone.now()
+        self.deleted_by = user
+        self.save(update_fields=["is_deleted", "deleted_at", "deleted_by"])
 
     def _update_page_links(self, **kwargs):
         """Rebuild PageLink rows based on #slug references in content."""
@@ -151,7 +188,7 @@ class Page(models.Model):
 
     def _update_search_vector(self):
         """Update the search_vector for this page in the DB."""
-        Page.objects.filter(pk=self.pk).update(
+        Page.all_objects.filter(pk=self.pk).update(
             search_vector=SearchVector("title", weight="A")
             + SearchVector("content", weight="B")
         )

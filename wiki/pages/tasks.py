@@ -17,7 +17,7 @@ def sync_page_view_counts():
 
     count = 0
     for entry in tallies:
-        Page.objects.filter(id=entry["page_id"]).update(
+        Page.all_objects.filter(id=entry["page_id"]).update(
             view_count=F("view_count") + entry["total"]
         )
         count += 1
