@@ -4,15 +4,19 @@ import uuid
 from datetime import datetime
 from pathlib import Path as FilePath
 
+from django.conf import settings as django_settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
-from django.http import Http404, HttpResponse, JsonResponse
+from django.contrib.auth.models import User
+from django.http import FileResponse, Http404, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils.html import escape
 from django.utils.text import get_valid_filename
 from django.views.decorators.http import require_POST
 
+from wiki.comments.models import PageComment
+from wiki.directories.models import Directory, DirectoryPermission
 from wiki.lib.edit_lock import (
     acquire_lock_for_page,
     get_active_lock_for_page,
@@ -27,12 +31,17 @@ from wiki.lib.permissions import (
     can_view_page,
     is_editability_more_open_than_visibility,
     is_more_open_than,
+    is_system_owner,
 )
 from wiki.lib.ratelimiter import ratelimit_search, ratelimit_upload
 from wiki.lib.seo import build_breadcrumbs_jsonld, extract_description
-from wiki.subscriptions.tasks import notify_subscribers
+from wiki.lib.storage import get_s3_client
+from wiki.proposals.models import ChangeProposal
+from wiki.subscriptions.models import PageSubscription
+from wiki.subscriptions.tasks import notify_subscribers, process_mentions
 
-from .forms import PageForm
+from .diff_utils import unified_diff
+from .forms import PageForm, PageMoveForm, PagePermissionForm
 from .models import (
     FileUpload,
     Page,
@@ -87,8 +96,6 @@ def _collect_grant_access(post_data):
 
 def _process_mentions_and_grants(page, request):
     """Extract @mentions from page content/change_message and process grants."""
-    from wiki.subscriptions.tasks import process_mentions
-
     mentioned = _extract_mentions(page.content)
     mentioned += _extract_mentions(page.change_message)
     grant_access = _collect_grant_access(request.POST)
@@ -103,8 +110,6 @@ def _process_mentions_and_grants(page, request):
 
 def _resolve_or_create_directory(dir_path, user):
     """Resolve a directory path, creating missing segments as needed."""
-    from wiki.directories.models import Directory
-
     directory = Directory.objects.filter(path=dir_path).first()
     if directory:
         return directory
@@ -140,7 +145,7 @@ def resolve_path(request, path):
     3. Check SlugRedirect → redirect
     4. 404
     """
-    from wiki.directories.models import Directory
+    # Inline import to avoid circular dependency (directories/views imports pages/views)
     from wiki.directories.views import directory_detail
 
     clean_path = path.strip("/")
@@ -201,10 +206,6 @@ def _get_page_people(page):
     Returns a dict with 'creator', 'admins', and 'editors' — each a list
     of User objects. Admins are not duplicated in editors.
     """
-    from django.contrib.auth.models import User
-
-    from wiki.directories.models import DirectoryPermission
-
     creator = page.created_by
     admin_ids = set()
     editor_ids = set()
@@ -295,8 +296,6 @@ def _render_page_detail(request, page):
     is_subscribed = False
     subscribers = []
     if request.user.is_authenticated:
-        from wiki.subscriptions.models import PageSubscription
-
         is_subscribed = PageSubscription.objects.filter(
             user=request.user, page=page
         ).exists()
@@ -312,9 +311,6 @@ def _render_page_detail(request, page):
     pending_proposal_count = 0
     pending_comment_count = 0
     if can_edit:
-        from wiki.comments.models import PageComment
-        from wiki.proposals.models import ChangeProposal
-
         pending_proposal_count = page.proposals.filter(
             status=ChangeProposal.Status.PENDING
         ).count()
@@ -323,8 +319,6 @@ def _render_page_detail(request, page):
         ).count()
 
     # SEO
-    from django.conf import settings as django_settings
-
     is_public = page.visibility == Page.Visibility.PUBLIC
     page_description = extract_description(page.content)
     breadcrumbs_json = ""
@@ -363,8 +357,6 @@ def _render_page_detail(request, page):
 @login_required
 def page_create(request, path=""):
     """Create a new page, optionally within a directory."""
-    from wiki.directories.models import Directory
-
     directory = None
     if path:
         directory = get_object_or_404(Directory, path=path.strip("/"))
@@ -456,8 +448,6 @@ def page_create(request, path=""):
         )
 
         # Auto-subscribe the creator
-        from wiki.subscriptions.models import PageSubscription
-
         PageSubscription.objects.get_or_create(user=request.user, page=page)
 
         # Process @mentions
@@ -631,8 +621,6 @@ def page_move(request, path):
         messages.error(request, "You don't have permission to move this page.")
         return redirect(page.get_absolute_url())
 
-    from .forms import PageMoveForm
-
     initial = {"directory": page.directory}
     form = PageMoveForm(
         request.POST or None,
@@ -695,8 +683,6 @@ def page_delete(request, path):
     slug = _parse_page_path(path)
     page = get_object_or_404(Page, slug=slug)
 
-    from wiki.lib.permissions import is_system_owner
-
     if page.owner != request.user and not is_system_owner(request.user):
         messages.error(
             request, "You don't have permission to delete this page."
@@ -743,10 +729,6 @@ def page_permissions(request, path):
             request, "You don't have permission to manage this page."
         )
         return redirect(page.get_absolute_url())
-
-    from django.contrib.auth.models import User
-
-    from .forms import PagePermissionForm
 
     # Handle remove
     if request.method == "POST" and "remove" in request.POST:
@@ -875,8 +857,6 @@ def page_diff(request, path, v1, v2):
     rev1 = get_object_or_404(PageRevision, page=page, revision_number=v1)
     rev2 = get_object_or_404(PageRevision, page=page, revision_number=v2)
 
-    from .diff_utils import unified_diff
-
     diff_html = unified_diff(rev1.content, rev2.content)
 
     return render(
@@ -953,18 +933,14 @@ def check_page_permissions(request):
         restrictive_links: [{slug, title, visibility, permissions_url}]
     }
     """
-    import json as json_mod
-
     try:
-        data = json_mod.loads(request.body)
-    except (json_mod.JSONDecodeError, ValueError):
+        data = json.loads(request.body)
+    except (json.JSONDecodeError, ValueError):
         return JsonResponse({"error": "Invalid JSON"}, status=400)
 
     page_slug = data.get("page_slug", "")
     usernames = data.get("usernames", [])
     linked_slugs = data.get("linked_slugs", [])
-
-    from django.contrib.auth.models import User
 
     # Check mentioned users
     users_without_access = []
@@ -1094,10 +1070,6 @@ def file_upload_htmx(request):
 @ratelimit_upload
 def presign_upload(request):
     """Return a presigned S3 POST so the browser can upload directly."""
-    from django.conf import settings
-
-    from wiki.lib.storage import get_s3_client
-
     try:
         body = json.loads(request.body)
     except (json.JSONDecodeError, ValueError):
@@ -1136,7 +1108,7 @@ def presign_upload(request):
 
     client = get_s3_client()
     presigned = client.generate_presigned_post(
-        Bucket=settings.AWS_PRIVATE_STORAGE_BUCKET_NAME,
+        Bucket=django_settings.AWS_PRIVATE_STORAGE_BUCKET_NAME,
         Key=s3_key,
         Fields={"Content-Type": content_type},
         Conditions=[
@@ -1155,10 +1127,6 @@ def presign_upload(request):
 @login_required
 def confirm_upload(request):
     """Confirm a direct-to-S3 upload and create the FileUpload record."""
-    from django.conf import settings
-
-    from wiki.lib.storage import get_s3_client
-
     try:
         body = json.loads(request.body)
     except (json.JSONDecodeError, ValueError):
@@ -1173,7 +1141,7 @@ def confirm_upload(request):
     client = get_s3_client()
     try:
         client.head_object(
-            Bucket=settings.AWS_PRIVATE_STORAGE_BUCKET_NAME,
+            Bucket=django_settings.AWS_PRIVATE_STORAGE_BUCKET_NAME,
             Key=pending.s3_key,
         )
     except client.exceptions.ClientError:
@@ -1223,11 +1191,7 @@ def file_serve(request, file_id, filename):
         raise Http404
 
     # In development, serve directly; in production, redirect to S3
-    from django.conf import settings
-
-    if settings.DEBUG:
-        from django.http import FileResponse
-
+    if django_settings.DEBUG:
         return FileResponse(upload.file.open("rb"))
 
     # Generate a signed S3 URL and redirect

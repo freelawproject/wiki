@@ -116,6 +116,7 @@ class Page(models.Model):
         if update_fields and "content" not in update_fields:
             return
 
+        # Inline import to avoid circular dependency (pages/models ↔ lib/markdown)
         from wiki.lib.markdown import WIKI_LINK_RE
 
         slugs = set(WIKI_LINK_RE.findall(self.content))

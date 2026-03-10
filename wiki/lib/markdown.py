@@ -95,6 +95,7 @@ def resolve_wiki_links(content):
     Known slugs become [Title](/dir/path/slug).
     Unknown slugs become red links.
     """
+    # Inline import to avoid circular dependency (pages/models ↔ lib/markdown)
     from wiki.pages.models import Page, SlugRedirect
 
     slugs = set(WIKI_LINK_RE.findall(content))

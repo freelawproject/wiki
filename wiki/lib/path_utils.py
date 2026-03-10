@@ -2,6 +2,8 @@
 
 from django.utils.text import slugify
 
+from wiki.directories.models import Directory
+
 
 def page_path_conflicts_with_directory(slug, directory):
     """Check if a page's effective path would collide with an existing directory.
@@ -13,8 +15,6 @@ def page_path_conflicts_with_directory(slug, directory):
     Returns:
         True if a directory already exists at that path.
     """
-    from wiki.directories.models import Directory
-
     if directory and directory.path:
         full_path = f"{directory.path}/{slug}"
     else:
@@ -34,6 +34,7 @@ def directory_path_conflicts_with_page(dir_path):
     Returns:
         True if a page already occupies that path.
     """
+    # Inline import to avoid circular dependency (pages/models → path_utils)
     from wiki.pages.models import Page
 
     slug = dir_path.rsplit("/", 1)[-1]
@@ -56,6 +57,7 @@ def compute_page_slug(title, exclude_pk=None):
     Returns:
         A slug string that is unique among pages.
     """
+    # Inline import to avoid circular dependency (pages/models → path_utils)
     from wiki.pages.models import Page
 
     base_slug = slugify(title)

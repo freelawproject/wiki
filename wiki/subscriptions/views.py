@@ -1,5 +1,6 @@
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
+from django.core.signing import BadSignature, Signer
 from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -54,8 +55,6 @@ def toggle_subscription(request, path):
 
 def unsubscribe_landing(request, token):
     """Landing page for email unsubscribe links."""
-    from django.core.signing import BadSignature, Signer
-
     signer = Signer()
     try:
         value = signer.unsign(token)
@@ -87,8 +86,6 @@ def unsubscribe_one_click(request, token):
     Email clients POST directly to this URL — no CSRF token or login
     required. The signed token authenticates the request.
     """
-    from django.core.signing import BadSignature, Signer
-
     signer = Signer()
     try:
         value = signer.unsign(token)

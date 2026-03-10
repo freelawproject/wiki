@@ -1,11 +1,24 @@
 """Tests for the directories app: navigation, breadcrumbs, permissions."""
 
-import pytest
-from django.test import Client
+import json
+from datetime import timedelta
 
-from wiki.directories.models import Directory, DirectoryRevision
+import pytest
+from django.contrib.auth.models import User
+from django.core.management import call_command
+from django.test import Client
+from django.utils import timezone
+
+from wiki.directories.models import (
+    Directory,
+    DirectoryPermission,
+    DirectoryRevision,
+)
 from wiki.lib.edit_lock import acquire_lock_for_directory
 from wiki.lib.models import EditLock
+from wiki.lib.permissions import can_edit_directory
+from wiki.pages.models import Page, PagePermission
+from wiki.users.models import SystemConfig, UserProfile
 
 
 @pytest.fixture
@@ -172,8 +185,6 @@ class TestCreatePageInDirectory:
             },
         )
         assert r.status_code == 302
-        from wiki.pages.models import Page
-
         p = Page.objects.get(slug="new-page")
         assert p.directory == sub_directory
 
@@ -271,8 +282,6 @@ class TestDirectoryPermissions:
         assert b"Permissions" in r.content
 
     def test_add_permission(self, client, user, other_user, sub_directory):
-        from wiki.directories.models import DirectoryPermission
-
         client.force_login(user)
         r = client.post(
             "/c/engineering/permissions-dir/",
@@ -286,8 +295,6 @@ class TestDirectoryPermissions:
         ).exists()
 
     def test_remove_permission(self, client, user, other_user, sub_directory):
-        from wiki.directories.models import DirectoryPermission
-
         perm = DirectoryPermission.objects.create(
             directory=sub_directory,
             user=other_user,
@@ -307,8 +314,6 @@ class TestDirectoryPermissions:
         assert r.status_code == 302
 
     def test_add_group_permission(self, client, user, sub_directory, group):
-        from wiki.directories.models import DirectoryPermission
-
         client.force_login(user)
         r = client.post(
             "/c/engineering/permissions-dir/",
@@ -326,8 +331,6 @@ class TestDirectoryPermissions:
         ).exists()
 
     def test_remove_group_permission(self, client, user, sub_directory, group):
-        from wiki.directories.models import DirectoryPermission
-
         perm = DirectoryPermission.objects.create(
             directory=sub_directory,
             group=group,
@@ -344,8 +347,6 @@ class TestDirectoryPermissions:
     def test_group_permissions_shown_in_template(
         self, client, user, sub_directory, group
     ):
-        from wiki.directories.models import DirectoryPermission
-
         DirectoryPermission.objects.create(
             directory=sub_directory,
             group=group,
@@ -366,12 +367,6 @@ class TestDirectorySort:
         assert b">Title</span>" in r.content
 
     def test_sort_updated_reorders_pages(self, client, user, root_directory):
-        from datetime import timedelta
-
-        from django.utils import timezone
-
-        from wiki.pages.models import Page
-
         # Create two pages with different updated_at timestamps
         older = Page.objects.create(
             title="AAA First",
@@ -409,8 +404,6 @@ class TestDirectorySort:
         assert content.index("ZZZ Last") < content.index("AAA First")
 
     def test_sort_views_reorders_pages(self, client, user, root_directory):
-        from wiki.pages.models import Page
-
         Page.objects.create(
             title="AAA Low Views",
             slug="aaa-low-views",
@@ -448,8 +441,6 @@ class TestDirectorySort:
         assert b"Sort by:" not in r.content
 
     def test_sort_works_on_subdirectory(self, client, user, sub_directory):
-        from wiki.pages.models import Page
-
         Page.objects.create(
             title="Sub Page",
             slug="sub-page-sort",
@@ -472,8 +463,6 @@ class TestDirectorySearchAPI:
         client.force_login(user)
         r = client.get("/api/dir-search/?parent=")
         assert r.status_code == 200
-        import json
-
         data = json.loads(r.content)
         titles = [d["title"] for d in data]
         assert "Engineering" in titles
@@ -500,8 +489,6 @@ class TestDirectorySearchAPI:
 class TestHelpLink:
     def test_help_directory_accessible(self, client, user):
         """The /c/help link works after seed_help_pages creates the dir."""
-        from django.core.management import call_command
-
         client.force_login(user)
         call_command("seed_help_pages")
         r = client.get("/c/help")
@@ -619,8 +606,6 @@ class TestDirectoryVisibility:
     def test_visibility_badge_shown_for_private(
         self, client, private_directory
     ):
-        from wiki.users.models import SystemConfig
-
         user = private_directory.owner
         SystemConfig.objects.create(owner=user)
         client.force_login(user)
@@ -670,8 +655,6 @@ class TestDirectoryGate:
     def test_private_directory_visible_to_system_owner(
         self, client, other_user, private_directory
     ):
-        from wiki.users.models import SystemConfig
-
         SystemConfig.objects.create(owner=other_user)
         client.force_login(other_user)
         r = client.get("/c/secret-team")
@@ -680,8 +663,6 @@ class TestDirectoryGate:
     def test_private_directory_visible_with_permission(
         self, client, other_user, private_directory
     ):
-        from .models import DirectoryPermission
-
         DirectoryPermission.objects.create(
             directory=private_directory,
             user=other_user,
@@ -712,10 +693,6 @@ class TestDirectoryGate:
             visibility="private",
         )
         # Other user should not see it
-        from django.contrib.auth.models import User
-
-        from wiki.users.models import UserProfile
-
         other = User.objects.create_user(
             username="eve@free.law",
             email="eve@free.law",
@@ -731,7 +708,6 @@ class TestDirectoryGate:
     ):
         """A private page in a private directory is hidden even
         if the user has page-level permission but not dir permission."""
-        from wiki.pages.models import Page, PagePermission
 
         page = Page.objects.create(
             title="Secret Doc",
@@ -772,10 +748,6 @@ class TestApplyPermissions:
     """Part 4: Apply permissions recursively."""
 
     def test_apply_direct(self, client, user, sub_directory):
-        from wiki.pages.models import Page, PagePermission
-
-        from .models import DirectoryPermission
-
         # Add a directory permission
         DirectoryPermission.objects.create(
             directory=sub_directory,
@@ -807,10 +779,6 @@ class TestApplyPermissions:
     def test_apply_recursive(
         self, client, user, sub_directory, nested_directory
     ):
-        from wiki.pages.models import Page, PagePermission
-
-        from .models import DirectoryPermission
-
         sub_directory.visibility = "private"
         sub_directory.save()
         DirectoryPermission.objects.create(
@@ -858,8 +826,6 @@ class TestApplyPermissions:
     def test_apply_confirmation_page_shows_counts(
         self, client, user, sub_directory
     ):
-        from wiki.pages.models import Page
-
         Page.objects.create(
             title="P1",
             slug="p1-counts",
@@ -882,7 +848,6 @@ class TestApplyPermissions:
 
     def test_apply_propagates_editability(self, client, user, sub_directory):
         """Apply permissions propagates editability to child pages."""
-        from wiki.pages.models import Page
 
         sub_directory.editability = "internal"
         sub_directory.save(update_fields=["editability"])
@@ -931,8 +896,6 @@ class TestDirectoryEditability:
         self, other_user, sub_directory
     ):
         """When editability is 'internal', any logged-in user can edit."""
-        from wiki.lib.permissions import can_edit_directory
-
         assert not can_edit_directory(other_user, sub_directory)
         sub_directory.editability = "internal"
         sub_directory.save(update_fields=["editability"])
@@ -1213,8 +1176,6 @@ class TestDirectorySearchSecurity:
         for users without permission."""
         client.force_login(other_user)
         r = client.get("/api/dir-search/?parent=&q=secret")
-        import json
-
         data = json.loads(r.content)
         titles = [d["title"] for d in data]
         assert "Secret Team" not in titles
@@ -1225,8 +1186,6 @@ class TestDirectorySearchSecurity:
         """Directory owner should see their private directories."""
         client.force_login(user)
         r = client.get("/api/dir-search/?parent=&q=secret")
-        import json
-
         data = json.loads(r.content)
         titles = [d["title"] for d in data]
         assert "Secret Team" in titles

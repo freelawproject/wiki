@@ -5,11 +5,11 @@ from django.core.mail import EmailMessage
 
 from wiki.lib.users import display_name
 
+from .models import PageComment
+
 
 def notify_owner_of_comment(comment_id):
     """Email the page owner that a new comment has been submitted."""
-    from .models import PageComment
-
     comment = PageComment.objects.select_related(
         "page", "page__owner", "author"
     ).get(id=comment_id)
@@ -44,8 +44,6 @@ def notify_owner_of_comment(comment_id):
 
 def notify_commenter_of_reply(comment_id):
     """Email the commenter when an editor replies."""
-    from .models import PageComment
-
     comment = PageComment.objects.select_related(
         "page", "author", "replied_by"
     ).get(id=comment_id)

@@ -5,10 +5,15 @@ from datetime import timedelta
 
 import pytest
 import time_machine
+from django.contrib.auth.models import AnonymousUser
+from django.contrib.sessions.models import Session
+from django.core import mail
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.core.management import call_command
 from django.test import Client
 from django.utils import timezone
 
+from wiki.directories.models import Directory
 from wiki.lib.edit_lock import acquire_lock_for_page
 from wiki.lib.markdown import render_markdown, resolve_wiki_links
 from wiki.lib.models import EditLock
@@ -18,13 +23,17 @@ from wiki.pages.models import (
     FileUpload,
     Page,
     PageLink,
+    PagePermission,
     PageRevision,
     PageViewTally,
     PendingUpload,
     SlugRedirect,
 )
 from wiki.pages.tasks import sync_page_view_counts, update_search_vectors
+from wiki.pages.views import _extract_mentions
 from wiki.subscriptions.models import PageSubscription
+from wiki.subscriptions.tasks import _get_content_snippet
+from wiki.users.models import SystemConfig
 
 
 @pytest.fixture
@@ -72,8 +81,6 @@ class TestPageCreate:
         assert Page.objects.filter(slug="my-great-page").exists()
 
     def test_create_auto_subscribes_creator(self, client, user):
-        from wiki.subscriptions.models import PageSubscription
-
         client.force_login(user)
         client.post(
             "/c/new/",
@@ -128,8 +135,6 @@ class TestPageDetail:
     def test_private_page_visible_to_system_owner(
         self, client, other_user, private_page
     ):
-        from wiki.users.models import SystemConfig
-
         SystemConfig.objects.create(owner=other_user)
         client.force_login(other_user)
         r = client.get("/c/secret-notes")
@@ -155,8 +160,6 @@ class TestPageDetail:
     ):
         """SECURITY: private ancestor directories must not appear in
         breadcrumbs for users who lack permission."""
-        from wiki.directories.models import Directory
-
         secret = Directory.objects.create(
             path="classified",
             title="Classified",
@@ -303,8 +306,6 @@ class TestPageDelete:
         assert Page.objects.filter(slug="getting-started").exists()
 
     def test_system_owner_can_delete_any(self, client, other_user, page):
-        from wiki.users.models import SystemConfig
-
         SystemConfig.objects.create(owner=other_user)
         client.force_login(other_user)
         r = client.post("/c/getting-started/delete/")
@@ -494,7 +495,7 @@ class TestPresignUpload:
         client.force_login(user)
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(
-                "wiki.lib.storage.get_s3_client",
+                "wiki.pages.views.get_s3_client",
                 lambda: _mock_s3_client(),
             )
             r = self._presign(
@@ -566,7 +567,7 @@ class TestConfirmUpload:
         )
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(
-                "wiki.lib.storage.get_s3_client",
+                "wiki.pages.views.get_s3_client",
                 lambda: _mock_s3_client(),
             )
             r = client.post(
@@ -595,7 +596,7 @@ class TestConfirmUpload:
         )
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr(
-                "wiki.lib.storage.get_s3_client",
+                "wiki.pages.views.get_s3_client",
                 lambda: _mock_s3_client(),
             )
             r = client.post(
@@ -902,76 +903,48 @@ class TestUpdateSearchVectors:
 
 class TestSeedHelpPages:
     def test_creates_help_directory(self, owner_user):
-        from django.core.management import call_command
-
         call_command("seed_help_pages")
-        from wiki.directories.models import Directory
-
         assert Directory.objects.filter(path="help").exists()
 
     def test_creates_help_pages(self, owner_user):
-        from django.core.management import call_command
-
         call_command("seed_help_pages")
-        from wiki.directories.models import Directory
-
         help_dir = Directory.objects.get(path="help")
         assert Page.objects.filter(directory=help_dir).count() == 11
 
     def test_pages_are_public(self, owner_user):
-        from django.core.management import call_command
-
         call_command("seed_help_pages")
-        from wiki.directories.models import Directory
-
         help_dir = Directory.objects.get(path="help")
         for p in Page.objects.filter(directory=help_dir):
             assert p.visibility == Page.Visibility.PUBLIC
 
     def test_pages_have_revisions(self, owner_user):
-        from django.core.management import call_command
-
         call_command("seed_help_pages")
-        from wiki.directories.models import Directory
-
         help_dir = Directory.objects.get(path="help")
         for p in Page.objects.filter(directory=help_dir):
             assert p.revisions.count() >= 1
 
     def test_idempotent(self, owner_user):
-        from django.core.management import call_command
-
         call_command("seed_help_pages")
         call_command("seed_help_pages")
-        from wiki.directories.models import Directory
-
         help_dir = Directory.objects.get(path="help")
         assert Page.objects.filter(directory=help_dir).count() == 11
 
     def test_help_pages_accessible_via_url(self, client, owner_user):
-        from django.core.management import call_command
-
         call_command("seed_help_pages")
         r = client.get("/c/help")
         assert r.status_code == 200
         assert b"Help" in r.content
 
     def test_help_page_detail_loads(self, client, owner_user):
-        from django.core.management import call_command
-
         call_command("seed_help_pages")
         r = client.get("/c/markdown-syntax")
         assert r.status_code == 200
         assert b"Markdown Syntax" in r.content
 
     def test_wiki_links_resolve_between_help_pages(self, owner_user):
-        from django.core.management import call_command
-
         call_command("seed_help_pages")
         page = Page.objects.get(slug="getting-started-guide")
         # The content has #markdown-syntax links
-        from wiki.lib.markdown import resolve_wiki_links
-
         resolved = resolve_wiki_links(page.content)
         assert "[Markdown Syntax]" in resolved
 
@@ -1069,15 +1042,11 @@ class TestSubscriberDisplay:
 
 class TestMentions:
     def test_extract_mentions(self):
-        from wiki.pages.views import _extract_mentions
-
         result = _extract_mentions("Hello @mike and @bob!")
         assert "mike" in result
         assert "bob" in result
 
     def test_extract_no_mentions(self):
-        from wiki.pages.views import _extract_mentions
-
         assert _extract_mentions("No mentions here") == []
 
     def test_mentions_do_not_auto_subscribe(
@@ -1114,7 +1083,6 @@ class TestMentions:
         self, client, user, other_user, private_page
     ):
         """Per-user edit access grant via @-mention modal."""
-        from wiki.pages.models import PagePermission
 
         client.force_login(user)
         client.post(
@@ -1136,8 +1104,6 @@ class TestMentions:
     def test_grant_view_access_on_mention(
         self, client, user, other_user, private_page
     ):
-        from wiki.pages.models import PagePermission
-
         client.force_login(user)
         client.post(
             "/c/secret-notes/edit/",
@@ -1180,8 +1146,6 @@ class TestPreviewTabs:
 
 class TestMentionSnippet:
     def test_get_content_snippet(self):
-        from wiki.subscriptions.tasks import _get_content_snippet
-
         content = "Line 1\nLine 2\nHey @bob check\nLine 4\nLine 5"
         snippet = _get_content_snippet(content, "bob")
         assert "@bob" in snippet
@@ -1189,15 +1153,11 @@ class TestMentionSnippet:
         assert "Line 5" in snippet  # 2 lines after
 
     def test_snippet_empty_when_no_match(self):
-        from wiki.subscriptions.tasks import _get_content_snippet
-
         assert _get_content_snippet("No mention here", "bob") == ""
 
     def test_mention_email_includes_snippet(
         self, client, user, other_user, page
     ):
-        from django.core import mail
-
         client.force_login(user)
         client.post(
             "/c/getting-started/edit/",
@@ -1221,8 +1181,6 @@ class TestUserSearchAPI:
         client.force_login(user)
         r = client.get("/api/user-search/?q=bob")
         assert r.status_code == 200
-        import json
-
         data = json.loads(r.content)
         assert len(data) == 1
         assert data[0]["username"] == "bob"
@@ -1254,8 +1212,6 @@ class TestPagePermissions:
         assert b"Permissions" in r.content
 
     def test_add_user_permission(self, client, user, other_user, page):
-        from wiki.pages.models import PagePermission
-
         client.force_login(user)
         r = client.post(
             "/c/getting-started/permissions/",
@@ -1273,8 +1229,6 @@ class TestPagePermissions:
         ).exists()
 
     def test_add_group_permission(self, client, user, page, group):
-        from wiki.pages.models import PagePermission
-
         client.force_login(user)
         r = client.post(
             "/c/getting-started/permissions/",
@@ -1292,8 +1246,6 @@ class TestPagePermissions:
         ).exists()
 
     def test_remove_permission(self, client, user, other_user, page):
-        from wiki.pages.models import PagePermission
-
         perm = PagePermission.objects.create(
             page=page,
             user=other_user,
@@ -1316,7 +1268,6 @@ class TestPagePermissions:
         self, client, other_user, user, group
     ):
         """A user in a group with VIEW on a private page can see it."""
-        from wiki.pages.models import PagePermission
 
         p = Page.objects.create(
             title="Group Test",
@@ -1348,7 +1299,6 @@ class TestPagePermissions:
         self, client, other_user, page, group
     ):
         """A user in a group with EDIT permission can edit the page."""
-        from wiki.pages.models import PagePermission
 
         PagePermission.objects.create(
             page=page, group=group, permission_type="edit"
@@ -1378,7 +1328,6 @@ class TestPagePeople:
 
     def test_owner_shown_as_admin(self, client, other_user, user, page):
         """Owner appears as admin when another user views."""
-        from wiki.pages.models import PagePermission
 
         # Add other_user as OWNER permission (admin)
         PagePermission.objects.create(
@@ -1391,8 +1340,6 @@ class TestPagePeople:
         assert b"Bob" in r.content
 
     def test_editor_permission_shown(self, client, other_user, page):
-        from wiki.pages.models import PagePermission
-
         PagePermission.objects.create(
             page=page,
             user=other_user,
@@ -1404,7 +1351,6 @@ class TestPagePeople:
 
     def test_admin_not_duplicated_in_editors(self, client, other_user, page):
         """A user with OWNER perm should only appear as admin, not editor."""
-        from wiki.pages.models import PagePermission
 
         PagePermission.objects.create(
             page=page,
@@ -1422,8 +1368,6 @@ class TestPagePeople:
 class TestCheckMentionPermissions:
     def test_public_page_no_issues(self, client, user, page):
         client.force_login(user)
-        import json
-
         r = client.post(
             "/api/check-mention-perms/",
             json.dumps({"page_slug": "getting-started", "usernames": ["bob"]}),
@@ -1436,8 +1380,6 @@ class TestCheckMentionPermissions:
         self, client, user, other_user, private_page
     ):
         client.force_login(user)
-        import json
-
         r = client.post(
             "/api/check-mention-perms/",
             json.dumps(
@@ -1560,8 +1502,6 @@ class TestCheckPagePermissions:
     ):
         """A public page linking to a private page gets flagged."""
         client.force_login(user)
-        import json
-
         r = client.post(
             "/api/check-page-perms/",
             json.dumps(
@@ -1589,8 +1529,6 @@ class TestCheckPagePermissions:
             visibility=Page.Visibility.PUBLIC,
         )
         client.force_login(user)
-        import json
-
         r = client.post(
             "/api/check-page-perms/",
             json.dumps(
@@ -1608,8 +1546,6 @@ class TestCheckPagePermissions:
     def test_nonexistent_slug_ignored(self, client, user, page):
         """Unknown slugs are silently ignored."""
         client.force_login(user)
-        import json
-
         r = client.post(
             "/api/check-page-perms/",
             json.dumps(
@@ -1629,8 +1565,6 @@ class TestCheckPagePermissions:
     ):
         """Both mentions and links checked in one request."""
         client.force_login(user)
-        import json
-
         r = client.post(
             "/api/check-page-perms/",
             json.dumps(
@@ -1649,8 +1583,6 @@ class TestCheckPagePermissions:
     def test_old_endpoint_still_works(self, client, user, page):
         """The old /api/check-mention-perms/ still works."""
         client.force_login(user)
-        import json
-
         r = client.post(
             "/api/check-mention-perms/",
             json.dumps(
@@ -1684,8 +1616,6 @@ class TestPageEditability:
 
     def test_flp_editable_does_not_allow_anon(self, page):
         """Anonymous users cannot edit even with FLP Staff editability."""
-        from django.contrib.auth.models import AnonymousUser
-
         page.editability = "internal"
         page.save(update_fields=["editability"])
         assert not can_edit_page(AnonymousUser(), page)
@@ -1955,9 +1885,6 @@ class TestPageLinks:
 
 class TestCleanupCommand:
     def test_cleanup_deletes_expired_sessions(self, db):
-        from django.contrib.sessions.models import Session
-        from django.core.management import call_command
-
         # Create an expired session
         Session.objects.create(
             session_key="expired123",
@@ -1968,8 +1895,6 @@ class TestCleanupCommand:
         assert not Session.objects.filter(session_key="expired123").exists()
 
     def test_cleanup_clears_expired_magic_tokens(self, user):
-        from django.core.management import call_command
-
         profile = user.profile
         profile.magic_link_token = "somehash"
         profile.magic_link_expires = timezone.now() - timedelta(hours=1)
@@ -1981,9 +1906,6 @@ class TestCleanupCommand:
         assert profile.magic_link_expires is None
 
     def test_cleanup_deletes_old_orphaned_uploads(self, user):
-        from django.core.files.uploadedfile import SimpleUploadedFile
-        from django.core.management import call_command
-
         upload = FileUpload.objects.create(
             uploaded_by=user,
             file=SimpleUploadedFile("old.txt", b"data"),
@@ -1997,9 +1919,6 @@ class TestCleanupCommand:
         assert not FileUpload.objects.filter(pk=upload.pk).exists()
 
     def test_cleanup_preserves_recent_orphaned_uploads(self, user):
-        from django.core.files.uploadedfile import SimpleUploadedFile
-        from django.core.management import call_command
-
         upload = FileUpload.objects.create(
             uploaded_by=user,
             file=SimpleUploadedFile("recent.txt", b"data"),
@@ -2009,9 +1928,6 @@ class TestCleanupCommand:
         assert FileUpload.objects.filter(pk=upload.pk).exists()
 
     def test_cleanup_preserves_attached_uploads(self, user, page):
-        from django.core.files.uploadedfile import SimpleUploadedFile
-        from django.core.management import call_command
-
         upload = FileUpload.objects.create(
             uploaded_by=user,
             page=page,
@@ -2087,8 +2003,6 @@ class TestPageEditLock:
 
 class TestCleanupCommandEditLocks:
     def test_cleanup_deletes_expired_edit_locks(self, user, page):
-        from django.core.management import call_command
-
         acquire_lock_for_page(page, user)
         future = timezone.now() + EditLock.LOCK_DURATION * 2
         with time_machine.travel(future, tick=False):

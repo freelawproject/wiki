@@ -1,11 +1,10 @@
 import boto3
+from django.conf import settings
 from storages.backends.s3boto3 import S3Boto3Storage, S3ManifestStaticStorage
 
 
 def get_s3_client():
     """Return a boto3 S3 client configured with project credentials."""
-    from django.conf import settings
-
     return boto3.client(
         "s3",
         aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
@@ -28,8 +27,6 @@ class PrivateS3Storage(S3Boto3Storage):
     querystring_expire = 300  # 5-minute signed URLs
 
     def __init__(self, **kwargs):
-        from django.conf import settings
-
         kwargs.setdefault(
             "bucket_name", settings.AWS_PRIVATE_STORAGE_BUCKET_NAME
         )
