@@ -5,11 +5,11 @@ from django.core.mail import EmailMessage
 
 from wiki.lib.users import display_name
 
+from .models import ChangeProposal
+
 
 def notify_owner_of_proposal(proposal_id):
     """Email the page owner that a new proposal has been submitted."""
-    from .models import ChangeProposal
-
     proposal = ChangeProposal.objects.select_related(
         "page", "page__owner", "proposed_by"
     ).get(id=proposal_id)
@@ -44,8 +44,6 @@ def notify_owner_of_proposal(proposal_id):
 
 def notify_proposer_of_decision(proposal_id):
     """Email the proposer about the accept/deny decision."""
-    from .models import ChangeProposal
-
     proposal = ChangeProposal.objects.select_related(
         "page", "proposed_by", "reviewed_by"
     ).get(id=proposal_id)

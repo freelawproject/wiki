@@ -10,7 +10,9 @@ from wiki.comments.models import PageComment
 from wiki.comments.tasks import notify_owner_of_comment
 from wiki.lib.page_utils import get_page_from_path
 from wiki.lib.permissions import can_edit_page, can_view_page
+from wiki.pages.diff_utils import unified_diff
 from wiki.pages.models import PageRevision
+from wiki.subscriptions.tasks import notify_subscribers
 
 from .forms import ProposalForm
 from .models import ChangeProposal
@@ -134,8 +136,6 @@ def proposal_review(request, path, pk):
 
     proposal = get_object_or_404(ChangeProposal, pk=pk, page=page)
 
-    from wiki.pages.diff_utils import unified_diff
-
     diff_html = unified_diff(page.content, proposal.proposed_content)
 
     return render(
@@ -198,8 +198,6 @@ def proposal_accept(request, path, pk):
 
     # Notify proposer and subscribers
     notify_proposer_of_decision(proposal.id)
-
-    from wiki.subscriptions.tasks import notify_subscribers
 
     notify_subscribers(
         page.id,

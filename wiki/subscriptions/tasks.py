@@ -1,12 +1,16 @@
 """Subscription notification helpers, called synchronously on page save."""
 
 from django.conf import settings
+from django.contrib.auth.models import User
 from django.core.mail import EmailMessage, send_mail
 from django.core.signing import Signer
 from django.urls import reverse
 
 from wiki.lib.permissions import can_view_page
 from wiki.lib.users import display_name
+from wiki.pages.models import Page, PagePermission
+
+from .models import PageSubscription
 
 
 def notify_subscribers(
@@ -16,12 +20,6 @@ def notify_subscribers(
 
     Called synchronously after page save.
     """
-    from django.contrib.auth.models import User
-
-    from wiki.pages.models import Page
-
-    from .models import PageSubscription
-
     page = Page.objects.get(id=page_id)
     editor = User.objects.get(id=editor_id)
     subscriptions = PageSubscription.objects.filter(page=page).select_related(
@@ -103,10 +101,6 @@ def process_mentions(
         grant_access_to: Optional dict mapping {username: "view"|"edit"}
             for per-user access grants
     """
-    from django.contrib.auth.models import User
-
-    from wiki.pages.models import Page, PagePermission
-
     if not mentioned_usernames:
         return
 
