@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% load static %}
 
-{% block title %}{% if editing %}Edit{% else %}New{% endif %} Page - FLP Wiki{% endblock %}
+{% block title %}{% if editing %}Edit - {{ page.title }} - FLP Wiki{% else %}New Page - FLP Wiki{% endif %}{% endblock %}
 
 {% block head %}
 <link rel="stylesheet" href="{% static 'css/font-awesome.min.css' %}">
