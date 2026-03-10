@@ -8,6 +8,7 @@ import logging
 import signal
 import time
 
+from django import db
 from django.conf import settings
 from django.core.management.base import BaseCommand
 
@@ -77,6 +78,9 @@ class Command(BaseCommand):
             self.stdout.write(f"Finished {name}.")
         except Exception:
             logger.exception("Error running task %s", name)
+            # Discard broken DB connections (e.g. after a postgres
+            # restart) so the next iteration gets a fresh one.
+            db.close_old_connections()
 
     def _handle_signal(self, signum, frame):
         self.stdout.write(f"Received signal {signum}, shutting down...")
