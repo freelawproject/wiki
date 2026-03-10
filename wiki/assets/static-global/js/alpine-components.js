@@ -32,6 +32,41 @@ document.addEventListener('alpine:init', () => {
     },
   }))
 
+  // Subscribe toggle — POST via fetch, flash confirmation like copyMarkdown
+  Alpine.data('subscribeToggle', () => ({
+    label: '',
+    subscribed: false,
+    url: '',
+    init() {
+      this.subscribed = this.$el.getAttribute('data-subscribed') === 'true'
+      this.url = this.$el.getAttribute('data-url')
+      this.label = this.subscribed ? 'Unsubscribe' : 'Subscribe'
+    },
+    toggle(event) {
+      event.stopPropagation()
+      var self = this
+      // Lock the button width so the flash label doesn't cause a resize
+      self.$el.style.width = self.$el.offsetWidth + 'px'
+      var hxHeaders = document.body.getAttribute('hx-headers')
+      var csrfToken = hxHeaders ? JSON.parse(hxHeaders)['X-CSRFToken'] : ''
+      fetch(self.url, {
+        method: 'POST',
+        headers: {
+          'X-CSRFToken': csrfToken,
+          'X-Requested-With': 'XMLHttpRequest',
+        },
+      }).then(function() {
+        self.subscribed = !self.subscribed
+        self.label = self.subscribed ? 'Subscribed!' : 'Unsubscribed!'
+        setTimeout(function() {
+          self.label = self.subscribed ? 'Unsubscribe' : 'Subscribe'
+          self.$el.style.width = ''
+          document.body.click()
+        }, 1000)
+      })
+    },
+  }))
+
   // Search tips toggle
   Alpine.data('searchTips', () => ({
     open: false,
