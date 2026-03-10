@@ -3,12 +3,14 @@
 import re
 
 import pytest
+from django.conf import settings
 from django.contrib.auth import SESSION_KEY
 from django.contrib.auth.models import User
 from django.contrib.sessions.models import Session
 from django.core import mail
-from django.test import Client
+from django.test import Client, RequestFactory
 
+from wiki.lib.views import ratelimited
 from wiki.users.models import SystemConfig, UserProfile
 
 
@@ -374,22 +376,14 @@ class TestRateLimitConfig:
 
     def test_ratelimit_middleware_installed(self, db):
         """The ratelimit middleware must be in MIDDLEWARE."""
-        from django.conf import settings
-
         assert any("RatelimitMiddleware" in m for m in settings.MIDDLEWARE)
 
     def test_ratelimit_view_configured(self, db):
         """RATELIMIT_VIEW must point to our 429 handler."""
-        from django.conf import settings
-
         assert settings.RATELIMIT_VIEW == "wiki.lib.views.ratelimited"
 
     def test_429_template_renders(self, client, db):
         """The 429 handler returns a 429 status with the error template."""
-        from django.test import RequestFactory
-
-        from wiki.lib.views import ratelimited
-
         request = RequestFactory().get("/")
         response = ratelimited(request)
         assert response.status_code == 429
@@ -397,6 +391,4 @@ class TestRateLimitConfig:
 
     def test_csp_middleware_installed(self, db):
         """The CSP middleware must be in MIDDLEWARE."""
-        from django.conf import settings
-
         assert any("CSPMiddleware" in m for m in settings.MIDDLEWARE)

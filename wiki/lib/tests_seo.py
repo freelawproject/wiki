@@ -3,6 +3,7 @@
 import json
 
 import pytest
+from django.http import HttpResponse
 from django.test import RequestFactory
 
 from wiki.directories.models import Directory
@@ -112,8 +113,6 @@ class TestSEOHeadersMiddleware:
         return factory.get(path)
 
     def test_noindex_on_admin_path(self):
-        from django.http import HttpResponse
-
         def get_response(request):
             return HttpResponse("ok")
 
@@ -123,8 +122,6 @@ class TestSEOHeadersMiddleware:
         assert response["X-Robots-Tag"] == "noindex, nofollow"
 
     def test_noindex_on_api_path(self):
-        from django.http import HttpResponse
-
         def get_response(request):
             return HttpResponse("ok")
 
@@ -134,8 +131,6 @@ class TestSEOHeadersMiddleware:
         assert response["X-Robots-Tag"] == "noindex, nofollow"
 
     def test_noindex_when_view_sets_flag(self):
-        from django.http import HttpResponse
-
         def get_response(request):
             request.seo_noindex = True
             return HttpResponse("ok")
@@ -146,8 +141,6 @@ class TestSEOHeadersMiddleware:
         assert response["X-Robots-Tag"] == "noindex, nofollow"
 
     def test_no_noindex_on_public_content(self):
-        from django.http import HttpResponse
-
         def get_response(request):
             return HttpResponse("ok")
 
@@ -157,8 +150,6 @@ class TestSEOHeadersMiddleware:
         assert "X-Robots-Tag" not in response
 
     def test_canonical_header(self):
-        from django.http import HttpResponse
-
         def get_response(request):
             request.seo_canonical = "https://wiki.free.law/c/my-page"
             return HttpResponse("ok")
@@ -173,7 +164,6 @@ class TestSEOHeadersMiddleware:
 
     def test_noindex_prefixes(self):
         """All non-content prefixes should get noindex."""
-        from django.http import HttpResponse
 
         def get_response(request):
             return HttpResponse("ok")

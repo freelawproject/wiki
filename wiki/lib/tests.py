@@ -4,6 +4,7 @@ import time_machine
 from django.contrib.auth.models import AnonymousUser
 from django.utils import timezone
 
+from wiki.directories.models import DirectoryPermission
 from wiki.lib.edit_lock import (
     acquire_lock_for_directory,
     acquire_lock_for_page,
@@ -21,6 +22,7 @@ from wiki.lib.permissions import (
     is_system_owner,
 )
 from wiki.pages.models import Page, PagePermission
+from wiki.users.models import SystemConfig
 
 
 class TestIsSystemOwner:
@@ -50,8 +52,6 @@ class TestCanViewPage:
         # owner_user is system owner but not the page owner
         # private_page is owned by 'user' fixture
         # We need a different user as system owner
-        from wiki.users.models import SystemConfig
-
         SystemConfig.objects.all().delete()
         SystemConfig.objects.create(owner=other_user)
         assert can_view_page(other_user, private_page)
@@ -78,8 +78,6 @@ class TestCanViewPage:
     def test_private_page_with_directory_permission(
         self, other_user, user, sub_directory
     ):
-        from wiki.directories.models import DirectoryPermission
-
         p = Page.objects.create(
             title="Dir Private",
             slug="dir-private",
@@ -125,8 +123,6 @@ class TestCanViewPage:
     def test_private_page_with_directory_group_permission(
         self, other_user, user, sub_directory, group
     ):
-        from wiki.directories.models import DirectoryPermission
-
         p = Page.objects.create(
             title="Dir Group Private",
             slug="dir-group-private",
@@ -159,8 +155,6 @@ class TestCanEditPage:
         assert not can_edit_page(other_user, page)
 
     def test_system_owner_can_edit_any(self, other_user, page):
-        from wiki.users.models import SystemConfig
-
         SystemConfig.objects.create(owner=other_user)
         assert can_edit_page(other_user, page)
 
@@ -187,8 +181,6 @@ class TestCanEditPage:
     def test_directory_group_edit_grants_page_edit(
         self, other_user, user, sub_directory, group
     ):
-        from wiki.directories.models import DirectoryPermission
-
         p = Page.objects.create(
             title="Dir Edit",
             slug="dir-edit",
@@ -217,14 +209,10 @@ class TestCanEditDirectory:
         assert not can_edit_directory(AnonymousUser(), sub_directory)
 
     def test_system_owner_can_edit(self, other_user, sub_directory):
-        from wiki.users.models import SystemConfig
-
         SystemConfig.objects.create(owner=other_user)
         assert can_edit_directory(other_user, sub_directory)
 
     def test_group_edit_permission(self, other_user, sub_directory, group):
-        from wiki.directories.models import DirectoryPermission
-
         DirectoryPermission.objects.create(
             directory=sub_directory,
             group=group,
