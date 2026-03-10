@@ -1880,6 +1880,50 @@ class TestPageLinks:
         assert not PageLink.objects.filter(from_page_id=page.pk).exists()
 
 
+class TestPageBacklinks:
+    def test_backlinks_page_shows_linking_pages(self, client, user, page):
+        """The backlinks view lists pages that link to this page."""
+        Page.objects.create(
+            title="Linking Page",
+            slug="linking-page",
+            content=f"See #{page.slug} for info.",
+            owner=user,
+            created_by=user,
+            updated_by=user,
+        )
+        r = client.get(f"/c/{page.slug}/backlinks/")
+        assert r.status_code == 200
+        assert b"Linking Page" in r.content
+        assert b"What links here" in r.content
+
+    def test_backlinks_page_empty(self, client, user, page):
+        """The backlinks view shows a message when no pages link here."""
+        r = client.get(f"/c/{page.slug}/backlinks/")
+        assert r.status_code == 200
+        assert b"No other pages link to this page" in r.content
+
+    def test_backlinks_respects_view_permissions(self, client, user, page):
+        """Backlinks hides pages the viewer can't access."""
+        Page.objects.create(
+            title="Secret Page",
+            slug="secret-page",
+            content=f"See #{page.slug} for info.",
+            owner=user,
+            created_by=user,
+            updated_by=user,
+            visibility="private",
+        )
+        # Anonymous user shouldn't see private linking page
+        r = client.get(f"/c/{page.slug}/backlinks/")
+        assert r.status_code == 200
+        assert b"Secret Page" not in r.content
+
+    def test_backlinks_404_for_nonexistent_page(self, client):
+        """Backlinks returns 404 for a page that doesn't exist."""
+        r = client.get("/c/nonexistent-page/backlinks/")
+        assert r.status_code == 404
+
+
 # ── Cleanup Command ───────────────────────────────────────
 
 

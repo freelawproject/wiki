@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+
+{% block title %}What links here: {{ page.title }} - FLP Wiki{% endblock %}
+
+{% block content %}
+<div class="max-w-3xl">
+  <div class="flex items-center justify-between mb-6">
+    <h1 class="text-2xl">What links here: {{ page.title }}</h1>
+    <a href="{{ page.get_absolute_url }}" class="btn-outline text-sm">Back to Page</a>
+  </div>
+
+  {% if incoming_links %}
+  <ul class="space-y-2">
+    {% for link in incoming_links %}
+    <li class="flex items-baseline gap-2">
+      <a href="{{ link.from_page.get_absolute_url }}" class="text-blue-600 dark:text-blue-400 hover:underline">
+        {{ link.from_page.title }}
+      </a>
+      {% if link.from_page.directory %}
+        <span class="text-sm text-gray-500 dark:text-gray-400">in {{ link.from_page.directory.title }}</span>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="text-gray-500 dark:text-gray-400">No other pages link to this page.</p>
+  {% endif %}
+</div>
+{% endblock %}
