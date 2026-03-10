@@ -30,7 +30,14 @@ wiki/
 
 ## Coding Rules
 
-1. **Imports**: MUST put imports at the top of the file. NEVER do inline imports except to prevent circular dependency problems.
+1. **Imports**: MUST put imports at the top of the file. NEVER do inline imports. The only
+   exception is when a circular dependency makes it impossible — in that case, add a comment
+   explaining the cycle (e.g., `# Inline import to avoid circular dependency (A ↔ B)`).
+   Known circular pairs that require inline imports:
+   - `wiki/pages/models.py` ↔ `wiki/lib/markdown.py` (Page model uses WIKI_LINK_RE)
+   - `wiki/lib/path_utils.py` → `wiki/pages/models.py` (path_utils imported by Page model)
+   - `wiki/pages/views.py` ↔ `wiki/directories/views.py` (mutual view references)
+   - `wiki/settings/project/security.py` (conditional production-only import)
 
 2. **Pre-commit**: MUST run `pre-commit run --all-files` and ensure it passes before committing. The project uses ruff for linting and formatting.
 
