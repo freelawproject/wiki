@@ -1,6 +1,8 @@
-{# Visibility badge — icon-only for non-public items.
+{% comment %}
+   Visibility badge — icon-only for non-public items.
    Usage: <c-visibility-badge visibility="internal" />
-   Accepts: "public", "internal", "private". Shows nothing for public. #}
+   Accepts: "public", "internal", "private". Shows nothing for public.
+{% endcomment %}
 {% if visibility == "internal" %}
 <span class="inline-flex items-center text-yellow-600 dark:text-yellow-400 align-middle cursor-help" title="FLP Staff" aria-label="FLP Staff">
   <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
