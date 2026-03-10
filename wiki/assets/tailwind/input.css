@@ -163,6 +163,21 @@
   .wiki-content h4 {
     @apply text-lg font-semibold mt-5 mb-2;
   }
+  .wiki-content .heading-anchor {
+    @apply ml-2 text-gray-300 dark:text-gray-600 no-underline
+           opacity-0 transition-opacity duration-150;
+  }
+  .wiki-content h1:hover .heading-anchor,
+  .wiki-content h2:hover .heading-anchor,
+  .wiki-content h3:hover .heading-anchor,
+  .wiki-content h4:hover .heading-anchor,
+  .wiki-content h5:hover .heading-anchor,
+  .wiki-content h6:hover .heading-anchor {
+    @apply opacity-100;
+  }
+  .wiki-content .heading-anchor:hover {
+    @apply text-primary-500 dark:text-primary-400;
+  }
   .wiki-content p {
     @apply my-3;
   }
