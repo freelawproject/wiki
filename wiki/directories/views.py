@@ -1,9 +1,12 @@
+from django.conf import settings as django_settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
+from django.contrib.auth.models import User
 from django.db.models import Q
 from django.http import Http404, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
+from django.utils.text import slugify
 
 from wiki.lib.edit_lock import (
     acquire_lock_for_directory,
@@ -20,8 +23,16 @@ from wiki.lib.permissions import (
 )
 from wiki.lib.ratelimiter import ratelimit_search
 from wiki.lib.seo import build_breadcrumbs_jsonld, extract_description
+from wiki.pages.diff_utils import unified_diff
+from wiki.pages.models import Page, PagePermission
 
-from .models import Directory, DirectoryRevision
+from .forms import (
+    DirectoryCreateForm,
+    DirectoryForm,
+    DirectoryMoveForm,
+    DirectoryPermissionForm,
+)
+from .models import Directory, DirectoryPermission, DirectoryRevision
 
 
 def _create_revision(directory, user, change_message=""):
@@ -85,8 +96,6 @@ def root_view(request):
     ]
 
     # Show pages in root directory + unassigned pages
-    from wiki.pages.models import Page
-
     pages = Page.objects.filter(Q(directory=root) | Q(directory__isnull=True))
 
     # Filter by view permission
@@ -101,8 +110,6 @@ def root_view(request):
         rendered_description = render_markdown(root.description)
 
     # SEO
-    from django.conf import settings as django_settings
-
     is_public = root.visibility == Directory.Visibility.PUBLIC
     breadcrumbs = [("Home", reverse("root"))]
     directory_description = extract_description(root.description)
@@ -169,8 +176,6 @@ def directory_edit_root(request):
             )
         acquire_lock_for_directory(root, request.user)
 
-    from .forms import DirectoryForm
-
     form = DirectoryForm(request.POST or None, instance=root)
     if request.method == "POST" and form.is_valid():
         form.save()
@@ -216,8 +221,6 @@ def directory_detail(request, path):
         rendered_description = render_markdown(directory.description)
 
     # SEO
-    from django.conf import settings as django_settings
-
     is_public = directory.visibility == Directory.Visibility.PUBLIC
     breadcrumbs = directory.get_breadcrumbs()
     directory_description = extract_description(directory.description)
@@ -288,8 +291,6 @@ def directory_edit(request, path):
             )
         acquire_lock_for_directory(directory, request.user)
 
-    from .forms import DirectoryForm
-
     form = DirectoryForm(request.POST or None, instance=directory)
     if request.method == "POST" and form.is_valid():
         # Validate: FLP Staff editability + Private visibility is invalid
@@ -329,8 +330,6 @@ def directory_edit(request, path):
 @login_required
 def directory_create(request, path=""):
     """Create a new subdirectory."""
-    from .forms import DirectoryCreateForm
-
     if path:
         parent = get_object_or_404(Directory, path=path.strip("/"))
     else:
@@ -413,11 +412,6 @@ def _directory_permissions_inner(request, directory):
             "You don't have permission to manage this directory.",
         )
         return redirect(directory.get_absolute_url())
-
-    from django.contrib.auth.models import User
-
-    from .forms import DirectoryPermissionForm
-    from .models import DirectoryPermission
 
     perms_url = _get_permissions_url(directory)
 
@@ -537,8 +531,6 @@ def directory_move(request, path):
         )
         return redirect(directory.get_absolute_url())
 
-    from .forms import DirectoryMoveForm
-
     initial = {"parent": directory.parent}
     form = DirectoryMoveForm(
         request.POST or None,
@@ -572,8 +564,6 @@ def _move_directory(directory, new_parent):
     Returns an error message string if the move would cause a path
     collision, or None on success.
     """
-    from django.utils.text import slugify
-
     slug = slugify(directory.title)
     new_path = f"{new_parent.path}/{slug}" if new_parent.path else slug
 
@@ -596,8 +586,6 @@ def _move_directory(directory, new_parent):
 
 def _update_descendant_paths(directory):
     """Recursively update paths of all descendants."""
-    from django.utils.text import slugify
-
     for child in directory.children.all():
         slug = slugify(child.title)
         if directory.path:
@@ -699,8 +687,6 @@ def _directory_apply_permissions_inner(request, directory):
         )
         return redirect(directory.get_absolute_url())
 
-    from .models import DirectoryPermission
-
     direct_pages = directory.pages.all()
 
     if request.method == "POST":
@@ -709,8 +695,6 @@ def _directory_apply_permissions_inner(request, directory):
 
         def apply_to_pages(pages, source_dir):
             """Apply directory permissions to a set of pages."""
-            from wiki.pages.models import PagePermission
-
             for page in pages:
                 page.visibility = source_dir.visibility
                 page.editability = source_dir.editability
@@ -861,8 +845,6 @@ def directory_history_root(request):
 
 def _directory_diff_inner(request, directory, v1, v2):
     """Shared logic for directory diff view."""
-    from wiki.pages.diff_utils import unified_diff
-
     if not can_view_directory(request.user, directory):
         raise Http404
 
@@ -988,6 +970,7 @@ def directory_revert_root(request, rev_num):
 @login_required
 def page_create_in_directory(request, path):
     """Create a new page within a directory."""
+    # Inline import to avoid circular dependency (pages/views ↔ directories/views)
     from wiki.pages.views import page_create
 
     return page_create(request, path=path)
