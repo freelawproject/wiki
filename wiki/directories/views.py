@@ -186,10 +186,11 @@ def directory_edit_root(request):
         messages.success(request, f'Directory "{root.title}" updated.')
         return redirect(reverse("root"))
 
+    breadcrumbs = [("Home", reverse("root"))]
     return render(
         request,
         "directories/form.html",
-        {"form": form, "directory": root},
+        {"form": form, "directory": root, "breadcrumbs": breadcrumbs},
     )
 
 
@@ -320,10 +321,15 @@ def directory_edit(request, path):
         messages.success(request, f'Directory "{directory.title}" updated.')
         return redirect(directory.get_absolute_url())
 
+    breadcrumbs = directory.get_breadcrumbs()
     return render(
         request,
         "directories/form.html",
-        {"form": form, "directory": directory},
+        {
+            "form": form,
+            "directory": directory,
+            "breadcrumbs": breadcrumbs,
+        },
     )
 
 
@@ -344,6 +350,9 @@ def directory_create(request, path=""):
             "You don't have permission to create directories here.",
         )
         return redirect(parent.get_absolute_url())
+
+    breadcrumbs = parent.get_breadcrumbs()
+    breadcrumbs.append(("New Subdirectory", ""))
 
     form = DirectoryCreateForm(request.POST or None, parent=parent)
     if request.method == "POST" and form.is_valid():
@@ -369,6 +378,7 @@ def directory_create(request, path=""):
                     "form": form,
                     "parent": parent,
                     "creating": True,
+                    "breadcrumbs": breadcrumbs,
                 },
             )
 
@@ -390,6 +400,7 @@ def directory_create(request, path=""):
             "form": form,
             "parent": parent,
             "creating": True,
+            "breadcrumbs": breadcrumbs,
         },
     )
 
