@@ -1,0 +1,16 @@
+{# Visibility badge — icon-only for non-public items.
+   Usage: <c-visibility-badge visibility="internal" />
+   Accepts: "public", "internal", "private". Shows nothing for public. #}
+{% if visibility == "internal" %}
+<span class="inline-flex items-center text-yellow-600 dark:text-yellow-400 align-middle cursor-help" title="FLP Staff only" aria-label="FLP Staff only">
+  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+    <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 21h16.5M4.5 3h15M5.25 3v18m13.5-18v18M9 6.75h1.5m-1.5 3h1.5m-1.5 3h1.5m3-6H15m-1.5 3H15m-1.5 3H15M9 21v-3.375c0-.621.504-1.125 1.125-1.125h3.75c.621 0 1.125.504 1.125 1.125V21" />
+  </svg>
+</span>
+{% elif visibility == "private" %}
+<span class="inline-flex items-center text-gray-400 dark:text-gray-500 align-middle cursor-help" title="Private" aria-label="Private">
+  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+    <path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 1 0-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 0 0 2.25-2.25v-6.75a2.25 2.25 0 0 0-2.25-2.25H6.75a2.25 2.25 0 0 0-2.25 2.25v6.75a2.25 2.25 0 0 0 2.25 2.25Z" />
+  </svg>
+</span>
+{% endif %}
