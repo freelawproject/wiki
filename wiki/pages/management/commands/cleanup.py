@@ -2,10 +2,13 @@
 
 from datetime import timedelta
 
+from django.conf import settings
 from django.contrib.sessions.models import Session
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 
+from wiki.lib.edit_lock import cleanup_expired_locks
+from wiki.lib.storage import get_s3_client
 from wiki.pages.models import FileUpload, PendingUpload
 from wiki.users.models import UserProfile
 
@@ -60,10 +63,6 @@ class Command(BaseCommand):
         for pending in stale:
             # Try to clean up the S3 object if it exists
             try:
-                from django.conf import settings
-
-                from wiki.lib.storage import get_s3_client
-
                 client = get_s3_client()
                 client.delete_object(
                     Bucket=settings.AWS_PRIVATE_STORAGE_BUCKET_NAME,
@@ -76,7 +75,5 @@ class Command(BaseCommand):
         self.stdout.write(f"Deleted {count} stale pending upload(s).")
 
     def _clear_expired_edit_locks(self):
-        from wiki.lib.edit_lock import cleanup_expired_locks
-
         count = cleanup_expired_locks()
         self.stdout.write(f"Deleted {count} expired edit lock(s).")

@@ -11,6 +11,7 @@ import time
 from django.conf import settings
 from django.core.management.base import BaseCommand
 
+from wiki.pages.management.commands.cleanup import Command as CleanupCommand
 from wiki.pages.tasks import sync_page_view_counts, update_search_vectors
 
 logger = logging.getLogger(__name__)
@@ -46,10 +47,6 @@ class Command(BaseCommand):
         self.stdout.write("Daemon shutting down.")
 
     def _build_schedule(self):
-        from wiki.pages.management.commands.cleanup import (
-            Command as CleanupCommand,
-        )
-
         cleanup_cmd = CleanupCommand()
 
         return [

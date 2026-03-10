@@ -9,6 +9,7 @@ from django.core.management.base import BaseCommand
 
 from wiki.directories.models import Directory
 from wiki.pages.models import Page, PageRevision
+from wiki.users.models import SystemConfig
 
 HELP_PAGES = [
     {
@@ -1042,8 +1043,6 @@ class Command(BaseCommand):
     def _get_owner(self):
         """Return the system owner, or the first superuser, or the
         first user."""
-        from wiki.users.models import SystemConfig
-
         config = SystemConfig.objects.first()
         if config:
             return config.owner

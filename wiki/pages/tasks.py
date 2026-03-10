@@ -1,6 +1,9 @@
 """Periodic tasks for the pages app, run via cron management commands."""
 
+from django.contrib.postgres.search import SearchVector
 from django.db.models import F, Sum
+
+from .models import Page, PageViewTally
 
 
 def sync_page_view_counts():
@@ -8,8 +11,6 @@ def sync_page_view_counts():
 
     Returns the number of pages updated.
     """
-    from .models import Page, PageViewTally
-
     tallies = PageViewTally.objects.values("page_id").annotate(
         total=Sum("count")
     )
@@ -30,10 +31,6 @@ def update_search_vectors():
 
     Returns the number of pages updated.
     """
-    from django.contrib.postgres.search import SearchVector
-
-    from .models import Page
-
     count = Page.objects.update(
         search_vector=SearchVector("title", weight="A")
         + SearchVector("content", weight="B")
