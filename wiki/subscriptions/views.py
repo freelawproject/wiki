@@ -39,10 +39,14 @@ def toggle_subscription(request, path):
     # HTMX response
     if request.headers.get("HX-Request"):
         label = "Unsubscribe" if subscribed else "Subscribe"
+        flash = "Subscribed!" if subscribed else "Unsubscribed!"
         sub_url = reverse("page_subscribe", kwargs={"path": path})
         return HttpResponse(
-            f'<button class="w-full text-left px-4 py-2 text-sm '
-            f'hover:bg-gray-100 dark:hover:bg-gray-700" '
+            f'<button class="dropdown-item" '
+            f'x-data="subscribeToggle" '
+            f'data-label="{label}" '
+            f'data-flash="{flash}" '
+            f'x-text="label" '
             f'hx-post="{sub_url}" '
             f'hx-swap="outerHTML">'
             f"{label}</button>"

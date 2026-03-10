@@ -15,6 +15,11 @@ urlpatterns = [
     path("<path:path>/delete/", views.page_delete, name="page_delete"),
     path("<path:path>/history/", views.page_history, name="page_history"),
     path(
+        "<path:path>/backlinks/",
+        views.page_backlinks,
+        name="page_backlinks",
+    ),
+    path(
         "<path:path>/diff/<int:v1>/<int:v2>/",
         views.page_diff,
         name="page_diff",

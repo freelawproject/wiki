@@ -829,6 +829,32 @@ def page_permissions(request, path):
     )
 
 
+def page_backlinks(request, path):
+    """Show pages that link to this page."""
+    slug = _parse_page_path(path)
+    page = get_object_or_404(Page, slug=slug)
+
+    if not can_view_page(request.user, page):
+        raise Http404
+
+    incoming_links = page.incoming_links.select_related(
+        "from_page", "from_page__directory"
+    ).order_by("from_page__title")
+
+    # Filter out pages the current user can't view
+    visible_links = [
+        link
+        for link in incoming_links
+        if can_view_page(request.user, link.from_page)
+    ]
+
+    return render(
+        request,
+        "pages/backlinks.html",
+        {"page": page, "incoming_links": visible_links},
+    )
+
+
 def page_history(request, path):
     """Show revision history for a page."""
     slug = _parse_page_path(path)
