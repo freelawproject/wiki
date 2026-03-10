@@ -1,6 +1,9 @@
 from django.conf import settings
 
+from wiki.comments.models import PageComment
 from wiki.lib.permissions import is_system_owner
+from wiki.pages.models import Page
+from wiki.proposals.models import ChangeProposal
 
 
 def inject_settings(request):
@@ -20,10 +23,6 @@ def inject_review_pending(request):
     """
     if not hasattr(request, "user") or not request.user.is_authenticated:
         return {}
-
-    from wiki.comments.models import PageComment
-    from wiki.pages.models import Page
-    from wiki.proposals.models import ChangeProposal
 
     if is_system_owner(request.user):
         has_pending = (

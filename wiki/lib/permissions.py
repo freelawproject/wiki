@@ -12,6 +12,10 @@ Directory permissions are inherited: we walk up the parent chain.
 
 from django.db.models import Q
 
+from wiki.directories.models import Directory, DirectoryPermission
+from wiki.pages.models import Page, PagePermission
+from wiki.users.models import SystemConfig
+
 # Openness ranking: higher number = more open
 _VISIBILITY_OPENNESS = {
     "private": 0,
@@ -36,8 +40,6 @@ def is_system_owner(user):
     """Check if user is the system owner (first user / admin)."""
     if not user.is_authenticated:
         return False
-    from wiki.users.models import SystemConfig
-
     try:
         config = SystemConfig.objects.get(pk=1)
         return config.owner_id == user.id
@@ -73,8 +75,6 @@ def can_view_directory(user, directory):
     # Root directory is always accessible
     if directory.path == "":
         return True
-
-    from wiki.directories.models import Directory
 
     if directory.visibility == Directory.Visibility.PUBLIC:
         return True
@@ -114,8 +114,6 @@ def can_view_page(user, page):
     INTERNAL pages are viewable by any authenticated user.
     PRIVATE pages require owner, system owner, or explicit permission.
     """
-    from wiki.pages.models import Page
-
     if page.visibility == Page.Visibility.PUBLIC:
         return True
 
@@ -155,8 +153,6 @@ def _viewable_directory_ids(user):
     Loads all directories (small table) and checks each via
     can_view_directory(). Called once per search request.
     """
-    from wiki.directories.models import Directory
-
     return {
         d.id for d in Directory.objects.all() if can_view_directory(user, d)
     }
@@ -168,8 +164,6 @@ def viewable_pages_q(user):
     Translates the can_view_page() logic into SQL-level filtering
     so that LIMIT/OFFSET apply to already-filtered results.
     """
-    from wiki.pages.models import Page
-
     if is_system_owner(user):
         return Q()
 
@@ -233,8 +227,6 @@ def can_edit_page(user, page):
     if page.owner_id == user.id:
         return True
 
-    from wiki.pages.models import PagePermission
-
     # Check page-level EDIT or OWNER permission
     edit_types = [
         PagePermission.PermissionType.EDIT,
@@ -247,8 +239,6 @@ def can_edit_page(user, page):
         return True
 
     # Walk up directory ancestry for EDIT/OWNER
-    from wiki.directories.models import DirectoryPermission
-
     dir_edit_types = [
         DirectoryPermission.PermissionType.EDIT,
         DirectoryPermission.PermissionType.OWNER,
@@ -279,8 +269,6 @@ def can_edit_directory(user, directory):
     if directory.owner_id == user.id:
         return True
 
-    from wiki.directories.models import DirectoryPermission
-
     edit_types = [
         DirectoryPermission.PermissionType.EDIT,
         DirectoryPermission.PermissionType.OWNER,
@@ -303,9 +291,6 @@ def editable_page_ids(user):
 
     Used by the review queue to find all pages with pending feedback.
     """
-    from wiki.directories.models import Directory, DirectoryPermission
-    from wiki.pages.models import Page, PagePermission
-
     if not user.is_authenticated:
         return set()
 
