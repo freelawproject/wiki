@@ -7,6 +7,15 @@
   var pageSlug = config.pageSlug;
   var pageForm = document.getElementById('page-form');
 
+  // ── Dynamic HTML title ─────────────────────────────────────
+  var titleInput = document.getElementById('id_title');
+  var titlePrefix = isEditing ? 'Edit' : 'New Page';
+  var titleDefault = isEditing ? 'Edit Page - FLP Wiki' : 'New Page - FLP Wiki';
+  titleInput.addEventListener('input', function() {
+    var val = titleInput.value.trim();
+    document.title = val ? titlePrefix + ' - ' + val + ' - FLP Wiki' : titleDefault;
+  });
+
   // ── Location Picker ─────────────────────────────────────
   var locationInput = document.getElementById('location-input');
   var locationChips = document.getElementById('location-chips');
