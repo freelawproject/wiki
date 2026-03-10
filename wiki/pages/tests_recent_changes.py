@@ -106,9 +106,7 @@ class TestRecentChanges:
         self, client, staff_user, non_staff_user, pages_with_revisions
     ):
         client.force_login(staff_user)
-        url = reverse(
-            "recent_changes_user", kwargs={"username": "visitor"}
-        )
+        url = reverse("recent_changes_user", kwargs={"username": "visitor"})
         resp = client.get(url)
         assert resp.status_code == 200
         assert b"Beta Page" in resp.content
@@ -165,9 +163,7 @@ class TestRecentChanges:
         self, client, staff_user, non_staff_user, pages_with_revisions
     ):
         client.force_login(staff_user)
-        url = reverse(
-            "recent_changes_user", kwargs={"username": "visitor"}
-        )
+        url = reverse("recent_changes_user", kwargs={"username": "visitor"})
         resp = client.get(url)
         assert b"Contributions by" in resp.content
         assert b"Visitor" in resp.content
