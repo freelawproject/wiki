@@ -8,6 +8,7 @@ from django.conf import settings as django_settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
+from django.core.paginator import Paginator
 from django.http import FileResponse, Http404, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -32,6 +33,7 @@ from wiki.lib.permissions import (
     is_editability_more_open_than_visibility,
     is_more_open_than,
     is_system_owner,
+    viewable_pages_q,
 )
 from wiki.lib.ratelimiter import ratelimit_search, ratelimit_upload
 from wiki.lib.seo import build_breadcrumbs_jsonld, extract_description
@@ -1260,3 +1262,47 @@ def page_search_htmx(request):
         )
 
     return HttpResponse(html)
+
+
+@login_required
+def recent_changes(request, username=None):
+    """Show recent revisions across the wiki, optionally filtered by user."""
+    if not request.user.is_staff:
+        raise Http404
+
+    short_name = username or request.GET.get("user")
+    filter_user = None
+    if short_name:
+        filter_user = get_object_or_404(
+            User, username=f"{short_name}@free.law"
+        )
+
+    visible_page_ids = Page.objects.filter(
+        viewable_pages_q(request.user)
+    ).values_list("pk", flat=True)
+
+    revisions = (
+        PageRevision.objects.filter(page_id__in=visible_page_ids)
+        .select_related(
+            "page",
+            "page__directory",
+            "created_by",
+            "created_by__profile",
+        )
+        .order_by("-created_at")
+    )
+
+    if filter_user:
+        revisions = revisions.filter(created_by=filter_user)
+
+    paginator = Paginator(revisions, 50)
+    page_obj = paginator.get_page(request.GET.get("page"))
+
+    return render(
+        request,
+        "pages/recent_changes.html",
+        {
+            "page_obj": page_obj,
+            "filter_user": filter_user,
+        },
+    )

@@ -85,18 +85,21 @@ wiki/
 
 ### Running Tests
 
+All `docker compose` commands must be run from `docker/wiki/`, or use
+`-f docker/wiki/docker-compose.yml` from elsewhere.
+
 ```bash
 # Run all tests
-docker exec wiki-django python -m pytest --tb=short -q
+docker compose exec wiki-django python -m pytest --tb=short -q
 
 # Run tests for a specific app
-docker exec wiki-django python -m pytest wiki/pages/tests.py -v
+docker compose exec wiki-django python -m pytest wiki/pages/tests.py -v
 
 # Run a specific test class
-docker exec wiki-django python -m pytest wiki/pages/tests.py::TestClassName -v
+docker compose exec wiki-django python -m pytest wiki/pages/tests.py::TestClassName -v
 
 # Run a specific test method
-docker exec wiki-django python -m pytest wiki/pages/tests.py::TestClassName::test_method -v
+docker compose exec wiki-django python -m pytest wiki/pages/tests.py::TestClassName::test_method -v
 ```
 
 ### Parallel Test Runs
@@ -104,7 +107,7 @@ docker exec wiki-django python -m pytest wiki/pages/tests.py::TestClassName::tes
 To run tests in multiple terminals simultaneously, give each a unique test database name via `TEST_DB_NAME`. Use `$$` (the host shell's PID) to automatically get a unique suffix per terminal:
 
 ```bash
-docker exec -e TEST_DB_NAME=test_wiki_$$ wiki-django python -m pytest wiki/pages/ -v
+docker compose exec -e TEST_DB_NAME=test_wiki_$$ wiki-django python -m pytest wiki/pages/ -v
 ```
 
 This works because each terminal has a stable, unique shell PID. Without `TEST_DB_NAME`, concurrent runs will collide on the default `test_wiki` database.
@@ -130,29 +133,47 @@ cd docker/wiki && docker compose up -d
 
 # Stop services
 cd docker/wiki && docker compose down
-
-# Start from a worktree (set WIKI_BASE_DIR to the worktree root)
-cd docker/wiki && WIKI_BASE_DIR=/path/to/worktree docker compose up
 ```
 
-The compose file lives at `docker/wiki/docker-compose.yml`. It uses `WIKI_BASE_DIR` (defaults to `../../`, i.e. the repo root) to mount the project into containers. When running from a worktree, set `WIKI_BASE_DIR` to the worktree's absolute path.
+The compose file lives at `docker/wiki/docker-compose.yml`. It uses `WIKI_BASE_DIR` (defaults to `../../`, i.e. the repo root) to mount the project into containers.
+
+### Running Multiple Instances (Worktrees)
+
+Multiple compose stacks can run simultaneously (e.g. for git worktrees) by giving
+each a unique project name and unique host ports:
+
+```bash
+cd docker/wiki && \
+  COMPOSE_PROJECT_NAME=wiki-feature \
+  DJANGO_HOST_PORT=8002 \
+  POSTGRES_HOST_PORT=5434 \
+  docker compose up -d
+```
+
+Each stack gets isolated containers, networks, and databases. The service names
+(`wiki-django`, `wiki-postgres`, etc.) still work within each stack's network.
 
 ### Running Commands
 
+Use `docker compose exec` (not `docker exec`) so that compose finds the correct
+container for the current project automatically:
+
 ```bash
 # Run management commands
-docker exec wiki-django python manage.py [command]
+docker compose exec wiki-django python manage.py [command]
 
 # Create migrations
-docker exec wiki-django python manage.py makemigrations [app_name]
+docker compose exec wiki-django python manage.py makemigrations [app_name]
 
 # Apply migrations
-docker exec wiki-django python manage.py migrate
+docker compose exec wiki-django python manage.py migrate
 
 # Django shell
-docker exec -it wiki-django python manage.py shell
+docker compose exec -it wiki-django python manage.py shell
 ```
 
+If you set `COMPOSE_PROJECT_NAME` when starting the stack, you must also set it
+when running exec commands, or run from the same `docker/wiki/` directory.
 
 ## Tailwind CSS
 

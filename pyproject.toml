@@ -83,4 +83,4 @@ lint.ignore = [
 
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "wiki.settings"
-python_files = ["tests.py", "test_*.py"]
+python_files = ["tests.py", "tests_*.py", "test_*.py"]

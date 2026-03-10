@@ -203,7 +203,7 @@ class TestPageDetail:
     def test_subscription_button_for_authenticated(self, client, user, page):
         client.force_login(user)
         r = client.get("/c/getting-started")
-        assert b"Subscribe" in r.content
+        assert b"subscribeToggle" in r.content
 
     def test_markdown_rendered(self, client, page):
         r = client.get("/c/getting-started")
@@ -1880,6 +1880,7 @@ class TestPageLinks:
         assert not PageLink.objects.filter(from_page_id=page.pk).exists()
 
 
+@pytest.mark.django_db
 class TestPageBacklinks:
     def test_backlinks_page_shows_linking_pages(self, client, user, page):
         """The backlinks view lists pages that link to this page."""

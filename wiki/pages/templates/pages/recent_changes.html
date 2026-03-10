@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% load wiki_tags %}
+
+{% block title %}{% if filter_user %}Contributions by {{ filter_user|display_name }}{% else %}Recent Changes{% endif %} - FLP Wiki{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl">
+  <div class="flex items-center justify-between mb-6">
+    {% if filter_user %}
+    <div>
+      <h1 class="text-2xl">Contributions by {{ filter_user|display_name }}</h1>
+      <a href="{% url 'recent_changes' %}" class="text-sm text-blue-600 dark:text-blue-400 hover:underline">View all recent changes</a>
+    </div>
+    {% else %}
+    <h1 class="text-2xl">Recent Changes</h1>
+    {% endif %}
+  </div>
+
+  {% if page_obj %}
+  <div class="divide-y divide-gray-200 dark:divide-gray-700">
+    {% for rev in page_obj %}
+    <div class="py-3 flex flex-col sm:flex-row sm:items-baseline gap-1 sm:gap-3">
+      <div class="flex-1 min-w-0">
+        <a href="{{ rev.page.get_absolute_url }}" class="font-medium text-blue-600 dark:text-blue-400 hover:underline truncate">{{ rev.page.title }}</a>
+        {% if rev.change_message %}
+        <span class="text-gray-500 dark:text-gray-400 text-sm ml-1">&mdash; {{ rev.change_message }}</span>
+        {% endif %}
+      </div>
+      <div class="flex items-center gap-3 text-sm text-gray-500 dark:text-gray-400 flex-shrink-0">
+        {% if rev.created_by %}
+        <a href="{% url 'recent_changes_user' username=rev.created_by|username_local %}" class="hover:underline">{{ rev.created_by|display_name }}</a>
+        {% else %}
+        <span>Unknown</span>
+        {% endif %}
+        <time datetime="{{ rev.created_at|date:'c' }}" title="{{ rev.created_at }}">{{ rev.created_at|timesince }} ago</time>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  {% if page_obj.has_other_pages %}
+  <nav class="mt-6 flex items-center justify-between text-sm">
+    <div>
+      {% if page_obj.has_previous %}
+      <a href="?page={{ page_obj.previous_page_number }}{% if filter_user %}&user={{ filter_user|username_local }}{% endif %}" class="btn-outline text-sm">Previous</a>
+      {% endif %}
+    </div>
+    <span class="text-gray-500 dark:text-gray-400">
+      Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}
+    </span>
+    <div>
+      {% if page_obj.has_next %}
+      <a href="?page={{ page_obj.next_page_number }}{% if filter_user %}&user={{ filter_user|username_local }}{% endif %}" class="btn-outline text-sm">Next</a>
+      {% endif %}
+    </div>
+  </nav>
+  {% endif %}
+
+  {% else %}
+  <p class="text-gray-500 dark:text-gray-400">No changes found.</p>
+  {% endif %}
+</div>
+{% endblock %}

@@ -7,6 +7,7 @@ from django.views.generic import RedirectView
 from wiki.lib.monitoring import health_check, heartbeat, sentry_fail
 from wiki.lib.sitemap import DirectorySitemap, PageSitemap
 from wiki.lib.views import robots_txt
+from wiki.pages.views import recent_changes
 from wiki.users.views import logout_view
 
 sitemaps = {
@@ -35,6 +36,12 @@ urlpatterns = [
     path("api/", include("wiki.pages.urls_api")),
     path("files/", include("wiki.pages.urls_files")),
     path("unsubscribe/", include("wiki.subscriptions.urls")),
+    path("activity/", recent_changes, name="recent_changes"),
+    path(
+        "activity/<str:username>/",
+        recent_changes,
+        name="recent_changes_user",
+    ),
     path("admin/", admin.site.urls),
 ]
 
