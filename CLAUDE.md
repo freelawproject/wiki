@@ -117,7 +117,27 @@ This works because each terminal has a stable, unique shell PID. Without `TEST_D
 - Use `factory-boy` for complex test data
 
 
-## Docker Commands
+## Docker
+
+### Starting and Stopping
+
+```bash
+# Start all services (from repo root)
+cd docker/wiki && docker compose up
+
+# Start in background
+cd docker/wiki && docker compose up -d
+
+# Stop services
+cd docker/wiki && docker compose down
+
+# Start from a worktree (set WIKI_BASE_DIR to the worktree root)
+cd docker/wiki && WIKI_BASE_DIR=/path/to/worktree docker compose up
+```
+
+The compose file lives at `docker/wiki/docker-compose.yml`. It uses `WIKI_BASE_DIR` (defaults to `../../`, i.e. the repo root) to mount the project into containers. When running from a worktree, set `WIKI_BASE_DIR` to the worktree's absolute path.
+
+### Running Commands
 
 ```bash
 # Run management commands
