@@ -94,9 +94,9 @@
           {% endif %}
           {% if user.is_authenticated %}
             {% if directory and directory.path %}
-              <a href="{% url 'directory_create_in_dir' path=directory.path %}" class="dropdown-item">New Directory</a>
+              <a href="{% url 'directory_create_in_dir' path=directory.path %}" class="dropdown-item">New Subdirectory</a>
             {% else %}
-              <a href="{% url 'directory_create' %}" class="dropdown-item">New Directory</a>
+              <a href="{% url 'directory_create' %}" class="dropdown-item">New Subdirectory</a>
             {% endif %}
           {% endif %}
         </div>
