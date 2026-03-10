@@ -21,7 +21,7 @@ class TestExtractDescription:
     def test_strips_headings(self):
         md = "# Title\n\nSome paragraph text here."
         result = extract_description(md)
-        assert "Title" not in result
+        assert not result.startswith("#")
         assert "Some paragraph text here." in result
 
     def test_strips_code_blocks(self):

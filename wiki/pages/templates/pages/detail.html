@@ -107,6 +107,7 @@
     <div class="wiki-content">
       {{ rendered_content|safe }}
     </div>
+    <script src="{% static 'js/heading-anchors.js' %}"></script>
 
     <div class="page-meta">
       <div class="flex items-center justify-between">
@@ -117,33 +118,33 @@
       <div class="mt-3 flex items-center gap-1.5 flex-wrap">
         {% if people.creator %}
         <span class="mr-0.5 text-gray-400 dark:text-gray-500">Creator:</span>
-        <span class="badge-green">
+        <a href="{% url 'recent_changes_user' username=people.creator|username_local %}" class="badge-green hover:opacity-80">
           {% if people.creator.profile.gravatar_url %}
           <img src="{{ people.creator.profile.gravatar_url }}" alt="" class="w-4 h-4 rounded-full">
           {% endif %}
           {{ people.creator|display_name }}
-        </span>
+        </a>
         {% endif %}
         {% if people.admins %}
         <span class="ml-2 mr-0.5 text-gray-400 dark:text-gray-500">Admins:</span>
         {% for admin in people.admins %}
-        <span class="badge-purple">
+        <a href="{% url 'recent_changes_user' username=admin|username_local %}" class="badge-purple hover:opacity-80">
           {% if admin.profile.gravatar_url %}
           <img src="{{ admin.profile.gravatar_url }}" alt="" class="w-4 h-4 rounded-full">
           {% endif %}
           {{ admin|display_name }}
-        </span>
+        </a>
         {% endfor %}
         {% endif %}
         {% if people.editors %}
         <span class="ml-2 mr-0.5 text-gray-400 dark:text-gray-500">Editors:</span>
         {% for editor in people.editors %}
-        <span class="badge-blue">
+        <a href="{% url 'recent_changes_user' username=editor|username_local %}" class="badge-blue hover:opacity-80">
           {% if editor.profile.gravatar_url %}
           <img src="{{ editor.profile.gravatar_url }}" alt="" class="w-4 h-4 rounded-full">
           {% endif %}
           {{ editor|display_name }}
-        </span>
+        </a>
         {% endfor %}
         {% endif %}
       </div>
