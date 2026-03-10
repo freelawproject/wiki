@@ -1026,6 +1026,8 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         owner = self._get_owner()
+        if owner is None:
+            return
         root = self._ensure_root_directory(owner)
         help_dir = self._ensure_help_directory(owner, root)
 
@@ -1055,10 +1057,11 @@ class Command(BaseCommand):
         if user:
             return user
 
-        self.stderr.write(
-            "No users exist. Create a user first (visit /u/login/)."
+        self.stdout.write(
+            "No users exist yet — skipping help page seeding. "
+            "They will be created on the next restart after a user signs in."
         )
-        raise SystemExit(1)
+        return None
 
     def _ensure_root_directory(self, owner):
         root, _ = Directory.objects.get_or_create(
