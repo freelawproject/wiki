@@ -267,19 +267,8 @@ def _get_page_people(page):
     }
 
 
-def _render_page_detail(request, page):
-    """Render the page detail view (shared by resolve_path and page_detail)."""
-    if not can_view_page(request.user, page):
-        raise Http404
-
-    # Record page view tally
-    PageViewTally.objects.create(page=page)
-
-    rendered_content = render_markdown(page.content)
-    toc = getattr(rendered_content, "toc_html", "")
-
-    # SECURITY: breadcrumbs must not reveal private ancestor directory
-    # names. Skip any ancestor the current user cannot view.
+def _build_page_breadcrumbs(request, page):
+    """Build breadcrumbs for a page, hiding private ancestors."""
     breadcrumbs = [("Home", reverse("root"))]
     if page.directory:
         for ancestor in page.directory.get_ancestors():
@@ -293,6 +282,21 @@ def _render_page_detail(request, page):
                 (page.directory.title, page.directory.get_absolute_url())
             )
     breadcrumbs.append((page.title, page.get_absolute_url()))
+    return breadcrumbs
+
+
+def _render_page_detail(request, page):
+    """Render the page detail view (shared by resolve_path and page_detail)."""
+    if not can_view_page(request.user, page):
+        raise Http404
+
+    # Record page view tally
+    PageViewTally.objects.create(page=page)
+
+    rendered_content = render_markdown(page.content)
+    toc = getattr(rendered_content, "toc_html", "")
+
+    breadcrumbs = _build_page_breadcrumbs(request, page)
 
     # Check subscription status and get subscriber list
     is_subscribed = False
@@ -310,6 +314,9 @@ def _render_page_detail(request, page):
     people = _get_page_people(page)
 
     can_edit = can_edit_page(request.user, page)
+    can_delete = request.user.is_authenticated and (
+        page.owner == request.user or is_system_owner(request.user)
+    )
     pending_proposal_count = 0
     pending_comment_count = 0
     if can_edit:
@@ -342,6 +349,7 @@ def _render_page_detail(request, page):
             "rendered_content": rendered_content,
             "toc": toc,
             "can_edit": can_edit,
+            "can_delete": can_delete,
             "pending_proposal_count": pending_proposal_count,
             "pending_comment_count": pending_comment_count,
             "breadcrumbs": breadcrumbs,
@@ -374,6 +382,17 @@ def page_create(request, path=""):
             "You don't have permission to create pages here.",
         )
         return redirect(directory.get_absolute_url())
+
+    # Build breadcrumbs for the target directory
+    breadcrumbs = [("Home", reverse("root"))]
+    if directory:
+        for ancestor in directory.get_ancestors():
+            if not ancestor.path:
+                continue
+            breadcrumbs.append((ancestor.title, ancestor.get_absolute_url()))
+        if directory.path:
+            breadcrumbs.append((directory.title, directory.get_absolute_url()))
+    breadcrumbs.append(("New Page", ""))
 
     # Default visibility to match parent directory
     initial = {}
@@ -410,6 +429,7 @@ def page_create(request, path=""):
                     "form": form,
                     "directory": directory,
                     "editing": False,
+                    "breadcrumbs": breadcrumbs,
                     "dir_segments_json": json.dumps(
                         _build_dir_segments(directory)
                     ),
@@ -433,6 +453,7 @@ def page_create(request, path=""):
                     "form": form,
                     "directory": directory,
                     "editing": False,
+                    "breadcrumbs": breadcrumbs,
                     "dir_segments_json": json.dumps(
                         _build_dir_segments(directory)
                     ),
@@ -465,6 +486,7 @@ def page_create(request, path=""):
             "form": form,
             "directory": directory,
             "editing": False,
+            "breadcrumbs": breadcrumbs,
             "dir_segments_json": json.dumps(_build_dir_segments(directory)),
         },
     )
@@ -479,6 +501,8 @@ def page_edit(request, path):
     if not can_edit_page(request.user, page):
         messages.error(request, "You don't have permission to edit this page.")
         return redirect(page.get_absolute_url())
+
+    breadcrumbs = _build_page_breadcrumbs(request, page)
 
     # Handle lock override POST — acquire lock and redirect to clean edit URL
     if request.method == "POST" and "override_lock" in request.GET:
@@ -540,6 +564,7 @@ def page_edit(request, path):
                     "form": form,
                     "page": page,
                     "editing": True,
+                    "breadcrumbs": breadcrumbs,
                     "dir_segments_json": json.dumps(
                         _build_dir_segments(page.directory)
                     ),
@@ -563,6 +588,7 @@ def page_edit(request, path):
                     "form": form,
                     "page": page,
                     "editing": True,
+                    "breadcrumbs": breadcrumbs,
                     "dir_segments_json": json.dumps(
                         _build_dir_segments(page.directory)
                     ),
@@ -606,6 +632,7 @@ def page_edit(request, path):
             "form": form,
             "page": page,
             "editing": True,
+            "breadcrumbs": breadcrumbs,
             "dir_segments_json": json.dumps(
                 _build_dir_segments(page.directory)
             ),
@@ -709,7 +736,7 @@ def page_delete(request, path):
             if page.directory
             else reverse("root")
         )
-        page.delete()
+        page.soft_delete(request.user)
         messages.success(request, f'Page "{title}" deleted.')
         return redirect(redirect_url)
 
