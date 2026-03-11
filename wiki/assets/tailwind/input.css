@@ -315,15 +315,15 @@
       border-left-color: theme('colors.gray.100');
     }
     .EasyMDEContainer .CodeMirror-selected {
-      background: theme('colors.gray.700');
+      background: #264f78 !important;
     }
     .EasyMDEContainer .CodeMirror-focused .CodeMirror-selected {
-      background: theme('colors.gray.600');
+      background: #264f78 !important;
     }
     .EasyMDEContainer .CodeMirror .CodeMirror-line::selection,
     .EasyMDEContainer .CodeMirror .CodeMirror-line > span::selection,
     .EasyMDEContainer .CodeMirror .CodeMirror-line > span > span::selection {
-      background: theme('colors.gray.600');
+      background: #264f78 !important;
     }
     .EasyMDEContainer .editor-toolbar {
       border-color: theme('colors.gray.600');

@@ -75,7 +75,8 @@ jobs:
           -f <(echo 'services: { wiki-django: { image: "wiki", entrypoint: ["sleep", "infinity"], command: "" }, wiki-daemon: { image: "wiki", entrypoint: ["sleep", "infinity"], command: "" } }')
           up -d --no-build --pull=never
       - name: Wait for postgres to be healthy
-        run: timeout 30 bash -c 'until docker exec wiki-postgres pg_isready; do sleep 1; done'
+        working-directory: docker/wiki
+        run: timeout 30 bash -c 'until docker compose exec wiki-postgres pg_isready; do sleep 1; done'
       - name: List docker containers
         run: docker ps -a --no-trunc
       - name: Show the docker startup logs
@@ -83,6 +84,8 @@ jobs:
         run: docker compose logs
 
       - name: Check if migrations are missing
-        run: docker exec wiki-django python manage.py makemigrations --check --dry-run
+        working-directory: docker/wiki
+        run: docker compose exec wiki-django python manage.py makemigrations --check --dry-run
       - name: Run the tests!
-        run: docker exec wiki-django python -m pytest --tb=short -q
+        working-directory: docker/wiki
+        run: docker compose exec wiki-django python -m pytest --tb=short -q

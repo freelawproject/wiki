@@ -13,7 +13,11 @@ from django.conf import settings
 from django.core.management.base import BaseCommand
 
 from wiki.pages.management.commands.cleanup import Command as CleanupCommand
-from wiki.pages.tasks import sync_page_view_counts, update_search_vectors
+from wiki.pages.tasks import (
+    purge_deleted_pages,
+    sync_page_view_counts,
+    update_search_vectors,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +69,11 @@ class Command(BaseCommand):
                 cleanup_cmd.handle,
                 settings.DAEMON_CLEANUP_INTERVAL,
                 "cleanup",
+            ),
+            (
+                purge_deleted_pages,
+                settings.DAEMON_PURGE_DELETED_PAGES_INTERVAL,
+                "purge_deleted_pages",
             ),
         ]
 

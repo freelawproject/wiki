@@ -45,10 +45,12 @@ class PageAdmin(admin.ModelAdmin):
         "visibility",
         "editability",
         "owner",
+        "is_deleted",
         "view_count",
         "updated_at",
     ]
     list_filter = [
+        "is_deleted",
         "visibility",
         "editability",
         "directory",
@@ -56,16 +58,24 @@ class PageAdmin(admin.ModelAdmin):
         "updated_at",
     ]
     search_fields = ["title", "slug", "content"]
-    raw_id_fields = ["owner", "created_by", "updated_by", "directory"]
+    raw_id_fields = [
+        "owner",
+        "created_by",
+        "updated_by",
+        "deleted_by",
+        "directory",
+    ]
     readonly_fields = [
         "view_count",
         "search_vector",
         "created_at",
         "updated_at",
+        "deleted_at",
     ]
     prepopulated_fields = {"slug": ("title",)}
     list_select_related = ["directory", "owner"]
     date_hierarchy = "created_at"
+    actions = ["restore_pages"]
     inlines = [
         PagePermissionInline,
         SlugRedirectInline,
@@ -85,6 +95,16 @@ class PageAdmin(admin.ModelAdmin):
             },
         ),
         (
+            "Deletion",
+            {
+                "fields": (
+                    "is_deleted",
+                    "deleted_at",
+                    "deleted_by",
+                ),
+            },
+        ),
+        (
             "Metadata",
             {
                 "fields": (
@@ -98,6 +118,17 @@ class PageAdmin(admin.ModelAdmin):
             },
         ),
     )
+
+    def get_queryset(self, request):
+        """Show all pages (including deleted) in admin."""
+        return Page.all_objects.all()
+
+    @admin.action(description="Restore selected pages")
+    def restore_pages(self, request, queryset):
+        count = queryset.filter(is_deleted=True).update(
+            is_deleted=False, deleted_at=None, deleted_by=None
+        )
+        self.message_user(request, f"Restored {count} page(s).")
 
 
 @admin.register(PageRevision)
