@@ -324,7 +324,7 @@ class FileUpload(models.Model):
         on_delete=models.SET_NULL,
         null=True,
     )
-    file = models.FileField(upload_to="uploads/%Y/%m/")
+    file = models.FileField(upload_to="uploads/%Y/%m/", max_length=1000)
     original_filename = models.CharField(max_length=255)
     content_type = models.CharField(max_length=100, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)

@@ -1205,6 +1205,15 @@ def confirm_upload(request):
             status=400,
         )
 
+    max_length = FileUpload._meta.get_field("file").max_length
+    if len(pending.s3_key) > max_length:
+        return JsonResponse(
+            {
+                "error": "Filename is too long. Please rename the file to something shorter and try again."
+            },
+            status=400,
+        )
+
     upload = FileUpload(
         uploaded_by=request.user,
         original_filename=pending.original_filename,
