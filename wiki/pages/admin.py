@@ -45,11 +45,13 @@ class PageAdmin(admin.ModelAdmin):
         "visibility",
         "editability",
         "owner",
+        "is_pinned",
         "is_deleted",
         "view_count",
         "updated_at",
     ]
     list_filter = [
+        "is_pinned",
         "is_deleted",
         "visibility",
         "editability",

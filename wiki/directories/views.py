@@ -62,14 +62,31 @@ def _get_sort_config(request):
 
 
 def _sort_pages(pages, sort):
-    """Sort a list of pages by the given sort key."""
+    """Sort a list of pages by the given sort key.
+
+    Pinned pages always appear first, in the same relative order as the
+    chosen sort, followed by unpinned pages.
+    """
+
+    def _pinned_updated(p):
+        return (p.is_pinned, p.updated_at)
+
+    def _pinned_created(p):
+        return (p.is_pinned, p.created_at)
+
+    def _pinned_views(p):
+        return (p.is_pinned, p.view_count)
+
+    def _pinned_title(p):
+        return (not p.is_pinned, p.title.lower())
+
     if sort == "updated":
-        return sorted(pages, key=lambda p: p.updated_at, reverse=True)
+        return sorted(pages, key=_pinned_updated, reverse=True)
     elif sort == "created":
-        return sorted(pages, key=lambda p: p.created_at, reverse=True)
+        return sorted(pages, key=_pinned_created, reverse=True)
     elif sort == "views":
-        return sorted(pages, key=lambda p: p.view_count, reverse=True)
-    return sorted(pages, key=lambda p: p.title.lower())
+        return sorted(pages, key=_pinned_views, reverse=True)
+    return sorted(pages, key=_pinned_title)
 
 
 def _sort_directories(dirs, sort):

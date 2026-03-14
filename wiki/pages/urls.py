@@ -34,6 +34,13 @@ urlpatterns = [
         toggle_subscription,
         name="page_subscribe",
     ),
+    path("<path:path>/pin/", views.toggle_pin, name="page_toggle_pin"),
+    # Raw markdown — must be before the catch-all
+    path(
+        "<path:path>.md",
+        views.page_raw_markdown,
+        name="page_raw_markdown",
+    ),
     # Unified catch-all — checks directory first, then page
     path("<path:path>", views.resolve_path, name="resolve_path"),
 ]

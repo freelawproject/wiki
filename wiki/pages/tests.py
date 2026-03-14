@@ -2360,3 +2360,37 @@ class TestSearchView:
         r = client.get("/search/?q=badgeterm")
         # Building icon has title="FLP Staff"
         assert b'title="FLP Staff"' in r.content
+
+
+class TestRawMarkdown:
+    """Test the .md endpoint that returns raw markdown."""
+
+    def test_returns_markdown_content(self, client, page):
+        r = client.get(f"/c/{page.slug}.md")
+        assert r.status_code == 200
+        assert r["Content-Type"] == "text/markdown"
+        assert r.content.startswith(f"# {page.title}\n".encode())
+        assert page.content.encode() in r.content
+
+    def test_returns_markdown_for_page_in_directory(
+        self, client, page_in_directory
+    ):
+        page = page_in_directory
+        r = client.get(f"/c/{page.directory.path}/{page.slug}.md")
+        assert r.status_code == 200
+        assert r["Content-Type"] == "text/markdown"
+
+    def test_private_page_blocked_for_anonymous(self, client, private_page):
+        r = client.get(f"/c/{private_page.slug}.md")
+        assert r.status_code == 404
+
+    def test_private_page_allowed_for_owner(self, client, user, private_page):
+        client.force_login(user)
+        r = client.get(f"/c/{private_page.slug}.md")
+        assert r.status_code == 200
+        assert f"# {private_page.title}".encode() in r.content
+        assert private_page.content.encode() in r.content
+
+    def test_nonexistent_page_returns_404(self, client, db):
+        r = client.get("/c/no-such-page.md")
+        assert r.status_code == 404
