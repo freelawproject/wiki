@@ -63,8 +63,10 @@ See #proposals-guide for details.
 
 Click **Subscribe** on any page to get email notifications when
 it's updated. You're automatically subscribed to pages you create.
-See #notifications-guide for more on @mentions and email
-notifications.
+You can also subscribe to an entire directory to get notifications
+for all pages within it and its subdirectories.
+See #notifications-guide for more on subscriptions, @mentions, and
+email notifications.
 
 ### Finding pages
 
@@ -648,6 +650,16 @@ From the history view you can:
 - **Revert** — Restore the directory's title and description
   from a previous revision (permissions are not changed)
 
+### Subscribing to a directory
+
+Click **Actions → Subscribe** on any directory to get email
+notifications whenever any page in that directory or its
+subdirectories is updated — including pages created in the future.
+
+You can fine-tune notifications by unsubscribing from individual
+pages or subdirectories. See #notifications-guide for full
+details on how subscriptions work.
+
 ### Permissions
 
 Directories have their own visibility and permission settings that
@@ -780,14 +792,49 @@ From this modal you can:
 This helps you avoid mentioning someone who can't see what you're
 talking about.
 
-### Subscriptions
+### Page subscriptions
 
-Click the **Subscribe** button on any page to receive email
-notifications whenever that page is updated.
+Click the **Subscribe** button in the Actions menu on any page to
+receive email notifications whenever that page is updated.
 
 - You are **automatically subscribed** to pages you create
 - Click **Unsubscribe** to stop receiving notifications
-- The list of current subscribers is shown on the page detail view
+- The list of current watchers is shown on the page detail view
+
+### Directory subscriptions
+
+You can also subscribe to an entire **directory** to get
+notifications for every page in that directory and all its
+subdirectories — including pages created in the future.
+
+1. Navigate to the directory
+2. Click **Actions → Subscribe**
+
+This is useful when you want to stay informed about everything in
+a topic area without subscribing to each page individually.
+
+#### Fine-tuning directory subscriptions
+
+After subscribing to a directory, you can **unsubscribe from
+individual pages** or **subdirectories** without losing the
+broader directory subscription:
+
+- To stop notifications for a single page, visit that page and
+  click **Actions → Unsubscribe**
+- To stop notifications for an entire subdirectory, visit that
+  subdirectory and click **Actions → Unsubscribe**
+- Your directory subscription stays active for everything else
+
+If you later re-subscribe to a page or subdirectory you
+previously excluded, the exclusion is removed.
+
+#### How page and directory subscriptions interact
+
+- If you subscribe to a page **and** its parent directory, then
+  unsubscribe from the directory, your **page subscription is
+  preserved** — you'll still get notifications for that page
+- A direct page subscription always takes priority over directory
+  exclusions
 
 ### Email notifications
 
@@ -796,23 +843,30 @@ receive an email containing:
 
 - Who made the change
 - The change message they wrote
+- A link to view the page
 - A link to view the diff between the old and new versions
 - An unsubscribe link
 
+If you're receiving the notification because of a **directory
+subscription**, the email explains this and includes two
+unsubscribe options: one for just that page, and one for the
+entire directory.
+
 If you can no longer view the page (e.g., permissions changed),
-you won't receive notifications for it.
+you won't receive notifications for it — regardless of your
+subscription type.
 
 ### Unsubscribing
 
-You can unsubscribe in two ways:
+You can unsubscribe in several ways:
 
-- Click **Unsubscribe** on the page itself
+- Click **Unsubscribe** in the Actions menu on a page or
+  directory
 - Click the **unsubscribe link** in any notification email — this
   takes you to a confirmation page
-
-Many email clients also support **one-click unsubscribe** via the
-List-Unsubscribe header, so you may see an unsubscribe button
-directly in your email app.
+- Many email clients support **one-click unsubscribe** via the
+  List-Unsubscribe header, so you may see an unsubscribe button
+  directly in your email app
 """,
     },
     {
