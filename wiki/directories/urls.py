@@ -1,6 +1,7 @@
 from django.urls import path
 
 from wiki.pages.views import page_create
+from wiki.subscriptions.views import toggle_directory_subscription
 
 from . import views
 
@@ -8,6 +9,11 @@ urlpatterns = [
     path("", views.root_view, name="root"),
     path("new/", page_create, name="page_create"),
     path("new-dir/", views.directory_create, name="directory_create"),
+    path(
+        "subscribe-dir/",
+        toggle_directory_subscription,
+        name="directory_subscribe_root",
+    ),
     path("edit-dir/", views.directory_edit_root, name="directory_edit_root"),
     path(
         "permissions-dir/",
@@ -83,5 +89,10 @@ urlpatterns = [
         "<path:path>/revert-dir/<int:rev_num>/",
         views.directory_revert,
         name="directory_revert",
+    ),
+    path(
+        "<path:path>/subscribe-dir/",
+        toggle_directory_subscription,
+        name="directory_subscribe",
     ),
 ]

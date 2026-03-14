@@ -25,6 +25,7 @@ from wiki.lib.ratelimiter import ratelimit_search
 from wiki.lib.seo import build_breadcrumbs_jsonld, extract_description
 from wiki.pages.diff_utils import unified_diff
 from wiki.pages.models import Page, PagePermission
+from wiki.subscriptions.utils import is_effectively_subscribed_to_directory
 
 from .forms import (
     DirectoryCreateForm,
@@ -124,6 +125,11 @@ def root_view(request):
     canonical_url = f"{django_settings.BASE_URL}{root.get_absolute_url()}"
     request.seo_canonical = canonical_url
 
+    is_dir_subscribed = (
+        request.user.is_authenticated
+        and is_effectively_subscribed_to_directory(request.user, root)
+    )
+
     return render(
         request,
         "directories/detail.html",
@@ -139,6 +145,7 @@ def root_view(request):
             "directory_description": directory_description,
             "breadcrumbs_json": breadcrumbs_json,
             "canonical_url": canonical_url,
+            "is_dir_subscribed": is_dir_subscribed,
         },
     )
 
@@ -236,6 +243,11 @@ def directory_detail(request, path):
     canonical_url = f"{django_settings.BASE_URL}{directory.get_absolute_url()}"
     request.seo_canonical = canonical_url
 
+    is_dir_subscribed = (
+        request.user.is_authenticated
+        and is_effectively_subscribed_to_directory(request.user, directory)
+    )
+
     return render(
         request,
         "directories/detail.html",
@@ -251,6 +263,7 @@ def directory_detail(request, path):
             "directory_description": directory_description,
             "breadcrumbs_json": breadcrumbs_json,
             "canonical_url": canonical_url,
+            "is_dir_subscribed": is_dir_subscribed,
         },
     )
 
