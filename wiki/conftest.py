@@ -156,6 +156,29 @@ def page_in_directory(user, sub_directory):
 
 
 @pytest.fixture
+def page_in_nested_directory(user, nested_directory):
+    """A page inside engineering/devops."""
+    p = Page.objects.create(
+        title="CI Pipeline",
+        slug="ci-pipeline",
+        content="Run tests first.",
+        directory=nested_directory,
+        owner=user,
+        created_by=user,
+        updated_by=user,
+    )
+    PageRevision.objects.create(
+        page=p,
+        title=p.title,
+        content=p.content,
+        change_message="Initial creation",
+        revision_number=1,
+        created_by=user,
+    )
+    return p
+
+
+@pytest.fixture
 def group(db):
     """A test group."""
     return Group.objects.create(name="Engineering Team")
