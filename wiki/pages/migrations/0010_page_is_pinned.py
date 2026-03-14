@@ -4,7 +4,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("pages", "0008_soft_delete_pages"),
+        ("pages", "0009_alter_fileupload_file"),
     ]
 
     operations = [
