@@ -115,7 +115,11 @@ def _process_mentions_and_grants(page, request):
 
 
 def _resolve_or_create_directory(dir_path, user):
-    """Resolve a directory path, creating missing segments as needed."""
+    """Resolve a directory path, creating missing segments as needed.
+
+    New directories inherit visibility, editability, and permission
+    grants from their parent directory.
+    """
     directory = Directory.objects.filter(path=dir_path).first()
     if directory:
         return directory
@@ -136,8 +140,20 @@ def _resolve_or_create_directory(dir_path, user):
                 "parent": parent,
                 "owner": user,
                 "created_by": user,
+                "visibility": parent.visibility,
+                "editability": parent.editability,
             },
         )
+        if created:
+            # Copy permission grants from the parent directory
+            parent_perms = DirectoryPermission.objects.filter(directory=parent)
+            for perm in parent_perms:
+                DirectoryPermission.objects.create(
+                    directory=directory,
+                    user=perm.user,
+                    group=perm.group,
+                    permission_type=perm.permission_type,
+                )
         parent = directory
 
     return directory
