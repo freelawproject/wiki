@@ -6,7 +6,7 @@ from django.views.generic import RedirectView
 
 from wiki.lib.monitoring import health_check, heartbeat, sentry_fail
 from wiki.lib.sitemap import DirectorySitemap, PageSitemap
-from wiki.lib.views import robots_txt
+from wiki.lib.views import llms_txt, robots_txt
 from wiki.pages.views import recent_changes
 from wiki.users.views import logout_view
 
@@ -21,6 +21,7 @@ urlpatterns = [
     path("monitoring/health-check/", health_check, name="health_check"),
     path("sentry/error/", sentry_fail, name="sentry_fail"),
     path("robots.txt", robots_txt, name="robots_txt"),
+    path("llms.txt", llms_txt, name="llms_txt"),
     path(
         "sitemap.xml",
         sitemap,
