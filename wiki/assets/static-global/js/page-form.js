@@ -12,7 +12,7 @@
   var titlePrefix = isEditing ? 'Edit' : 'New Page';
   var titleDefault = isEditing ? 'Edit Page - FLP Wiki' : 'New Page - FLP Wiki';
   titleInput.addEventListener('input', function() {
-    var val = titleInput.value.trim();
+    var val = titleInput.value.trim().replace(/`([^`]+)`/g, '$1');
     document.title = val ? titlePrefix + ' - ' + val + ' - FLP Wiki' : titleDefault;
   });
 

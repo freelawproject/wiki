@@ -9,7 +9,7 @@
 {% endif %}
 {% endblock %}
 
-{% block title %}{{ page.title }} - FLP Wiki{% endblock %}
+{% block title %}{{ page.title|strip_backticks }} - FLP Wiki{% endblock %}
 
 {% if page_description %}
 {% block description %}{{ page_description }}{% endblock %}
@@ -24,7 +24,7 @@
 {% endblock %}
 
 {% block opengraph %}
-<meta property="og:title" content="{{ page.title }}"/>
+<meta property="og:title" content="{{ page.title|strip_backticks }}"/>
 <meta property="og:description" content="{{ page_description|default:'Free Law Project internal wiki' }}"/>
 {% if canonical_url %}<meta property="og:url" content="{{ canonical_url }}"/>{% endif %}
 <meta property="og:type" content="article"/>
@@ -60,8 +60,8 @@
 <div class="flex gap-8">
   {# Main content #}
   <article class="flex-1 min-w-0">
-    <div class="flex flex-col xl:flex-row xl:items-center justify-between gap-3 mb-6">
-      <h1>{{ page.title }} <c-visibility-badge visibility="{{ page.visibility }}" /></h1>
+    <div class="flex flex-col justify-between gap-3 mb-6">
+      <h1>{{ page.title|inline_code }} <c-visibility-badge visibility="{{ page.visibility }}" /></h1>
       <div class="flex items-center gap-2 flex-shrink-0">
         {% if can_edit %}
           <a href="{% url 'page_edit' path=page.content_path %}" class="btn-outline text-sm">Edit</a>
