@@ -13,6 +13,6 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='page',
             name='seo_description',
-            field=models.CharField(blank=True, help_text='Short summary for search engines and llms.txt. If blank, auto-generated from content.', max_length=300),
+            field=models.CharField(blank=True, help_text='Short summary for search engines and llms.txt. If blank, auto-generated from first words of content.', max_length=300),
         ),
     ]

@@ -58,7 +58,7 @@ class Page(models.Model):
         max_length=300,
         blank=True,
         help_text="Short summary for search engines and llms.txt. "
-        "If blank, auto-generated from content.",
+        "If blank, auto-generated from first words of content.",
     )
     change_message = models.CharField(max_length=500, blank=True)
     is_pinned = models.BooleanField(

@@ -79,6 +79,18 @@ def robots_txt(request):
     return HttpResponse("\n".join(lines), content_type="text/plain")
 
 
+def _llms_txt_entry(page, base_url):
+    """Format a single llms.txt entry line."""
+    desc = page.seo_description or extract_description(
+        page.content, max_length=100
+    )
+    md_url = f"{base_url}{page.get_absolute_url()}.md"
+    entry = f"- [{page.title}]({md_url})"
+    if desc:
+        entry += f": {desc}"
+    return entry
+
+
 def llms_txt(request):
     """Serve llms.txt — an index of public wiki pages for LLM crawlers.
 
@@ -95,11 +107,16 @@ def llms_txt(request):
         .order_by("directory__path", "title")
     )
 
-    # Group pages by directory
+    # Group pages by directory, separating help pages into Optional
     by_dir = defaultdict(list)
+    optional_pages = []
     for page in pages:
-        dir_title = page.directory.title if page.directory else "Root"
-        by_dir[dir_title].append(page)
+        dir_path = page.directory.path if page.directory else ""
+        if dir_path == "help" or dir_path.startswith("help/"):
+            optional_pages.append(page)
+        else:
+            dir_title = page.directory.title if page.directory else "Root"
+            by_dir[dir_title].append(page)
 
     lines = [
         "# FLP Wiki",
@@ -113,14 +130,14 @@ def llms_txt(request):
         lines.append(f"## {dir_title}")
         lines.append("")
         for page in dir_pages:
-            desc = page.seo_description or extract_description(
-                page.content, max_length=100
-            )
-            md_url = f"{base}{page.get_absolute_url()}.md"
-            entry = f"- [{page.title}]({md_url})"
-            if desc:
-                entry += f": {desc}"
-            lines.append(entry)
+            lines.append(_llms_txt_entry(page, base))
+        lines.append("")
+
+    if optional_pages:
+        lines.append("## Optional")
+        lines.append("")
+        for page in optional_pages:
+            lines.append(_llms_txt_entry(page, base))
         lines.append("")
 
     response = HttpResponse("\n".join(lines), content_type="text/plain")
