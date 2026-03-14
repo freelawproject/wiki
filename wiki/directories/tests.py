@@ -456,6 +456,87 @@ class TestDirectorySort:
         assert b">Last edited</span>" in r.content
 
 
+class TestPinnedPages:
+    """Test that pinned pages sort to the top of directory listings."""
+
+    def test_pinned_page_appears_first_default_sort(
+        self, client, user, root_directory
+    ):
+        Page.objects.create(
+            title="AAA Normal",
+            slug="aaa-normal",
+            content="",
+            directory=root_directory,
+            owner=user,
+            created_by=user,
+            updated_by=user,
+        )
+        Page.objects.create(
+            title="ZZZ Pinned",
+            slug="zzz-pinned",
+            content="",
+            directory=root_directory,
+            owner=user,
+            created_by=user,
+            updated_by=user,
+            is_pinned=True,
+        )
+        r = client.get("/c/")
+        content = r.content.decode()
+        assert content.index("ZZZ Pinned") < content.index("AAA Normal")
+
+    def test_pinned_page_appears_first_sort_updated(
+        self, client, user, root_directory
+    ):
+        pinned = Page.objects.create(
+            title="Old Pinned",
+            slug="old-pinned",
+            content="",
+            directory=root_directory,
+            owner=user,
+            created_by=user,
+            updated_by=user,
+            is_pinned=True,
+        )
+        Page.objects.create(
+            title="New Unpinned",
+            slug="new-unpinned",
+            content="",
+            directory=root_directory,
+            owner=user,
+            created_by=user,
+            updated_by=user,
+        )
+        # Make pinned page older
+        Page.objects.filter(pk=pinned.pk).update(
+            updated_at=timezone.now() - timedelta(days=10)
+        )
+        r = client.get("/c/?sort=updated")
+        content = r.content.decode()
+        assert content.index("Old Pinned") < content.index("New Unpinned")
+
+    def test_toggle_pin_requires_edit_permission(
+        self, client, other_user, page
+    ):
+        client.force_login(other_user)
+        r = client.post(f"/c/{page.slug}/pin/")
+        assert r.status_code == 404
+
+    def test_toggle_pin_works(self, client, owner_user, page):
+        client.force_login(owner_user)
+        assert not page.is_pinned
+        r = client.post(f"/c/{page.slug}/pin/")
+        assert r.status_code == 302
+        page.refresh_from_db()
+        assert page.is_pinned
+
+        # Toggle off
+        r = client.post(f"/c/{page.slug}/pin/")
+        assert r.status_code == 302
+        page.refresh_from_db()
+        assert not page.is_pinned
+
+
 class TestDirectorySearchAPI:
     def test_search_returns_subdirectories(
         self, client, user, root_directory, sub_directory

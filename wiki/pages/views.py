@@ -1340,3 +1340,45 @@ def recent_changes(request, username=None):
             "filter_user": filter_user,
         },
     )
+
+
+@require_POST
+@login_required
+def toggle_pin(request, path):
+    """Toggle the is_pinned flag on a page."""
+    slug = _parse_page_path(path)
+    page = get_object_or_404(Page, slug=slug)
+
+    if not can_edit_page(request.user, page):
+        raise Http404
+
+    page.is_pinned = not page.is_pinned
+    page.save(update_fields=["is_pinned"])
+
+    action = "pinned" if page.is_pinned else "unpinned"
+    messages.success(request, f'Page "{page.title}" {action}.')
+
+    if page.directory:
+        return redirect(page.directory.get_absolute_url())
+    return redirect(reverse("root"))
+
+
+def page_raw_markdown(request, path):
+    """Return raw markdown content for a page (respects permissions)."""
+    slug = path.split("/")[-1]
+
+    page = (
+        Page.objects.filter(slug=slug)
+        .select_related("directory", "owner")
+        .first()
+    )
+    if not page:
+        raise Http404
+
+    if not can_view_page(request.user, page):
+        raise Http404
+
+    markdown = f"# {page.title}\n\n{page.content}"
+    response = HttpResponse(markdown, content_type="text/markdown")
+    response["Content-Disposition"] = f'inline; filename="{page.slug}.md"'
+    return response
