@@ -153,6 +153,13 @@ cd docker/wiki && \
 Each stack gets isolated containers, networks, and databases. The service names
 (`wiki-django`, `wiki-postgres`, etc.) still work within each stack's network.
 
+**Important:** Worktrees don't include `.env.dev` (it's gitignored). Symlink it
+before starting the stack:
+
+```bash
+ln -s /home/mlissner/Programming/wiki/.env.dev ../wiki-<worktree-name>/.env.dev
+```
+
 ### Running Commands
 
 Use `docker compose exec` (not `docker exec`) so that compose finds the correct
