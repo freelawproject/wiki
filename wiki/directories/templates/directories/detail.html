@@ -151,15 +151,30 @@
   </div>
   <div class="grid gap-2">
     {% for page in pages %}
-    <div class="card flex items-center gap-3 py-3.5 px-5 hover:shadow-card-hover hover:border-primary-300 dark:hover:border-primary-600 transition-all">
-      {% if page.is_pinned %}
-      <svg class="w-5 h-5 text-primary-400 dark:text-primary-500 flex-shrink-0" viewBox="0 0 16 16" fill="currentColor">
-        <path d="M9.828.722a.5.5 0 0 1 .354.146l4.95 4.95a.5.5 0 0 1 0 .707c-.48.48-1.072.588-1.503.588-.177 0-.335-.018-.46-.039l-3.134 3.134a6 6 0 0 1 .16 1.013c.046.702-.032 1.687-.72 2.375a.5.5 0 0 1-.707 0l-2.829-2.828-3.182 3.182a.5.5 0 0 1-.707-.708l3.182-3.182L2.398 8.23a.5.5 0 0 1 0-.707c.688-.688 1.673-.767 2.375-.72a6 6 0 0 1 1.013.16l3.134-3.133a3 3 0 0 1-.04-.461c0-.43.109-1.022.589-1.503a.5.5 0 0 1 .353-.146z"/>
-      </svg>
+    <div class="card flex items-center gap-3 py-3.5 px-5 hover:shadow-card-hover hover:border-primary-300 dark:hover:border-primary-600 transition-all"
+         {% if can_edit %}x-data="pinToggle" data-pinned="{% if page.is_pinned %}true{% else %}false{% endif %}" data-url="{% url 'page_toggle_pin' path=page.content_path %}"{% endif %}>
+      {# Pin icon (shown for pinned pages) / Document icon (shown for unpinned) #}
+      {% if can_edit %}
+      <template x-if="pinned">
+        <svg class="w-5 h-5 text-primary-400 dark:text-primary-500 flex-shrink-0" viewBox="0 0 16 16" fill="currentColor">
+          <path d="M9.828.722a.5.5 0 0 1 .354.146l4.95 4.95a.5.5 0 0 1 0 .707c-.48.48-1.072.588-1.503.588-.177 0-.335-.018-.46-.039l-3.134 3.134a6 6 0 0 1 .16 1.013c.046.702-.032 1.687-.72 2.375a.5.5 0 0 1-.707 0l-2.829-2.828-3.182 3.182a.5.5 0 0 1-.707-.708l3.182-3.182L2.398 8.23a.5.5 0 0 1 0-.707c.688-.688 1.673-.767 2.375-.72a6 6 0 0 1 1.013.16l3.134-3.133a3 3 0 0 1-.04-.461c0-.43.109-1.022.589-1.503a.5.5 0 0 1 .353-.146z"/>
+        </svg>
+      </template>
+      <template x-if="!pinned">
+        <svg class="w-5 h-5 text-gray-400 dark:text-gray-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+        </svg>
+      </template>
       {% else %}
-      <svg class="w-5 h-5 text-gray-400 dark:text-gray-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
-        <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
-      </svg>
+        {% if page.is_pinned %}
+        <svg class="w-5 h-5 text-primary-400 dark:text-primary-500 flex-shrink-0" viewBox="0 0 16 16" fill="currentColor">
+          <path d="M9.828.722a.5.5 0 0 1 .354.146l4.95 4.95a.5.5 0 0 1 0 .707c-.48.48-1.072.588-1.503.588-.177 0-.335-.018-.46-.039l-3.134 3.134a6 6 0 0 1 .16 1.013c.046.702-.032 1.687-.72 2.375a.5.5 0 0 1-.707 0l-2.829-2.828-3.182 3.182a.5.5 0 0 1-.707-.708l3.182-3.182L2.398 8.23a.5.5 0 0 1 0-.707c.688-.688 1.673-.767 2.375-.72a6 6 0 0 1 1.013.16l3.134-3.133a3 3 0 0 1-.04-.461c0-.43.109-1.022.589-1.503a.5.5 0 0 1 .353-.146z"/>
+        </svg>
+        {% else %}
+        <svg class="w-5 h-5 text-gray-400 dark:text-gray-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+        </svg>
+        {% endif %}
       {% endif %}
       <a href="{{ page.get_absolute_url }}" class="flex-1 min-w-0 no-underline">
         <span class="font-medium text-gray-900 dark:text-gray-100">{{ page.title }}</span>
@@ -169,20 +184,11 @@
         </span>
       </a>
       {% if can_edit %}
-      <form method="post" action="{% url 'page_toggle_pin' path=page.content_path %}" class="flex-shrink-0">
-        {% csrf_token %}
-        <button type="submit" class="text-gray-400 hover:text-primary-500 dark:text-gray-500 dark:hover:text-primary-400 p-1" title="{% if page.is_pinned %}Unpin{% else %}Pin{% endif %}">
-          {% if page.is_pinned %}
-          <svg class="w-4 h-4" viewBox="0 0 16 16" fill="currentColor">
-            <path d="M9.828.722a.5.5 0 0 1 .354.146l4.95 4.95a.5.5 0 0 1 0 .707c-.48.48-1.072.588-1.503.588-.177 0-.335-.018-.46-.039l-3.134 3.134a6 6 0 0 1 .16 1.013c.046.702-.032 1.687-.72 2.375a.5.5 0 0 1-.707 0l-2.829-2.828-3.182 3.182a.5.5 0 0 1-.707-.708l3.182-3.182L2.398 8.23a.5.5 0 0 1 0-.707c.688-.688 1.673-.767 2.375-.72a6 6 0 0 1 1.013.16l3.134-3.133a3 3 0 0 1-.04-.461c0-.43.109-1.022.589-1.503a.5.5 0 0 1 .353-.146z"/>
-          </svg>
-          {% else %}
-          <svg class="w-4 h-4" viewBox="0 0 16 16" fill="currentColor">
-            <path d="M9.828.722a.5.5 0 0 1 .354.146l4.95 4.95a.5.5 0 0 1 0 .707c-.48.48-1.072.588-1.503.588-.177 0-.335-.018-.46-.039l-3.134 3.134a6 6 0 0 1 .16 1.013c.046.702-.032 1.687-.72 2.375a.5.5 0 0 1-.707 0l-2.829-2.828-3.182 3.182a.5.5 0 0 1-.707-.708l3.182-3.182L2.398 8.23a.5.5 0 0 1 0-.707c.688-.688 1.673-.767 2.375-.72a6 6 0 0 1 1.013.16l3.134-3.133a3 3 0 0 1-.04-.461c0-.43.109-1.022.589-1.503a.5.5 0 0 1 .353-.146z"/>
-          </svg>
-          {% endif %}
-        </button>
-      </form>
+      <button type="button" @click="toggle" class="text-gray-400 hover:text-primary-500 dark:text-gray-500 dark:hover:text-primary-400 p-1 flex-shrink-0" x-bind:title="title">
+        <svg class="w-4 h-4" viewBox="0 0 16 16" fill="currentColor">
+          <path d="M9.828.722a.5.5 0 0 1 .354.146l4.95 4.95a.5.5 0 0 1 0 .707c-.48.48-1.072.588-1.503.588-.177 0-.335-.018-.46-.039l-3.134 3.134a6 6 0 0 1 .16 1.013c.046.702-.032 1.687-.72 2.375a.5.5 0 0 1-.707 0l-2.829-2.828-3.182 3.182a.5.5 0 0 1-.707-.708l3.182-3.182L2.398 8.23a.5.5 0 0 1 0-.707c.688-.688 1.673-.767 2.375-.72a6 6 0 0 1 1.013.16l3.134-3.133a3 3 0 0 1-.04-.461c0-.43.109-1.022.589-1.503a.5.5 0 0 1 .353-.146z"/>
+        </svg>
+      </button>
       {% endif %}
     </div>
     {% endfor %}

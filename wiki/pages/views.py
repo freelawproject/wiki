@@ -1361,22 +1361,22 @@ def recent_changes(request, username=None):
 @require_POST
 @login_required
 def toggle_pin(request, path):
-    """Toggle the is_pinned flag on a page."""
+    """Toggle the is_pinned flag on a page (requires directory edit)."""
     slug = _parse_page_path(path)
-    page = get_object_or_404(Page, slug=slug)
+    page = get_object_or_404(
+        Page.objects.select_related("directory"), slug=slug
+    )
 
-    if not can_edit_page(request.user, page):
+    directory = page.directory
+    if not directory:
+        directory = Directory.objects.filter(path="").first()
+    if not directory or not can_edit_directory(request.user, directory):
         raise Http404
 
     page.is_pinned = not page.is_pinned
     page.save(update_fields=["is_pinned"])
 
-    action = "pinned" if page.is_pinned else "unpinned"
-    messages.success(request, f'Page "{page.title}" {action}.')
-
-    if page.directory:
-        return redirect(page.directory.get_absolute_url())
-    return redirect(reverse("root"))
+    return JsonResponse({"is_pinned": page.is_pinned})
 
 
 def page_raw_markdown(request, path):

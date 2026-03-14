@@ -515,24 +515,29 @@ class TestPinnedPages:
         content = r.content.decode()
         assert content.index("Old Pinned") < content.index("New Unpinned")
 
-    def test_toggle_pin_requires_edit_permission(
+    def test_toggle_pin_requires_directory_edit_permission(
         self, client, other_user, page
     ):
+        """Page editors without directory edit permission cannot pin."""
         client.force_login(other_user)
         r = client.post(f"/c/{page.slug}/pin/")
         assert r.status_code == 404
 
-    def test_toggle_pin_works(self, client, owner_user, page):
+    def test_toggle_pin_works(self, client, owner_user, root_directory, page):
+        page.directory = root_directory
+        page.save(update_fields=["directory"])
         client.force_login(owner_user)
         assert not page.is_pinned
         r = client.post(f"/c/{page.slug}/pin/")
-        assert r.status_code == 302
+        assert r.status_code == 200
+        assert r.json()["is_pinned"] is True
         page.refresh_from_db()
         assert page.is_pinned
 
         # Toggle off
         r = client.post(f"/c/{page.slug}/pin/")
-        assert r.status_code == 302
+        assert r.status_code == 200
+        assert r.json()["is_pinned"] is False
         page.refresh_from_db()
         assert not page.is_pinned
 
