@@ -301,7 +301,6 @@ def _build_page_breadcrumbs(request, page):
             breadcrumbs.append(
                 (page.directory.title, page.directory.get_absolute_url())
             )
-    breadcrumbs.append((page.title, page.get_absolute_url()))
     return breadcrumbs
 
 
