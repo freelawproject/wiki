@@ -1078,12 +1078,24 @@ update the group membership.
 class Command(BaseCommand):
     help = "Create or update help pages in the /help directory."
 
+    def add_arguments(self, parser):
+        parser.add_argument(
+            "--recreate",
+            action="store_true",
+            help="Delete existing help pages and recreate them from scratch.",
+        )
+
     def handle(self, *args, **options):
         owner = self._get_owner()
         if owner is None:
             return
         root = self._ensure_root_directory(owner)
         help_dir = self._ensure_help_directory(owner, root)
+
+        if options["recreate"]:
+            help_slugs = [p["slug"] for p in HELP_PAGES]
+            deleted, _ = Page.all_objects.filter(slug__in=help_slugs).delete()
+            self.stdout.write(f"Deleted {deleted} existing help page(s).")
 
         created = 0
         updated = 0
@@ -1170,8 +1182,8 @@ class Command(BaseCommand):
             )
             return page, True
 
-        # Update existing page content
-        if page.content != data["content"]:
+        # Update existing page if title or content differs
+        if page.content != data["content"] or page.title != data["title"]:
             page.content = data["content"]
             page.title = data["title"]
             page.change_message = "Updated by seed_help_pages"
