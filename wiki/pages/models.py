@@ -54,6 +54,12 @@ class Page(models.Model):
         choices=Editability.choices,
         default=Editability.RESTRICTED,
     )
+    seo_description = models.CharField(
+        max_length=300,
+        blank=True,
+        help_text="Short summary for search engines and llms.txt. "
+        "If blank, auto-generated from content.",
+    )
     change_message = models.CharField(max_length=500, blank=True)
     is_pinned = models.BooleanField(
         default=False,

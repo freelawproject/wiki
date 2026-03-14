@@ -35,6 +35,7 @@ class PageForm(forms.ModelForm):
         fields = [
             "title",
             "content",
+            "seo_description",
             "visibility",
             "editability",
             "change_message",
@@ -51,6 +52,13 @@ class PageForm(forms.ModelForm):
                     "class": "w-full",
                     "id": "markdown-editor",
                     "rows": 20,
+                }
+            ),
+            "seo_description": forms.TextInput(
+                attrs={
+                    "class": "input-text w-full",
+                    "placeholder": "Brief page summary for search engines...",
+                    "autocomplete": "off",
                 }
             ),
             "visibility": forms.Select(attrs={"class": "input-text"}),
