@@ -8,7 +8,11 @@ from django.contrib.auth.models import User
 
 from wiki.directories.models import Directory
 
-from .models import DirectorySubscription, PageSubscription, SubscriptionExclusion
+from .models import (
+    DirectorySubscription,
+    PageSubscription,
+    SubscriptionExclusion,
+)
 
 
 def _get_ancestor_dir_list(directory):
