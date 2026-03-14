@@ -36,6 +36,9 @@
 {% if breadcrumbs_json %}
 <script type="application/ld+json">{{ breadcrumbs_json|safe }}</script>
 {% endif %}
+{% if article_json %}
+<script type="application/ld+json">{{ article_json|safe }}</script>
+{% endif %}
 {% endblock %}
 
 {% block head %}

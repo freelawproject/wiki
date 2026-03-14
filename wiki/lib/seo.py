@@ -1,4 +1,4 @@
-"""SEO utilities: description extraction and JSON-LD breadcrumbs."""
+"""SEO utilities: description extraction, JSON-LD breadcrumbs, and Article schema."""
 
 import json
 
@@ -49,5 +49,27 @@ def build_breadcrumbs_jsonld(
         "@context": "https://schema.org",
         "@type": "BreadcrumbList",
         "itemListElement": items,
+    }
+    return json.dumps(schema)
+
+
+def build_article_jsonld(page, description, base_url):
+    """Build a JSON-LD Article schema for a wiki page.
+
+    Returns a JSON string suitable for embedding in a <script> tag.
+    """
+    schema = {
+        "@context": "https://schema.org",
+        "@type": "Article",
+        "headline": page.title,
+        "description": description,
+        "url": f"{base_url}{page.get_absolute_url()}",
+        "datePublished": page.created_at.isoformat(),
+        "dateModified": page.updated_at.isoformat(),
+        "publisher": {
+            "@type": "Organization",
+            "name": "Free Law Project",
+            "url": "https://free.law",
+        },
     }
     return json.dumps(schema)
