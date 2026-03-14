@@ -91,6 +91,35 @@ document.addEventListener('alpine:init', () => {
     },
   }))
 
+  // Pin toggle — POST via fetch, swap icon without page reload
+  Alpine.data('pinToggle', () => ({
+    pinned: false,
+    url: '',
+    init() {
+      this.pinned = this.$el.getAttribute('data-pinned') === 'true'
+      this.url = this.$el.getAttribute('data-url')
+    },
+    toggle() {
+      var self = this
+      var hxHeaders = document.body.getAttribute('hx-headers')
+      var csrfToken = hxHeaders ? JSON.parse(hxHeaders)['X-CSRFToken'] : ''
+      fetch(self.url, {
+        method: 'POST',
+        headers: {
+          'X-CSRFToken': csrfToken,
+          'X-Requested-With': 'XMLHttpRequest',
+        },
+      }).then(function(resp) {
+        return resp.json()
+      }).then(function(data) {
+        self.pinned = data.is_pinned
+      })
+    },
+    get title() {
+      return this.pinned ? 'Unpin' : 'Pin'
+    },
+  }))
+
   // Search tips toggle
   Alpine.data('searchTips', () => ({
     open: false,
