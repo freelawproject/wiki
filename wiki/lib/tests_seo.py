@@ -8,7 +8,11 @@ from django.test import RequestFactory
 
 from wiki.directories.models import Directory
 from wiki.lib.middleware import SEOHeadersMiddleware
-from wiki.lib.seo import build_breadcrumbs_jsonld, extract_description
+from wiki.lib.seo import (
+    build_article_jsonld,
+    build_breadcrumbs_jsonld,
+    extract_description,
+)
 from wiki.pages.models import Page
 
 # ── extract_description ──────────────────────────────────────────────
@@ -259,6 +263,98 @@ class TestSitemap:
         content = response.content.decode()
         assert "/c/secret" not in content
 
+    def test_sitemap_excludes_public_page_in_private_directory(
+        self, client, user
+    ):
+        """A public page inside a private directory should not appear."""
+        private_dir = Directory.objects.create(
+            path="private-dir",
+            title="Private Dir",
+            visibility=Directory.Visibility.PRIVATE,
+        )
+        Page.objects.create(
+            title="Hidden Page",
+            slug="hidden-page",
+            content="Should not be indexed",
+            directory=private_dir,
+            owner=user,
+            created_by=user,
+            updated_by=user,
+            visibility=Page.Visibility.PUBLIC,
+        )
+        response = client.get("/sitemap.xml")
+        content = response.content.decode()
+        assert "hidden-page" not in content
+
+    def test_sitemap_excludes_public_page_in_internal_directory(
+        self, client, user
+    ):
+        """A public page inside an internal directory should not appear."""
+        internal_dir = Directory.objects.create(
+            path="internal-dir",
+            title="Internal Dir",
+            visibility=Directory.Visibility.INTERNAL,
+        )
+        Page.objects.create(
+            title="Staff Page",
+            slug="staff-page",
+            content="Staff only",
+            directory=internal_dir,
+            owner=user,
+            created_by=user,
+            updated_by=user,
+            visibility=Page.Visibility.PUBLIC,
+        )
+        response = client.get("/sitemap.xml")
+        content = response.content.decode()
+        assert "staff-page" not in content
+
+    def test_sitemap_excludes_public_child_of_private_ancestor(
+        self, client, user
+    ):
+        """A public dir under a private parent should not appear."""
+        root = Directory.objects.create(
+            path="", title="Home", visibility=Directory.Visibility.PUBLIC
+        )
+        private_parent = Directory.objects.create(
+            path="locked",
+            title="Locked",
+            parent=root,
+            visibility=Directory.Visibility.PRIVATE,
+        )
+        Directory.objects.create(
+            path="locked/open",
+            title="Open",
+            parent=private_parent,
+            visibility=Directory.Visibility.PUBLIC,
+        )
+        response = client.get("/sitemap.xml")
+        content = response.content.decode()
+        assert "/c/locked/open" not in content
+        assert "/c/locked" not in content
+
+
+# ── Raw markdown headers ─────────────────────────────────────────────
+
+
+@pytest.mark.django_db
+class TestRawMarkdownHeaders:
+    def test_raw_markdown_has_noindex_header(self, client, page, owner_user):
+        """The .md endpoint should have X-Robots-Tag: noindex."""
+        client.force_login(owner_user)
+        response = client.get(f"{page.get_absolute_url()}.md")
+        assert response.status_code == 200
+        assert response["X-Robots-Tag"] == "noindex"
+
+    def test_raw_markdown_has_canonical_header(self, client, page, owner_user):
+        """The .md endpoint should have a Link canonical header."""
+        client.force_login(owner_user)
+        response = client.get(f"{page.get_absolute_url()}.md")
+        assert response.status_code == 200
+        assert 'rel="canonical"' in response["Link"]
+        assert page.get_absolute_url() in response["Link"]
+        assert ".md" not in response["Link"]
+
 
 # ── Meta tags in HTML responses ──────────────────────────────────────
 
@@ -318,3 +414,138 @@ class TestDirectoryMetaTags:
         response = client.get(private_directory.get_absolute_url())
         content = response.content.decode()
         assert "noindex" in content
+
+
+# ── Article JSON-LD ──────────────────────────────────────────────────
+
+
+class TestArticleJsonLd:
+    def test_basic_article(self, page):
+        result = json.loads(
+            build_article_jsonld(page, "Test desc", "https://wiki.free.law")
+        )
+        assert result["@context"] == "https://schema.org"
+        assert result["@type"] == "Article"
+        assert result["headline"] == page.title
+        assert result["description"] == "Test desc"
+        assert (
+            result["url"] == f"https://wiki.free.law{page.get_absolute_url()}"
+        )
+        assert "datePublished" in result
+        assert "dateModified" in result
+        assert result["publisher"]["name"] == "Free Law Project"
+
+
+@pytest.mark.django_db
+class TestPageArticleJsonLd:
+    def test_public_page_has_article_jsonld(self, client, page, owner_user):
+        client.force_login(owner_user)
+        response = client.get(page.get_absolute_url())
+        content = response.content.decode()
+        assert '"@type": "Article"' in content
+        assert '"Free Law Project"' in content
+
+    def test_private_page_no_article_jsonld(self, client, private_page, user):
+        client.force_login(user)
+        response = client.get(private_page.get_absolute_url())
+        content = response.content.decode()
+        assert '"@type": "Article"' not in content
+
+
+# ── SEO description ──────────────────────────────────────────────────
+
+
+@pytest.mark.django_db
+class TestSeoDescription:
+    def test_seo_description_used_in_og_tags(self, client, user, owner_user):
+        """When seo_description is set, it should appear in OG tags."""
+        page = Page.objects.create(
+            title="SEO Page",
+            slug="seo-page",
+            content="Long content that would be auto-extracted.",
+            seo_description="Custom SEO summary",
+            owner=user,
+            created_by=user,
+            updated_by=user,
+            visibility=Page.Visibility.PUBLIC,
+        )
+        client.force_login(owner_user)
+        response = client.get(page.get_absolute_url())
+        content = response.content.decode()
+        assert "Custom SEO summary" in content
+
+    def test_auto_description_when_seo_empty(self, client, page, owner_user):
+        """When seo_description is blank, content is auto-extracted."""
+        client.force_login(owner_user)
+        response = client.get(page.get_absolute_url())
+        content = response.content.decode()
+        assert "og:description" in content
+
+
+# ── llms.txt ─────────────────────────────────────────────────────────
+
+
+@pytest.mark.django_db
+class TestLlmsTxt:
+    def test_llms_txt_status_and_content_type(self, client):
+        response = client.get("/llms.txt")
+        assert response.status_code == 200
+        assert response["Content-Type"] == "text/plain"
+
+    def test_llms_txt_has_noindex(self, client):
+        response = client.get("/llms.txt")
+        assert response["X-Robots-Tag"] == "noindex"
+
+    def test_llms_txt_includes_public_page(self, client, user):
+        Page.objects.create(
+            title="Public LLM Page",
+            slug="public-llm-page",
+            content="Some content.",
+            owner=user,
+            created_by=user,
+            updated_by=user,
+            visibility=Page.Visibility.PUBLIC,
+        )
+        response = client.get("/llms.txt")
+        content = response.content.decode()
+        assert "Public LLM Page" in content
+        assert "public-llm-page.md" in content
+
+    def test_llms_txt_excludes_private_page(self, client, user):
+        Page.objects.create(
+            title="Private LLM Page",
+            slug="private-llm-page",
+            content="Secret.",
+            owner=user,
+            created_by=user,
+            updated_by=user,
+            visibility=Page.Visibility.PRIVATE,
+        )
+        response = client.get("/llms.txt")
+        content = response.content.decode()
+        assert "Private LLM Page" not in content
+
+    def test_llms_txt_uses_seo_description(self, client, user):
+        Page.objects.create(
+            title="Described Page",
+            slug="described-page",
+            content="Fallback content.",
+            seo_description="Custom LLM description",
+            owner=user,
+            created_by=user,
+            updated_by=user,
+            visibility=Page.Visibility.PUBLIC,
+        )
+        response = client.get("/llms.txt")
+        content = response.content.decode()
+        assert "Custom LLM description" in content
+
+    def test_llms_txt_has_header(self, client):
+        response = client.get("/llms.txt")
+        content = response.content.decode()
+        assert content.startswith("# FLP Wiki")
+
+    def test_robots_txt_allows_llms_txt(self, client):
+        response = client.get("/robots.txt")
+        content = response.content.decode()
+        assert "Allow: /llms.txt" in content
