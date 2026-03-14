@@ -55,6 +55,10 @@ class Page(models.Model):
         default=Editability.RESTRICTED,
     )
     change_message = models.CharField(max_length=500, blank=True)
+    is_pinned = models.BooleanField(
+        default=False,
+        help_text="Pinned pages appear at the top of directory listings.",
+    )
     view_count = models.PositiveIntegerField(
         default=0,
         help_text="Denormalized count, updated periodically from tallies.",
