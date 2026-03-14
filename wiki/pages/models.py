@@ -152,15 +152,20 @@ class Page(models.Model):
         self.save(update_fields=["is_deleted", "deleted_at", "deleted_by"])
 
     def _update_page_links(self, **kwargs):
-        """Rebuild PageLink rows based on #slug references in content."""
+        """Rebuild PageLink rows based on #slug and internal URL references."""
         update_fields = kwargs.get("update_fields")
         if update_fields and "content" not in update_fields:
             return
 
         # Inline import to avoid circular dependency (pages/models ↔ lib/markdown)
-        from wiki.lib.markdown import WIKI_LINK_RE
+        from wiki.lib.markdown import (
+            WIKI_LINK_RE,
+            extract_slugs_from_internal_urls,
+        )
 
         slugs = set(WIKI_LINK_RE.findall(self.content))
+        slugs |= extract_slugs_from_internal_urls(self.content)
+
         if not slugs:
             PageLink.objects.filter(from_page=self).delete()
             return

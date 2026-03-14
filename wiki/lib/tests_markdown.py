@@ -1,6 +1,12 @@
-"""Tests for markdown utilities: strip_markdown."""
+"""Tests for markdown utilities: strip_markdown, render_markdown, internal URL extraction."""
 
-from wiki.lib.markdown import strip_markdown
+from unittest.mock import patch
+
+from wiki.lib.markdown import (
+    extract_slugs_from_internal_urls,
+    render_markdown,
+    strip_markdown,
+)
 
 
 class TestStripMarkdown:
@@ -78,3 +84,74 @@ class TestStripMarkdown:
     def test_collapses_whitespace(self):
         result = strip_markdown("Hello   \n\n  world")
         assert result == "Hello world"
+
+
+class TestRenderMarkdownAutolink:
+    """Bare URLs should be auto-linked in rendered output."""
+
+    def test_bare_url_becomes_link(self):
+        html = render_markdown("Visit https://example.com today.")
+        assert 'href="https://example.com"' in html
+        assert ">https://example.com</a>" in html
+
+    def test_url_inside_markdown_link_not_doubled(self):
+        html = render_markdown("[Example](https://example.com)")
+        assert html.count("https://example.com") == 1
+
+    def test_bare_http_url(self):
+        html = render_markdown("See http://example.com for info.")
+        assert 'href="http://example.com"' in html
+
+
+class TestExtractSlugsFromInternalUrls:
+    """extract_slugs_from_internal_urls should find page slugs in content."""
+
+    @patch("wiki.lib.markdown.settings")
+    def test_relative_path(self, mock_settings):
+        mock_settings.BASE_URL = "https://wiki.free.law"
+        slugs = extract_slugs_from_internal_urls(
+            "See /c/help/my-page for info"
+        )
+        assert "my-page" in slugs
+
+    @patch("wiki.lib.markdown.settings")
+    def test_full_url_matching_domain(self, mock_settings):
+        mock_settings.BASE_URL = "https://wiki.free.law"
+        content = "Link: https://wiki.free.law/c/help/my-page"
+        slugs = extract_slugs_from_internal_urls(content)
+        assert "my-page" in slugs
+
+    @patch("wiki.lib.markdown.settings")
+    def test_full_url_different_domain_ignored(self, mock_settings):
+        mock_settings.BASE_URL = "https://wiki.free.law"
+        content = "Link: https://other.com/c/help/my-page"
+        slugs = extract_slugs_from_internal_urls(content)
+        assert len(slugs) == 0
+
+    @patch("wiki.lib.markdown.settings")
+    def test_markdown_link_with_relative_path(self, mock_settings):
+        mock_settings.BASE_URL = "https://wiki.free.law"
+        content = "[My Page](/c/help/my-page)"
+        slugs = extract_slugs_from_internal_urls(content)
+        assert "my-page" in slugs
+
+    @patch("wiki.lib.markdown.settings")
+    def test_markdown_link_with_full_url(self, mock_settings):
+        mock_settings.BASE_URL = "https://wiki.free.law"
+        content = "[My Page](https://wiki.free.law/c/help/my-page)"
+        slugs = extract_slugs_from_internal_urls(content)
+        assert "my-page" in slugs
+
+    @patch("wiki.lib.markdown.settings")
+    def test_action_urls_ignored(self, mock_settings):
+        mock_settings.BASE_URL = "https://wiki.free.law"
+        content = "Edit at /c/help/my-page/edit"
+        slugs = extract_slugs_from_internal_urls(content)
+        assert len(slugs) == 0
+
+    @patch("wiki.lib.markdown.settings")
+    def test_root_level_page(self, mock_settings):
+        mock_settings.BASE_URL = "https://wiki.free.law"
+        content = "See /c/my-page for details"
+        slugs = extract_slugs_from_internal_urls(content)
+        assert "my-page" in slugs
