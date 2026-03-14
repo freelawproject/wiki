@@ -41,6 +41,10 @@ from wiki.lib.storage import get_s3_client
 from wiki.proposals.models import ChangeProposal
 from wiki.subscriptions.models import PageSubscription
 from wiki.subscriptions.tasks import notify_subscribers, process_mentions
+from wiki.subscriptions.utils import (
+    get_effective_watchers_for_page,
+    is_effectively_subscribed_to_page,
+)
 
 from .diff_utils import unified_diff
 from .forms import PageForm, PageMoveForm, PagePermissionForm
@@ -298,18 +302,12 @@ def _render_page_detail(request, page):
 
     breadcrumbs = _build_page_breadcrumbs(request, page)
 
-    # Check subscription status and get subscriber list
+    # Check subscription status and get watcher list
     is_subscribed = False
-    subscribers = []
+    watchers = []
     if request.user.is_authenticated:
-        is_subscribed = PageSubscription.objects.filter(
-            user=request.user, page=page
-        ).exists()
-        subscribers = (
-            PageSubscription.objects.filter(page=page)
-            .select_related("user", "user__profile")
-            .order_by("subscribed_at")
-        )
+        is_subscribed = is_effectively_subscribed_to_page(request.user, page)
+        watchers = get_effective_watchers_for_page(page)
 
     people = _get_page_people(page)
 
@@ -354,7 +352,7 @@ def _render_page_detail(request, page):
             "pending_comment_count": pending_comment_count,
             "breadcrumbs": breadcrumbs,
             "is_subscribed": is_subscribed,
-            "subscribers": subscribers,
+            "watchers": watchers,
             "people": people,
             "is_public": is_public,
             "page_description": page_description,
