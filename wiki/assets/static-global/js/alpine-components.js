@@ -32,21 +32,23 @@ document.addEventListener('alpine:init', () => {
     },
   }))
 
-  // Subscribe toggle — POST via fetch, flash confirmation like copyMarkdown
+  // Subscribe toggle — POST via fetch, show banner at top of page
   Alpine.data('subscribeToggle', () => ({
     label: '',
     subscribed: false,
     url: '',
+    subscribeMsg: '',
+    unsubscribeMsg: '',
     init() {
       this.subscribed = this.$el.getAttribute('data-subscribed') === 'true'
       this.url = this.$el.getAttribute('data-url')
+      this.subscribeMsg = this.$el.getAttribute('data-subscribe-msg') || 'Subscribed!'
+      this.unsubscribeMsg = this.$el.getAttribute('data-unsubscribe-msg') || 'Unsubscribed!'
       this.label = this.subscribed ? 'Unsubscribe' : 'Subscribe'
     },
     toggle(event) {
       event.stopPropagation()
       var self = this
-      // Lock the button width so the flash label doesn't cause a resize
-      self.$el.style.width = self.$el.offsetWidth + 'px'
       var hxHeaders = document.body.getAttribute('hx-headers')
       var csrfToken = hxHeaders ? JSON.parse(hxHeaders)['X-CSRFToken'] : ''
       fetch(self.url, {
@@ -57,13 +59,35 @@ document.addEventListener('alpine:init', () => {
         },
       }).then(function() {
         self.subscribed = !self.subscribed
-        self.label = self.subscribed ? 'Subscribed!' : 'Unsubscribed!'
-        setTimeout(function() {
-          self.label = self.subscribed ? 'Unsubscribe' : 'Subscribe'
-          self.$el.style.width = ''
-          document.body.click()
-        }, 1000)
+        self.label = self.subscribed ? 'Unsubscribe' : 'Subscribe'
+        var msg = self.subscribed ? self.subscribeMsg : self.unsubscribeMsg
+        self._showBanner(msg)
+        document.body.click()
       })
+    },
+    _showBanner(text) {
+      // Fixed-position toast at the top of the viewport
+      var toast = document.createElement('div')
+      toast.className = 'toast-banner alert alert-success'
+      toast.setAttribute('role', 'alert')
+
+      var span = document.createElement('span')
+      span.innerHTML = text
+      toast.appendChild(span)
+
+      var btn = document.createElement('button')
+      btn.type = 'button'
+      btn.className = 'toast-dismiss'
+      btn.setAttribute('aria-label', 'Dismiss')
+      btn.innerHTML = '&#215;'
+      btn.addEventListener('click', function() {
+        toast.style.transition = 'opacity 0.2s'
+        toast.style.opacity = '0'
+        setTimeout(function() { toast.remove() }, 200)
+      })
+      toast.appendChild(btn)
+
+      document.body.appendChild(toast)
     },
   }))
 

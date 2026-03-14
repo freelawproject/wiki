@@ -80,6 +80,8 @@
                       x-data="subscribeToggle"
                       data-subscribed="{% if is_subscribed %}true{% else %}false{% endif %}"
                       data-url="{% url 'page_subscribe' path=page.content_path %}"
+                      data-subscribe-msg="Subscribed! You'll get emails when this page changes. &lt;a href='/c/notifications-guide/'&gt;Learn more&lt;/a&gt;"
+                      data-unsubscribe-msg="Unsubscribed from this page. &lt;a href='/c/notifications-guide/'&gt;Learn more&lt;/a&gt;"
                       @click="toggle"
                       x-text="label">
               </button>
@@ -152,15 +154,15 @@
         {% endif %}
       </div>
       {% endif %}
-      {% if subscribers %}
+      {% if watchers %}
       <div class="mt-3 flex items-center gap-1.5 flex-wrap">
         <span class="mr-0.5 text-gray-400 dark:text-gray-500">Watching:</span>
-        {% for sub in subscribers %}
+        {% for watcher in watchers %}
           <span class="badge-gray">
-            {% if sub.user.profile.gravatar_url %}
-            <img src="{{ sub.user.profile.gravatar_url }}" alt="" class="w-4 h-4 rounded-full">
+            {% if watcher.profile.gravatar_url %}
+            <img src="{{ watcher.profile.gravatar_url }}" alt="" class="w-4 h-4 rounded-full">
             {% endif %}
-            {{ sub.user|display_name }}
+            {{ watcher|display_name }}
           </span>
         {% endfor %}
       </div>
