@@ -36,7 +36,11 @@ from wiki.lib.permissions import (
     viewable_pages_q,
 )
 from wiki.lib.ratelimiter import ratelimit_search, ratelimit_upload
-from wiki.lib.seo import build_breadcrumbs_jsonld, extract_description
+from wiki.lib.seo import (
+    build_article_jsonld,
+    build_breadcrumbs_jsonld,
+    extract_description,
+)
 from wiki.lib.storage import get_s3_client
 from wiki.proposals.models import ChangeProposal
 from wiki.subscriptions.models import PageSubscription
@@ -342,11 +346,17 @@ def _render_page_detail(request, page):
 
     # SEO
     is_public = page.visibility == Page.Visibility.PUBLIC
-    page_description = extract_description(page.content)
+    page_description = page.seo_description or extract_description(
+        page.content
+    )
     breadcrumbs_json = ""
+    article_json = ""
     if is_public:
         breadcrumbs_json = build_breadcrumbs_jsonld(
             breadcrumbs, django_settings.BASE_URL
+        )
+        article_json = build_article_jsonld(
+            page, page_description, django_settings.BASE_URL
         )
     else:
         request.seo_noindex = True
@@ -372,6 +382,7 @@ def _render_page_detail(request, page):
             "is_public": is_public,
             "page_description": page_description,
             "breadcrumbs_json": breadcrumbs_json,
+            "article_json": article_json,
             "canonical_url": canonical_url,
         },
     )
@@ -1396,4 +1407,7 @@ def page_raw_markdown(request, path):
     markdown = f"# {page.title}\n\n{page.content}"
     response = HttpResponse(markdown, content_type="text/markdown")
     response["Content-Disposition"] = f'inline; filename="{page.slug}.md"'
+    canonical_url = f"{django_settings.BASE_URL}{page.get_absolute_url()}"
+    response["X-Robots-Tag"] = "noindex"
+    response["Link"] = f'<{canonical_url}>; rel="canonical"'
     return response

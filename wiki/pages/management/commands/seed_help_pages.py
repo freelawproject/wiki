@@ -153,6 +153,11 @@ one up.
 - #admin-guide — System owner, admins, archiving users, managing
   groups, and the activity feed
 - #gravatar-guide — Setting up your profile picture
+
+**SEO and discoverability**
+
+- #seo-guide — SEO descriptions, Article JSON-LD, canonical URLs,
+  sitemaps, robots.txt, llms.txt, and raw markdown for LLMs
 """,
     },
     {
@@ -1191,6 +1196,130 @@ to a specific user by clicking their name.
 - Use the **Restricted** editability default for sensitive content,
   and **FLP Staff** editability for collaborative pages anyone at
   FLP should be able to edit
+""",
+    },
+    {
+        "title": "SEO & Discoverability Guide",
+        "slug": "seo-guide",
+        "content": """\
+## How the wiki handles SEO and LLM discoverability
+
+The wiki automatically generates SEO metadata for all public pages.
+This guide explains what happens behind the scenes, what you can
+control as an editor, and how LLM crawlers discover wiki content.
+
+### SEO description
+
+Each page has an optional **SEO Description** field on the edit form
+(between the Content textarea and the Visibility selector). This
+short summary (up to 300 characters) is used in:
+
+- The HTML `<meta name="description">` tag
+- Open Graph (`og:description`) tags for social sharing
+- The [/llms.txt](/llms.txt) index for LLM crawlers
+- The Article JSON-LD structured data
+
+If you leave it blank, the wiki auto-generates a description from
+the first ~160 characters of your page content (with Markdown
+stripped). For most pages this works fine, but a hand-written
+summary is better for important public-facing pages.
+
+### Canonical URLs
+
+Every HTML page includes a `<link rel="canonical">` tag pointing to
+its own URL. This tells search engines that the page is the
+authoritative version of its content.
+
+The raw Markdown endpoint (`.md`) also sends a `Link` HTTP header
+pointing back to the HTML page as canonical, plus an
+`X-Robots-Tag: noindex` header. This prevents search engines from
+indexing the Markdown version as a duplicate while keeping it
+accessible to LLM crawlers.
+
+### Structured data (JSON-LD)
+
+Public pages include two types of JSON-LD structured data:
+
+1. **BreadcrumbList** — the directory path leading to the page,
+   which can appear as breadcrumb trails in search results
+2. **Article** — includes the page title, description, publication
+   and modification dates, and Free Law Project as the publisher
+
+Private and internal pages do not include any structured data and
+are marked with `noindex` to prevent search engine indexing.
+
+### Sitemap
+
+The wiki serves a sitemap at [/sitemap.xml](/sitemap.xml). It
+includes all public pages and directories, **but only when the
+entire directory ancestry is public**. A public page inside a
+private or internal directory is excluded from the sitemap, because
+anonymous visitors cannot actually access it.
+
+The sitemap is automatically marked `noindex` by Django (search
+engines should follow its links, not index the XML file itself).
+
+### robots.txt
+
+The [/robots.txt](/robots.txt) file tells search engine crawlers
+what they can and cannot access:
+
+**Allowed:**
+
+- `/c/` — all wiki content pages and directories
+- `/llms.txt` — the LLM content index
+- Raw Markdown (`.md`) files — for LLM crawlers
+
+**Blocked:**
+
+- `/admin/`, `/api/`, `/u/`, `/search/`, `/files/`,
+  `/unsubscribe/`, `/activity/`
+- Page action URLs: edit, move, delete, history, diff, revert,
+  permissions, subscribe, pin, backlinks
+- Directory action URLs: new, new-dir, edit-dir, move-dir,
+  delete-dir, history-dir, etc.
+- Comments, proposals, and feedback URLs
+
+The robots.txt also includes a `Sitemap:` directive pointing
+crawlers to the sitemap.
+
+### llms.txt
+
+The wiki serves an [/llms.txt](/llms.txt) file following the
+[llmstxt.org](https://llmstxt.org/) specification. This is an
+index designed for LLM crawlers (like those from Anthropic and
+OpenAI) to efficiently discover wiki content.
+
+The file lists all public pages grouped by directory, with each
+entry linking to the raw Markdown (`.md`) version of the page:
+
+```
+# FLP Wiki
+
+> Free Law Project's wiki covering legal technology, open legal
+> data, and organizational knowledge.
+
+## Engineering
+
+- [CI Pipeline](https://wiki.free.law/c/engineering/ci-pipeline.md): How our CI works
+- [Coding Standards](https://wiki.free.law/c/engineering/coding-standards.md): Use ruff
+```
+
+Each entry uses the page's SEO description if set, or an
+auto-extracted summary from the content. The llms.txt file itself
+has `X-Robots-Tag: noindex` so search engines don't index it.
+
+### What editors should know
+
+- **Set SEO descriptions** on important public pages — a concise,
+  hand-written summary outperforms auto-generated ones
+- **Visibility matters** — only public pages in fully-public
+  directory chains appear in the sitemap and llms.txt. Private and
+  internal pages are automatically excluded and marked `noindex`
+- **You don't need to do anything** for canonical URLs, JSON-LD,
+  sitemap inclusion, or robots.txt — these are all automatic
+- **Page titles** are used as the `og:title` and Article headline,
+  so write clear, descriptive titles
 """,
     },
 ]

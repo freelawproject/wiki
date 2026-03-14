@@ -67,6 +67,16 @@
       {{ form.content }}
     </div>
 
+    <div>
+      <label for="id_seo_description" class="block text-sm font-medium mb-1">
+        SEO Description
+      </label>
+      {{ form.seo_description }}
+      <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+        Short summary for search engines and llms.txt. If blank, auto-generated from first words of content.
+      </p>
+    </div>
+
     <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
       <div>
         <label for="id_visibility" class="block text-sm font-medium mb-1">Visibility</label>
