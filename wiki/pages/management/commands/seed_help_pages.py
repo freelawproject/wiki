@@ -15,11 +15,14 @@ HELP_PAGES = [
     {
         "title": "Getting Started",
         "slug": "getting-started-guide",
+        "is_pinned": True,
         "content": """\
 ## Welcome to FLP Wiki
 
 This wiki is the internal knowledge base for Free Law Project.
 Anyone with an @free.law email address can sign in and contribute.
+This page covers the basics and links to detailed guides on every
+feature.
 
 ### Signing in
 
@@ -44,13 +47,44 @@ Your account is created automatically the first time you sign in.
 ### Editing a page
 
 Click the **Edit** button on any page you have permission to edit.
-Your changes are saved as a new revision, so nothing is ever lost.
-See #revisions-guide for more on revision history, diffing, and
-reverting.
+The editor has **Write** and **Preview** tabs — switch to Preview
+to see the rendered page before saving. Your changes are saved as
+a new revision, so nothing is ever lost. If you leave the page
+with unsaved changes, the browser will warn you before navigating
+away. See #revisions-guide for more on revision history, diffing,
+and reverting.
 
 If someone else is currently editing the page, you'll see a warning
 with their name and when they started. You can choose to **Edit
 Anyway** to override their lock.
+
+### Reading a page
+
+Each page shows its content along with metadata at the bottom:
+the **creator**, any **editors** and **admins** with access, the
+current **watchers** (subscribers), the **view count**, and when
+the page was last updated.
+
+Headings in the page generate a **Table of Contents** sidebar
+(on wider screens) that highlights the section you're currently
+reading. Each heading also has a **¶ anchor link** you can click
+to get a direct URL to that section.
+
+Code blocks have a **copy button** in the top corner — click it
+to copy the code to your clipboard.
+
+### The Actions menu
+
+The **Actions** dropdown on each page gives you access to:
+
+- **Subscribe / Unsubscribe** — toggle email notifications
+- **Permissions** — manage who can view and edit (editors only)
+- **Move** — move the page to a different directory
+- **Feedback** — see pending comments and proposals (editors only)
+- **History** — view all revisions
+- **What links here** — see which pages link to this one
+- **Copy page markdown** — copy the raw Markdown source
+- **Delete** — delete the page (requires delete permission)
 
 ### Providing feedback
 
@@ -71,15 +105,9 @@ email notifications.
 ### Finding pages
 
 - Use the **search bar** in the header to find pages by title or
-  content
+  content (see #search-guide for advanced filters)
 - Browse directories from the [Home](/c/) page
 - Use #page-slug wiki links (see #linking-pages)
-
-### Sorting directory listings
-
-When viewing a directory, you can sort pages by **title**, **last
-edited**, **created date**, or **most viewed** using the sort
-controls above the page list.
 
 ### Dark mode
 
@@ -93,17 +121,37 @@ Visit [Settings](/u/settings/) to set your **display name**. Your
 profile picture comes from Gravatar — see #gravatar-guide to set
 one up.
 
-### More help
+### All help topics
 
-- #markdown-syntax — How to format your pages
-- #linking-pages — How to link between pages
-- #directories-guide — Working with directories
-- #revisions-guide — Revision history, diffing, and reverting
-- #notifications-guide — @mentions, subscriptions, and emails
+**Writing and formatting**
+
+- #markdown-syntax — Markdown reference, the editor, file uploads,
+  table of contents, and code block features
+- #linking-pages — Wiki link syntax (`#slug`), autocomplete,
+  redirects, and backlinks
+
+**Organizing and finding content**
+
+- #directories-guide — Creating, moving, and sorting directories;
+  page pinning; directory history
+- #search-guide — Full-text search, advanced filters, sorting
+  results, and sidebar facets
+
+**Collaboration**
+
+- #notifications-guide — @mentions, subscriptions, and email
+  notifications
 - #proposals-guide — Comments, proposals, and the review queue
-- #permissions-guide — Understanding visibility and permissions
-- #admin-guide — Admin features and user management
-- #search-guide — How search works
+
+**Access control**
+
+- #permissions-guide — Visibility, editability, directory gates,
+  permission inheritance, and groups
+
+**Administration**
+
+- #admin-guide — System owner, admins, archiving users, managing
+  groups, and the activity feed
 - #gravatar-guide — Setting up your profile picture
 """,
     },
@@ -133,7 +181,10 @@ common formatting options.
 #### Heading 4
 ```
 
-Headings automatically appear in the **Table of Contents** sidebar.
+Headings automatically appear in the **Table of Contents** sidebar
+on wider screens. The TOC highlights the section you're currently
+reading as you scroll. Each heading also gets a **¶ anchor link**
+you can click (or copy) to link directly to that section.
 
 ### Links and images
 
@@ -172,7 +223,9 @@ To link to another wiki page, use the #slug syntax (see #linking-pages).
 
 ### Code blocks
 
-Use triple backticks with an optional language name:
+Use triple backticks with an optional language name for syntax
+highlighting. Each code block has a **copy button** in the top
+corner — click it to copy the contents to your clipboard.
 
 ````markdown
 ```python
@@ -213,9 +266,26 @@ other files.
 
 **File size limit**: The maximum upload size is **1 GB** per file.
 
+**Blocked file types**: Executable files (`.exe`, `.sh`, `.bat`,
+`.js`, `.dll`, and similar) cannot be uploaded for security reasons.
+
 **Privacy**: Uploaded files are served through signed URLs. Files
 attached to a private page are only accessible to users who have
 permission to view that page.
+
+### The editor
+
+The Markdown editor has a toolbar with buttons for common
+formatting (bold, italic, headings, lists, quotes, links, images,
+tables, and file upload). Below the toolbar are **Write** and
+**Preview** tabs — click Preview to see the rendered page without
+saving.
+
+A status bar at the bottom of the editor shows the current
+**line and word count**.
+
+If you navigate away from the page with unsaved changes, the
+browser will warn you before leaving.
 """,
     },
     {
@@ -264,6 +334,14 @@ continue to work.
 In the editor, typing `#` followed by two or more characters
 triggers an autocomplete dropdown. Select a page from the list
 to insert the correct slug.
+
+### Backlinks ("What links here")
+
+Every page tracks which other pages link to it. Click
+**Actions → What links here** to see all incoming wiki links.
+This is useful for understanding how a page fits into the broader
+wiki — and the wiki uses this information to prevent you from
+deleting a page that other pages link to.
 
 ### Tips
 
@@ -519,6 +597,31 @@ Filters can be combined: `in:engineering owner:alice "deploy guide"`
 Date filters use **UTC** timestamps. For example, `after:2026-03-01`
 matches pages updated on or after March 1, 2026 at midnight UTC.
 
+### Sorting results
+
+By default, results are sorted by **relevance**. You can change
+the sort order using the dropdown above the results:
+
+- **Relevance** — Best match first (default)
+- **Last edited** (newest or oldest first)
+- **Date created** (newest or oldest first)
+- **Most viewed** — Highest view count first
+- **Title A–Z** — Alphabetical order
+
+### Sidebar facets
+
+The search results page has a sidebar with clickable facets that
+let you narrow results without typing filter syntax:
+
+- **Visibility** — Filter by Public, FLP Staff, or Private
+  (with counts for each)
+- **Last edited** — Quick presets: last 7 days, 30 days,
+  3 months, or 1 year
+- **Directory** — Filter by directory (with counts)
+
+Click a facet to add it as a filter. Active filters appear as
+chips that you can remove individually.
+
 ### Permission filtering
 
 Search results respect page permissions. You'll only see pages
@@ -636,6 +739,14 @@ controls above the page list:
 - **Last edited** — Most recently updated first
 - **Created** — Newest first
 - **Most viewed** — Highest view count first
+
+### Pinning pages
+
+Editors can **pin** a page to keep it at the top of the directory
+listing regardless of the sort order. Hover over a page in the
+directory listing and click the **pin icon** to toggle it. Pinned
+pages show a filled pin icon and always appear above unpinned
+pages.
 
 ### Directory history
 
@@ -947,10 +1058,12 @@ From the review queue or the page's **Feedback** link:
 
 1. Click a proposal to see a **side-by-side diff** comparing
    the current page content with the proposed changes
-2. **Accept** — applies the changes to the page (you can tweak
-   the content before accepting). This creates a new revision
-   and notifies all subscribers.
-3. **Deny** — rejects the proposal. You can include a reason,
+2. **Accept** — applies the changes to the page. This creates
+   a new revision and notifies all subscribers.
+3. **Edit before accepting** — toggle the editor to tweak the
+   proposed title or content before applying it. This lets you
+   fix minor issues without denying the whole proposal.
+4. **Deny** — rejects the proposal. You must include a reason,
    which is sent to the proposer by email.
 
 ### Who can leave feedback?
@@ -1057,6 +1170,14 @@ update the group membership.
 - Click **Delete** to remove a group (this removes the group's
   permission grants but does not affect member accounts)
 
+### Recent changes (activity feed)
+
+Admins and staff can view a chronological feed of all recent edits
+across the entire wiki at [Recent Changes](/activity/). Each entry
+shows the page title, who made the change, when, and the change
+message. The feed is paginated (50 per page) and can be filtered
+to a specific user by clicking their name.
+
 ### Best practices for admins
 
 - **Use groups** for team-based access rather than granting
@@ -1157,6 +1278,7 @@ class Command(BaseCommand):
 
     def _upsert_page(self, data, help_dir, owner):
         """Create or update a help page. Returns (page, was_created)."""
+        is_pinned = data.get("is_pinned", False)
         page, created = Page.objects.get_or_create(
             slug=data["slug"],
             defaults={
@@ -1165,6 +1287,7 @@ class Command(BaseCommand):
                 "directory": help_dir,
                 "owner": owner,
                 "visibility": Page.Visibility.PUBLIC,
+                "is_pinned": is_pinned,
                 "change_message": "Seeded by seed_help_pages",
                 "created_by": owner,
                 "updated_by": owner,
@@ -1182,10 +1305,16 @@ class Command(BaseCommand):
             )
             return page, True
 
-        # Update existing page if title or content differs
-        if page.content != data["content"] or page.title != data["title"]:
+        # Update existing page if title, content, or pin state differs
+        needs_update = (
+            page.content != data["content"]
+            or page.title != data["title"]
+            or page.is_pinned != is_pinned
+        )
+        if needs_update:
             page.content = data["content"]
             page.title = data["title"]
+            page.is_pinned = is_pinned
             page.change_message = "Updated by seed_help_pages"
             page.updated_by = owner
             page.save()
