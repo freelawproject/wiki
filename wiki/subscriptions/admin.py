@@ -1,6 +1,10 @@
 from django.contrib import admin
 
-from .models import PageSubscription
+from .models import (
+    DirectorySubscription,
+    PageSubscription,
+    SubscriptionExclusion,
+)
 
 
 @admin.register(PageSubscription)
@@ -12,3 +16,24 @@ class PageSubscriptionAdmin(admin.ModelAdmin):
     readonly_fields = ["subscribed_at"]
     list_select_related = ["user", "page"]
     date_hierarchy = "subscribed_at"
+
+
+@admin.register(DirectorySubscription)
+class DirectorySubscriptionAdmin(admin.ModelAdmin):
+    list_display = ["user", "directory", "subscribed_at"]
+    list_filter = ["subscribed_at"]
+    search_fields = ["user__email", "directory__title", "directory__path"]
+    raw_id_fields = ["user", "directory"]
+    readonly_fields = ["subscribed_at"]
+    list_select_related = ["user", "directory"]
+    date_hierarchy = "subscribed_at"
+
+
+@admin.register(SubscriptionExclusion)
+class SubscriptionExclusionAdmin(admin.ModelAdmin):
+    list_display = ["user", "page", "directory", "created_at"]
+    list_filter = ["created_at"]
+    search_fields = ["user__email"]
+    raw_id_fields = ["user", "page", "directory"]
+    readonly_fields = ["created_at"]
+    list_select_related = ["user", "page", "directory"]

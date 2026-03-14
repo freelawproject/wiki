@@ -106,6 +106,17 @@
     @apply alert bg-blue-50 text-blue-800 border-blue-200
            dark:bg-blue-900/20 dark:text-blue-300 dark:border-blue-800;
   }
+  .toast-banner {
+    @apply fixed top-4 left-1/2 -translate-x-1/2 z-50 shadow-lg
+           flex items-center gap-3 pr-2 max-w-lg
+           bg-green-50 dark:bg-green-900;
+  }
+  .toast-banner a {
+    @apply underline font-medium text-green-900 dark:text-green-200;
+  }
+  .toast-dismiss {
+    @apply ml-auto p-1 text-lg leading-none cursor-pointer;
+  }
 
   /* === Badges/Pills === */
   .badge {
@@ -284,7 +295,6 @@
   .dropdown-item-danger {
     @apply dropdown-item text-red-600 dark:text-red-400;
   }
-
   /* === Page metadata footer === */
   .page-meta {
     @apply mt-10 pt-5 border-t border-gray-200 dark:border-gray-700

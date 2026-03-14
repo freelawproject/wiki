@@ -93,6 +93,15 @@
             <a href="{% url 'directory_history_root' %}" class="dropdown-item">History</a>
           {% endif %}
           {% if user.is_authenticated %}
+            <button class="dropdown-item"
+                    x-data="subscribeToggle"
+                    data-subscribed="{% if is_dir_subscribed %}true{% else %}false{% endif %}"
+                    data-url="{% if directory.path %}{% url 'directory_subscribe' path=directory.path %}{% else %}{% url 'directory_subscribe_root' %}{% endif %}"
+                    data-subscribe-msg="Subscribed! You'll get emails when pages in this directory or its subdirectories change. &lt;a href='/c/notifications-guide/'&gt;Learn more&lt;/a&gt;"
+                    data-unsubscribe-msg="Unsubscribed from this directory. You can still subscribe to individual pages. &lt;a href='/c/notifications-guide/'&gt;Learn more&lt;/a&gt;"
+                    @click="toggle"
+                    x-text="label">
+            </button>
             {% if directory and directory.path %}
               <a href="{% url 'directory_create_in_dir' path=directory.path %}" class="dropdown-item">New Subdirectory</a>
             {% else %}
