@@ -49,6 +49,7 @@ class DirectoryForm(forms.ModelForm):
             attrs={
                 "class": "input-text w-full",
                 "placeholder": "Briefly describe your changes...",
+                "autocomplete": "off",
             }
         ),
     )
