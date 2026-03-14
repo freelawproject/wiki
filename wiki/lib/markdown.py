@@ -5,11 +5,83 @@ resolved to actual page URLs or shown as red links for missing pages.
 """
 
 import re
+from urllib.parse import urlparse
 
 import markdown2
 import nh3
+from django.conf import settings
 
 WIKI_LINK_RE = re.compile(r"(?<!\w)#([a-z0-9]+(?:-[a-z0-9]+)*)")
+
+# Pattern for auto-linking bare URLs (used by markdown2 link-patterns extra)
+_AUTOLINK_RE = re.compile(r"(?<!\()(https?://[^\s<>\)\]\"]+)")
+
+# Matches internal wiki URLs — full (https://domain/c/path) or relative (/c/path)
+# Used to detect internal links for PageLink tracking.
+_INTERNAL_URL_RE = re.compile(
+    r"(?:"
+    r"\[(?:[^\]]*)\]\((/c/[^)\s]+)\)"  # markdown link with relative path
+    r"|"
+    r"\[(?:[^\]]*)\]\((https?://[^)\s]+/c/[^)\s]+)\)"  # markdown link with full URL
+    r"|"
+    r"(?<!\()(/c/[^\s<>\)\]\"]+)"  # bare relative path
+    r"|"
+    r"(https?://[^\s<>\)\]\"]+/c/[^\s<>\)\]\"]+)"  # bare full URL
+    r")"
+)
+
+
+def extract_slugs_from_internal_urls(content):
+    """Extract page slugs from internal wiki URLs in content.
+
+    Finds URLs like /c/dir/slug or {BASE_URL}/c/dir/slug and returns
+    the set of slugs (last path segment).
+    """
+    base_url = getattr(settings, "BASE_URL", "")
+    base_host = urlparse(base_url).hostname or ""
+    slugs = set()
+    for match in _INTERNAL_URL_RE.finditer(content):
+        url = (
+            match.group(1)
+            or match.group(2)
+            or match.group(3)
+            or match.group(4)
+        )
+        if not url:
+            continue
+        # For full URLs, verify the domain matches BASE_URL
+        if url.startswith("http"):
+            parsed = urlparse(url)
+            if parsed.hostname != base_host:
+                continue
+            path = parsed.path
+        else:
+            path = url
+        # Strip /c/ prefix and trailing slash, extract last segment as slug
+        path = path.rstrip("/")
+        if not path.startswith("/c/"):
+            continue
+        content_path = path[3:]  # remove "/c/"
+        # Skip action URLs like .../edit/, .../history/, etc.
+        action_suffixes = (
+            "/edit",
+            "/move",
+            "/delete",
+            "/history",
+            "/backlinks",
+            "/permissions",
+            "/diff",
+            "/revert",
+            "/subscribe",
+            "/feedback",
+        )
+        if any(content_path.endswith(s) for s in action_suffixes):
+            continue
+        slug = content_path.rsplit("/", 1)[-1]
+        if slug:
+            slugs.add(slug)
+    return slugs
+
 
 ALLOWED_TAGS = {
     "h1",
@@ -183,7 +255,9 @@ def render_markdown(content):
             "strike",
             "task_list",
             "cuddled-lists",
+            "link-patterns",
         ],
+        link_patterns=[(_AUTOLINK_RE, r"\1")],
     )
     toc = getattr(html, "toc_html", "")
     result = MarkdownResult(_sanitize(str(html)))
