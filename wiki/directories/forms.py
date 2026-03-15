@@ -56,7 +56,14 @@ class DirectoryForm(forms.ModelForm):
 
     class Meta:
         model = Directory
-        fields = ["title", "description", "visibility", "editability"]
+        fields = [
+            "title",
+            "description",
+            "visibility",
+            "editability",
+            "in_sitemap",
+            "in_llms_txt",
+        ]
         widgets = {
             "title": forms.TextInput(
                 attrs={
@@ -74,20 +81,36 @@ class DirectoryForm(forms.ModelForm):
             ),
             "visibility": forms.Select(attrs={"class": "input-text"}),
             "editability": forms.Select(attrs={"class": "input-text"}),
+            "in_sitemap": forms.CheckboxInput(attrs={"class": "rounded"}),
+            "in_llms_txt": forms.Select(attrs={"class": "input-text"}),
         }
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, is_root=False, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["editability"].required = False
+        self.fields["in_llms_txt"].required = False
+        if is_root:
+            del self.fields["in_sitemap"]
+            del self.fields["in_llms_txt"]
 
     def clean_editability(self):
         return self.cleaned_data.get("editability") or "restricted"
+
+    def clean_in_llms_txt(self):
+        return self.cleaned_data.get("in_llms_txt") or "exclude"
 
 
 class DirectoryCreateForm(forms.ModelForm):
     class Meta:
         model = Directory
-        fields = ["title", "description", "visibility", "editability"]
+        fields = [
+            "title",
+            "description",
+            "visibility",
+            "editability",
+            "in_sitemap",
+            "in_llms_txt",
+        ]
         widgets = {
             "title": forms.TextInput(
                 attrs={
@@ -106,15 +129,21 @@ class DirectoryCreateForm(forms.ModelForm):
             ),
             "visibility": forms.Select(attrs={"class": "input-text"}),
             "editability": forms.Select(attrs={"class": "input-text"}),
+            "in_sitemap": forms.CheckboxInput(attrs={"class": "rounded"}),
+            "in_llms_txt": forms.Select(attrs={"class": "input-text"}),
         }
 
     def __init__(self, *args, parent=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.parent = parent
         self.fields["editability"].required = False
+        self.fields["in_llms_txt"].required = False
 
     def clean_editability(self):
         return self.cleaned_data.get("editability") or "restricted"
+
+    def clean_in_llms_txt(self):
+        return self.cleaned_data.get("in_llms_txt") or "exclude"
 
     def clean_title(self):
         title = self.cleaned_data["title"]

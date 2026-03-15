@@ -200,7 +200,7 @@ def directory_edit_root(request):
             )
         acquire_lock_for_directory(root, request.user)
 
-    form = DirectoryForm(request.POST or None, instance=root)
+    form = DirectoryForm(request.POST or None, instance=root, is_root=True)
     if request.method == "POST" and form.is_valid():
         form.save()
         _create_revision(
