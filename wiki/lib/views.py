@@ -7,7 +7,7 @@ from django.template.loader import render_to_string
 from django.urls import reverse
 
 from wiki.lib.seo import extract_description
-from wiki.lib.sitemap import _public_directory_ids
+from wiki.lib.sitemap import _llms_directory_map, _public_directory_ids
 from wiki.pages.models import Page
 
 
@@ -96,23 +96,52 @@ def llms_txt(request):
 
     Links point to the .md (raw markdown) endpoint for each page.
     Format follows https://llmstxt.org/ spec.
+
+    Pages are included based on their in_llms_txt setting and their
+    directory chain's effective llms.txt status.  The most restrictive
+    value in the chain wins (exclude > optional > include).
     """
     base = settings.BASE_URL
+    dir_map = _llms_directory_map()  # dir_id -> effective status
     public_dir_ids = _public_directory_ids()
 
+    # Fetch all public pages in public directory chains that are NOT
+    # excluded from llms.txt at the page level.
     pages = (
         Page.objects.filter(visibility=Page.Visibility.PUBLIC)
+        .exclude(in_llms_txt="exclude")
         .filter(Q(directory__isnull=True) | Q(directory_id__in=public_dir_ids))
         .select_related("directory")
         .order_by("directory__path", "title")
     )
 
-    # Group pages by directory, separating help pages into Optional
+    # Restrictiveness ranking for combining page + directory status
+    _rank = {"exclude": 2, "optional": 1, "include": 0}
+
     by_dir = defaultdict(list)
     optional_pages = []
     for page in pages:
-        dir_path = page.directory.path if page.directory else ""
-        if dir_path == "help" or dir_path.startswith("help/"):
+        dir_id = page.directory_id
+        if dir_id:
+            dir_status = dir_map.get(dir_id, "exclude")
+        else:
+            # Root-level pages: no directory restriction
+            dir_status = "include"
+
+        if dir_status == "exclude":
+            continue
+
+        # Effective status: most restrictive of page + directory
+        page_status = page.in_llms_txt
+        if _rank.get(dir_status, 2) > _rank.get(page_status, 0):
+            effective = dir_status
+        else:
+            effective = page_status
+
+        if effective == "exclude":
+            continue
+
+        if effective == "optional":
             optional_pages.append(page)
         else:
             dir_title = page.directory.title if page.directory else "Root"

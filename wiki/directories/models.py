@@ -19,6 +19,11 @@ class Directory(models.Model):
         RESTRICTED = "restricted", "Restricted"
         INTERNAL = "internal", "FLP Staff"
 
+    class LlmsTxtStatus(models.TextChoices):
+        EXCLUDE = "exclude", "No"
+        INCLUDE = "include", "Yes"
+        OPTIONAL = "optional", "On request"
+
     path = models.CharField(
         max_length=500,
         unique=True,
@@ -51,6 +56,18 @@ class Directory(models.Model):
         max_length=10,
         choices=Editability.choices,
         default=Editability.RESTRICTED,
+    )
+    in_sitemap = models.BooleanField(
+        default=True,
+        help_text="Include this directory in the sitemap.xml file. "
+        "Excluding a directory also excludes all its children.",
+    )
+    in_llms_txt = models.CharField(
+        max_length=10,
+        choices=LlmsTxtStatus.choices,
+        default=LlmsTxtStatus.EXCLUDE,
+        help_text="Whether to list this directory's pages in llms.txt. "
+        "Excluding a directory also excludes all its children.",
     )
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,

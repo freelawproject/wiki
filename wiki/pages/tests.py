@@ -909,7 +909,7 @@ class TestSeedHelpPages:
     def test_creates_help_pages(self, owner_user):
         call_command("seed_help_pages")
         help_dir = Directory.objects.get(path="help")
-        assert Page.objects.filter(directory=help_dir).count() == 11
+        assert Page.objects.filter(directory=help_dir).count() == 12
 
     def test_pages_are_public(self, owner_user):
         call_command("seed_help_pages")
@@ -927,7 +927,7 @@ class TestSeedHelpPages:
         call_command("seed_help_pages")
         call_command("seed_help_pages")
         help_dir = Directory.objects.get(path="help")
-        assert Page.objects.filter(directory=help_dir).count() == 11
+        assert Page.objects.filter(directory=help_dir).count() == 12
 
     def test_help_pages_accessible_via_url(self, client, owner_user):
         call_command("seed_help_pages")

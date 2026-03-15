@@ -36,6 +36,8 @@ class PageForm(forms.ModelForm):
             "title",
             "content",
             "seo_description",
+            "in_sitemap",
+            "in_llms_txt",
             "visibility",
             "editability",
             "change_message",
@@ -61,6 +63,8 @@ class PageForm(forms.ModelForm):
                     "autocomplete": "off",
                 }
             ),
+            "in_sitemap": forms.CheckboxInput(attrs={"class": "rounded"}),
+            "in_llms_txt": forms.Select(attrs={"class": "input-text"}),
             "visibility": forms.Select(attrs={"class": "input-text"}),
             "editability": forms.Select(attrs={"class": "input-text"}),
             "change_message": forms.TextInput(
@@ -77,9 +81,13 @@ class PageForm(forms.ModelForm):
         self.fields["change_message"].required = True
         self.fields["change_message"].widget.attrs["required"] = True
         self.fields["editability"].required = False
+        self.fields["in_llms_txt"].required = False
 
     def clean_editability(self):
         return self.cleaned_data.get("editability") or "restricted"
+
+    def clean_in_llms_txt(self):
+        return self.cleaned_data.get("in_llms_txt") or "exclude"
 
 
 class PagePermissionForm(forms.Form):

@@ -67,15 +67,32 @@
       {{ form.content }}
     </div>
 
-    <div>
-      <label for="id_seo_description" class="block text-sm font-medium mb-1">
-        SEO Description
-      </label>
-      {{ form.seo_description }}
-      <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
-        Short summary for search engines and llms.txt. If blank, auto-generated from first words of content.
-      </p>
-    </div>
+    <fieldset class="rounded-lg border border-gray-200 dark:border-gray-700 px-4 pb-3 pt-2 space-y-3">
+      <legend class="text-sm font-medium px-1">
+        Discoverability
+        <a href="/c/help/seo-guide" class="text-xs font-normal text-gray-500 dark:text-gray-400 underline ml-1">help</a>
+      </legend>
+      <div>
+        <label for="id_seo_description" class="block text-sm font-medium mb-1">SEO Description</label>
+        {{ form.seo_description }}
+        <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+          Summary for search engines and AI. If blank, auto-generated from content.
+        </p>
+      </div>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+          <label class="block text-sm font-medium mb-1">Include in search engines?</label>
+          <label class="inline-flex items-center gap-2 text-sm cursor-pointer">
+            {{ form.in_sitemap }}
+            Yes
+          </label>
+        </div>
+        <div>
+          <label for="id_in_llms_txt" class="block text-sm font-medium mb-1">Share with AI assistants?</label>
+          {{ form.in_llms_txt }}
+        </div>
+      </div>
+    </fieldset>
 
     <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
       <div>

@@ -46,7 +46,32 @@
       {{ form.description }}
     </div>
 
-    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+    {% if form.in_sitemap %}
+    <fieldset class="rounded-lg border border-gray-200 dark:border-gray-700 px-4 pb-3 pt-2">
+      <legend class="text-sm font-medium px-1">
+        Discoverability
+        <a href="/c/help/seo-guide" class="text-xs font-normal text-gray-500 dark:text-gray-400 underline ml-1">help</a>
+      </legend>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+          <label class="block text-sm font-medium mb-1">Include in search engines?</label>
+          <label class="inline-flex items-center gap-2 text-sm cursor-pointer">
+            {{ form.in_sitemap }}
+            Yes
+          </label>
+        </div>
+        <div>
+          <label for="id_in_llms_txt" class="block text-sm font-medium mb-1">Share with AI assistants?</label>
+          {{ form.in_llms_txt }}
+        </div>
+      </div>
+      <p class="text-xs text-gray-500 dark:text-gray-400 mt-3">
+        These settings apply to subdirectories and sub-pages unless overridden.
+      </p>
+    </fieldset>
+    {% endif %}
+
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
       <div>
         <label for="id_visibility" class="block text-sm font-medium mb-1">Visibility</label>
         {{ form.visibility }}
@@ -55,14 +80,13 @@
         <label for="id_editability" class="block text-sm font-medium mb-1">Editability</label>
         {{ form.editability }}
       </div>
+      {% if not creating %}
+      <div>
+        <label for="id_change_message" class="block text-sm font-medium mb-1">Change message</label>
+        {{ form.change_message }}
+      </div>
+      {% endif %}
     </div>
-
-    {% if not creating %}
-    <div>
-      <label for="id_change_message" class="block text-sm font-medium mb-1">Change message</label>
-      {{ form.change_message }}
-    </div>
-    {% endif %}
 
     <div class="flex gap-3">
       <button type="submit" class="btn-primary">
