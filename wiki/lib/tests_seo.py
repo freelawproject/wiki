@@ -505,6 +505,7 @@ class TestLlmsTxt:
             created_by=user,
             updated_by=user,
             visibility=Page.Visibility.PUBLIC,
+            in_llms_txt=Page.LlmsTxtStatus.INCLUDE,
         )
         response = client.get("/llms.txt")
         content = response.content.decode()
@@ -535,6 +536,7 @@ class TestLlmsTxt:
             created_by=user,
             updated_by=user,
             visibility=Page.Visibility.PUBLIC,
+            in_llms_txt=Page.LlmsTxtStatus.INCLUDE,
         )
         response = client.get("/llms.txt")
         content = response.content.decode()
@@ -545,7 +547,218 @@ class TestLlmsTxt:
         content = response.content.decode()
         assert content.startswith("# FLP Wiki")
 
+    def test_llms_txt_excludes_page_with_exclude_status(self, client, user):
+        Page.objects.create(
+            title="Excluded LLM Page",
+            slug="excluded-llm-page",
+            content="Some content.",
+            owner=user,
+            created_by=user,
+            updated_by=user,
+            visibility=Page.Visibility.PUBLIC,
+            in_llms_txt=Page.LlmsTxtStatus.EXCLUDE,
+        )
+        response = client.get("/llms.txt")
+        content = response.content.decode()
+        assert "Excluded LLM Page" not in content
+
+    def test_llms_txt_optional_page_in_optional_section(self, client, user):
+        Page.objects.create(
+            title="Optional LLM Page",
+            slug="optional-llm-page",
+            content="Some content.",
+            owner=user,
+            created_by=user,
+            updated_by=user,
+            visibility=Page.Visibility.PUBLIC,
+            in_llms_txt=Page.LlmsTxtStatus.OPTIONAL,
+        )
+        response = client.get("/llms.txt")
+        content = response.content.decode()
+        assert "Optional LLM Page" in content
+        # Should be after the Optional heading
+        assert "## Optional" in content
+        optional_pos = content.index("## Optional")
+        page_pos = content.index("Optional LLM Page")
+        assert page_pos > optional_pos
+
+    def test_llms_txt_directory_exclude_cascades(self, client, user):
+        """A page with in_llms_txt=include is excluded when its dir excludes."""
+        root = Directory.objects.get_or_create(
+            path="",
+            defaults={
+                "title": "Home",
+                "visibility": Directory.Visibility.PUBLIC,
+            },
+        )[0]
+        excluded_dir = Directory.objects.create(
+            path="no-llm",
+            title="No LLM",
+            parent=root,
+            visibility=Directory.Visibility.PUBLIC,
+            in_llms_txt=Directory.LlmsTxtStatus.EXCLUDE,
+        )
+        Page.objects.create(
+            title="Cascade Excluded Page",
+            slug="cascade-excluded",
+            content="Content.",
+            directory=excluded_dir,
+            owner=user,
+            created_by=user,
+            updated_by=user,
+            visibility=Page.Visibility.PUBLIC,
+            in_llms_txt=Page.LlmsTxtStatus.INCLUDE,
+        )
+        response = client.get("/llms.txt")
+        content = response.content.decode()
+        assert "Cascade Excluded Page" not in content
+
+    def test_llms_txt_directory_optional_downgrades_include(
+        self, client, user
+    ):
+        """A page with include is downgraded to optional when dir is optional."""
+        root = Directory.objects.get_or_create(
+            path="",
+            defaults={
+                "title": "Home",
+                "visibility": Directory.Visibility.PUBLIC,
+            },
+        )[0]
+        optional_dir = Directory.objects.create(
+            path="opt-dir",
+            title="Opt Dir",
+            parent=root,
+            visibility=Directory.Visibility.PUBLIC,
+            in_llms_txt=Directory.LlmsTxtStatus.OPTIONAL,
+        )
+        Page.objects.create(
+            title="Downgraded Page",
+            slug="downgraded-page",
+            content="Content.",
+            directory=optional_dir,
+            owner=user,
+            created_by=user,
+            updated_by=user,
+            visibility=Page.Visibility.PUBLIC,
+            in_llms_txt=Page.LlmsTxtStatus.INCLUDE,
+        )
+        response = client.get("/llms.txt")
+        content = response.content.decode()
+        assert "Downgraded Page" in content
+        # Should appear in Optional section, not main
+        assert "## Optional" in content
+        optional_pos = content.index("## Optional")
+        page_pos = content.index("Downgraded Page")
+        assert page_pos > optional_pos
+
     def test_robots_txt_allows_llms_txt(self, client):
         response = client.get("/robots.txt")
         content = response.content.decode()
         assert "Allow: /llms.txt" in content
+
+
+# ── Sitemap in_sitemap controls ─────────────────────────────────────
+
+
+@pytest.mark.django_db
+class TestSitemapInSitemapField:
+    def test_page_excluded_when_in_sitemap_false(self, client, user):
+        Page.objects.create(
+            title="No Sitemap Page",
+            slug="no-sitemap-page",
+            content="Content.",
+            owner=user,
+            created_by=user,
+            updated_by=user,
+            visibility=Page.Visibility.PUBLIC,
+            in_sitemap=False,
+        )
+        response = client.get("/sitemap.xml")
+        content = response.content.decode()
+        assert "no-sitemap-page" not in content
+
+    def test_page_included_when_in_sitemap_true(self, client, user):
+        Page.objects.create(
+            title="Sitemap Page",
+            slug="sitemap-page",
+            content="Content.",
+            owner=user,
+            created_by=user,
+            updated_by=user,
+            visibility=Page.Visibility.PUBLIC,
+            in_sitemap=True,
+        )
+        response = client.get("/sitemap.xml")
+        content = response.content.decode()
+        assert "sitemap-page" in content
+
+    def test_directory_in_sitemap_false_excludes_children(self, client, user):
+        root = Directory.objects.get_or_create(
+            path="",
+            defaults={
+                "title": "Home",
+                "visibility": Directory.Visibility.PUBLIC,
+            },
+        )[0]
+        no_sitemap_dir = Directory.objects.create(
+            path="hidden-dir",
+            title="Hidden Dir",
+            parent=root,
+            visibility=Directory.Visibility.PUBLIC,
+            in_sitemap=False,
+        )
+        Page.objects.create(
+            title="Hidden Child Page",
+            slug="hidden-child",
+            content="Content.",
+            directory=no_sitemap_dir,
+            owner=user,
+            created_by=user,
+            updated_by=user,
+            visibility=Page.Visibility.PUBLIC,
+            in_sitemap=True,
+        )
+        response = client.get("/sitemap.xml")
+        content = response.content.decode()
+        assert "hidden-child" not in content
+        assert "hidden-dir" not in content
+
+    def test_directory_in_sitemap_false_cascades_to_subdirs(
+        self, client, user
+    ):
+        root = Directory.objects.get_or_create(
+            path="",
+            defaults={
+                "title": "Home",
+                "visibility": Directory.Visibility.PUBLIC,
+            },
+        )[0]
+        excluded = Directory.objects.create(
+            path="excl",
+            title="Excluded",
+            parent=root,
+            visibility=Directory.Visibility.PUBLIC,
+            in_sitemap=False,
+        )
+        child = Directory.objects.create(
+            path="excl/child",
+            title="Child",
+            parent=excluded,
+            visibility=Directory.Visibility.PUBLIC,
+            in_sitemap=True,
+        )
+        Page.objects.create(
+            title="Deep Page",
+            slug="deep-page",
+            content="Content.",
+            directory=child,
+            owner=user,
+            created_by=user,
+            updated_by=user,
+            visibility=Page.Visibility.PUBLIC,
+            in_sitemap=True,
+        )
+        response = client.get("/sitemap.xml")
+        content = response.content.decode()
+        assert "deep-page" not in content
+        assert "excl/child" not in content
