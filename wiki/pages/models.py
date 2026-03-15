@@ -28,6 +28,11 @@ class Page(models.Model):
         RESTRICTED = "restricted", "Restricted"
         INTERNAL = "internal", "FLP Staff"
 
+    class LlmsTxtStatus(models.TextChoices):
+        EXCLUDE = "exclude", "No"
+        INCLUDE = "include", "Yes"
+        OPTIONAL = "optional", "On request"
+
     title = models.CharField(max_length=255)
     slug = models.SlugField(max_length=255)
     content = models.TextField(blank=True)
@@ -59,6 +64,16 @@ class Page(models.Model):
         blank=True,
         help_text="Short summary for search engines and llms.txt. "
         "If blank, auto-generated from first words of content.",
+    )
+    in_sitemap = models.BooleanField(
+        default=True,
+        help_text="Include this page in the sitemap.xml file.",
+    )
+    in_llms_txt = models.CharField(
+        max_length=10,
+        choices=LlmsTxtStatus.choices,
+        default=LlmsTxtStatus.EXCLUDE,
+        help_text="Whether to list this page in llms.txt.",
     )
     change_message = models.CharField(max_length=500, blank=True)
     is_pinned = models.BooleanField(
