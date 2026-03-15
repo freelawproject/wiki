@@ -156,8 +156,8 @@ one up.
 
 **SEO and discoverability**
 
-- #seo-guide — SEO descriptions, Article JSON-LD, canonical URLs,
-  sitemaps, robots.txt, llms.txt, and raw markdown for LLMs
+- #seo-guide — SEO descriptions, sitemap.xml and llms.txt controls,
+  Article JSON-LD, canonical URLs, robots.txt, and raw markdown for LLMs
 """,
     },
     {
@@ -1248,16 +1248,88 @@ Public pages include two types of JSON-LD structured data:
 Private and internal pages do not include any structured data and
 are marked with `noindex` to prevent search engine indexing.
 
-### Sitemap
+### What is sitemap.xml?
 
-The wiki serves a sitemap at [/sitemap.xml](/sitemap.xml). It
-includes all public pages and directories, **but only when the
-entire directory ancestry is public**. A public page inside a
-private or internal directory is excluded from the sitemap, because
-anonymous visitors cannot actually access it.
+A sitemap is a file that lists all the pages on a website so that
+search engines like Google and Bing can find and index them. Without
+a sitemap, search engines have to discover pages by following links,
+which means some pages might be missed. The wiki automatically
+generates a sitemap at [/sitemap.xml](/sitemap.xml).
 
-The sitemap is automatically marked `noindex` by Django (search
-engines should follow its links, not index the XML file itself).
+**How it works:**
+
+- Only **public** pages and directories are included
+- The entire directory ancestry must be public — a public page
+  inside a private or internal directory is automatically excluded
+- Pages and directories with **Include in search engines?** unchecked
+  are excluded, along with all their children
+- The sitemap is automatically marked `noindex` by Django (search
+  engines follow its links, not index the XML file itself)
+
+**Controlling sitemap inclusion:**
+
+Both pages and directories have an **Include in search engines?**
+checkbox on their edit forms. This setting is **hierarchical** —
+if you exclude a directory from the sitemap, all pages and
+subdirectories inside it are also excluded, regardless of their
+own setting. This works like the visibility system: a child cannot
+be more visible than its parent.
+
+The root directory always appears in the sitemap and cannot be
+excluded.
+
+### What is llms.txt?
+
+[llms.txt](https://llmstxt.org/) is a standard file (like
+robots.txt) that helps AI assistants — such as ChatGPT, Claude, and
+other large language models — discover and understand your content.
+While a sitemap helps search engines, llms.txt is specifically
+designed for AI crawlers. The wiki serves this file at
+[/llms.txt](/llms.txt).
+
+The file lists pages grouped by directory, with each entry linking
+to the raw Markdown (`.md`) version of the page:
+
+```
+# FLP Wiki
+
+> Free Law Project's wiki covering legal technology, open legal
+> data, and organizational knowledge.
+
+## Engineering
+
+- [CI Pipeline](https://wiki.free.law/c/engineering/ci-pipeline.md): How our CI works
+
+## Optional
+
+- [Getting Started](https://wiki.free.law/c/help/getting-started-guide.md): Intro guide
+```
+
+Each entry uses the page's SEO description if set, or an
+auto-extracted summary from the content. The llms.txt file itself
+has `X-Robots-Tag: noindex` so search engines don't index it.
+
+**Controlling llms.txt inclusion:**
+
+Both pages and directories have a **Share with AI assistants?**
+setting with three options:
+
+- **Yes** — the page appears in the main section of llms.txt
+- **On request** — the page appears in the "Optional" section,
+  signaling to AI assistants that this content is supplementary
+  and should be fetched only when relevant
+- **No** — the page does not appear in llms.txt at all
+
+This setting is **hierarchical**, like the sitemap control. If a
+directory is set to "No", none of its pages or subdirectories
+will appear in llms.txt regardless of their own setting. If a
+directory is set to "On request", its children can be "On request"
+or "No" but not "Yes" — the most restrictive value in the
+chain always wins.
+
+The default for new pages and directories is **No**. Change it
+to "Yes" or "On request" on content you want AI assistants to
+find.
 
 ### robots.txt
 
@@ -1283,32 +1355,6 @@ what they can and cannot access:
 The robots.txt also includes a `Sitemap:` directive pointing
 crawlers to the sitemap.
 
-### llms.txt
-
-The wiki serves an [/llms.txt](/llms.txt) file following the
-[llmstxt.org](https://llmstxt.org/) specification. This is an
-index designed for LLM crawlers (like those from Anthropic and
-OpenAI) to efficiently discover wiki content.
-
-The file lists all public pages grouped by directory, with each
-entry linking to the raw Markdown (`.md`) version of the page:
-
-```
-# FLP Wiki
-
-> Free Law Project's wiki covering legal technology, open legal
-> data, and organizational knowledge.
-
-## Engineering
-
-- [CI Pipeline](https://wiki.free.law/c/engineering/ci-pipeline.md): How our CI works
-- [Coding Standards](https://wiki.free.law/c/engineering/coding-standards.md): Use ruff
-```
-
-Each entry uses the page's SEO description if set, or an
-auto-extracted summary from the content. The llms.txt file itself
-has `X-Robots-Tag: noindex` so search engines don't index it.
-
 ### What editors should know
 
 - **Set SEO descriptions** on important public pages — a concise,
@@ -1316,8 +1362,12 @@ has `X-Robots-Tag: noindex` so search engines don't index it.
 - **Visibility matters** — only public pages in fully-public
   directory chains appear in the sitemap and llms.txt. Private and
   internal pages are automatically excluded and marked `noindex`
+- **Discoverability settings are hierarchical** — excluding
+  a directory removes the entire subtree. You cannot include a
+  child if a parent is excluded. Settings apply to subdirectories
+  and sub-pages unless overridden
 - **You don't need to do anything** for canonical URLs, JSON-LD,
-  sitemap inclusion, or robots.txt — these are all automatic
+  or robots.txt — these are all automatic
 - **Page titles** are used as the `og:title` and Article headline,
   so write clear, descriptive titles
 """,
