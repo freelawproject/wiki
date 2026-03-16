@@ -624,7 +624,7 @@ class TestSitemapInSitemapField:
             created_by=user,
             updated_by=user,
             visibility=Page.Visibility.PUBLIC,
-            in_sitemap=False,
+            in_sitemap="exclude",
         )
         response = client.get("/sitemap.xml")
         content = response.content.decode()
@@ -645,7 +645,11 @@ class TestSitemapInSitemapField:
         content = response.content.decode()
         assert "sitemap-page" in content
 
-    def test_directory_in_sitemap_false_excludes_children(self, client, user):
+    def test_inheriting_page_excluded_when_directory_excluded(
+        self, client, user
+    ):
+        """A page with in_sitemap='inherit' in an excluded directory
+        does not appear in the sitemap."""
         root = Directory.objects.get_or_create(
             path="",
             defaults={
@@ -658,27 +662,26 @@ class TestSitemapInSitemapField:
             title="Hidden Dir",
             parent=root,
             visibility=Directory.Visibility.PUBLIC,
-            in_sitemap=False,
+            in_sitemap="exclude",
         )
         Page.objects.create(
-            title="Hidden Child Page",
-            slug="hidden-child",
+            title="Inheriting Child",
+            slug="inheriting-child",
             content="Content.",
             directory=no_sitemap_dir,
             owner=user,
             created_by=user,
             updated_by=user,
             visibility=Page.Visibility.PUBLIC,
-            in_sitemap=True,
+            in_sitemap="inherit",
         )
         response = client.get("/sitemap.xml")
         content = response.content.decode()
-        assert "hidden-child" not in content
-        assert "hidden-dir" not in content
+        assert "inheriting-child" not in content
 
-    def test_directory_in_sitemap_false_cascades_to_subdirs(
-        self, client, user
-    ):
+    def test_explicit_include_overrides_directory_exclude(self, client, user):
+        """A page with explicit in_sitemap='include' appears in the
+        sitemap even if its directory is excluded."""
         root = Directory.objects.get_or_create(
             path="",
             defaults={
@@ -686,32 +689,24 @@ class TestSitemapInSitemapField:
                 "visibility": Directory.Visibility.PUBLIC,
             },
         )[0]
-        excluded = Directory.objects.create(
-            path="excl",
-            title="Excluded",
+        excluded_dir = Directory.objects.create(
+            path="excl-dir",
+            title="Excluded Dir",
             parent=root,
             visibility=Directory.Visibility.PUBLIC,
-            in_sitemap=False,
-        )
-        child = Directory.objects.create(
-            path="excl/child",
-            title="Child",
-            parent=excluded,
-            visibility=Directory.Visibility.PUBLIC,
-            in_sitemap=True,
+            in_sitemap="exclude",
         )
         Page.objects.create(
-            title="Deep Page",
-            slug="deep-page",
+            title="Override Page",
+            slug="override-page",
             content="Content.",
-            directory=child,
+            directory=excluded_dir,
             owner=user,
             created_by=user,
             updated_by=user,
             visibility=Page.Visibility.PUBLIC,
-            in_sitemap=True,
+            in_sitemap="include",
         )
         response = client.get("/sitemap.xml")
         content = response.content.decode()
-        assert "deep-page" not in content
-        assert "excl/child" not in content
+        assert "override-page" in content
