@@ -393,6 +393,32 @@ Both pages **and** directories have a visibility setting:
    directory and all pages and subdirectories within it
    (for users or groups)
 
+### How settings inherit
+
+Every page and directory has four settings: **visibility**,
+**editability**, **search engine inclusion** (sitemap), and
+**AI sharing** (llms.txt). All four work the same way:
+
+- **Inherit** (default) — the setting resolves from the nearest
+  ancestor directory that has an explicit value. The edit form
+  shows what you'll get, e.g. "Private (Inherited from Legal)".
+- **Explicit override** — pick any value and it takes effect
+  directly, regardless of what ancestors have set.
+
+The root directory always has explicit values since there's
+nothing above it to inherit from.
+
+| Setting | Options | What it controls |
+|---|---|---|
+| **Visibility** | Public, FLP Staff, Private | Who can view |
+| **Editability** | Restricted, FLP Staff | Who can edit |
+| **Search engines** | Yes, No | Sitemap inclusion |
+| **AI sharing** | Yes, On request, No | llms.txt inclusion |
+
+When you change a directory's setting, every page and
+subdirectory that inherits from it automatically follows.
+Items with explicit overrides are unaffected.
+
 ### Directories as gates
 
 Directories act as access gates. A private directory hides its
@@ -407,39 +433,18 @@ Specifically:
 - Private subdirectories are hidden from directory listings
 - A **private page** inside a private directory requires access
   to *both* the directory and the page
-- A **public page** is always viewable, even if its directory
-  is private (public means public)
-
-### Pages can't be more open than their directory
-
-A page in a private directory cannot be set to public. This
-prevents accidentally exposing content that the directory is
-meant to protect. If you try to:
-
-- **Create** a public page in a private directory — you'll get
-  an error asking you to keep the page private
-- **Edit** a page to public when it's in a private directory —
-  same error
-- **Move** a public page into a private directory — blocked with
-  a message to change the page to private first
-
-To make a page public, first make its directory public (or move
-the page to a public directory).
-
-### Default visibility
-
-When you create a new page in a directory, the visibility
-defaults to match the directory. A new page in a private
-directory will default to private, saving you from having to
-change it manually.
+- A page with an explicit **Public** visibility override is
+  always viewable via its direct URL, even inside a private
+  directory (though it won't appear in the directory listing
+  for users who can't access the directory)
 
 ### Directory permission inheritance
 
-Permissions on a directory cascade down to all pages within it
-and to child directories. For example, if a user (or a group
-they belong to) has **Edit** permission on the "Engineering"
-directory, they can edit any page in that directory and its
-subdirectories.
+Permission grants on a directory cascade down to all pages
+within it and to child directories. For example, if a user
+(or a group they belong to) has **Edit** permission on the
+"Engineering" directory, they can edit any page in that
+directory and its subdirectories.
 
 Access to a parent directory also implies access to its child
 directories. So if you grant someone View on "Engineering",
@@ -448,18 +453,18 @@ directory is private and they have no grant on it specifically).
 
 ### Applying permissions recursively
 
-When you set up permissions on a directory, you can copy those
-permissions to all child pages and subdirectories at once.
-From the directory's **Permissions** page, click **Apply to
-children**. You'll see two options:
+From a directory's **Permissions** page, click **Apply to
+children** to set all child items to **Inherit** and copy the
+directory's permission grants. You'll see two options:
 
-- **Apply to direct pages only** — Sets the visibility and
-  copies permission grants to pages directly in this directory
-- **Apply recursively** — Does the same for all pages *and*
+- **Apply to direct pages only** — sets inheritance and copies
+  grants to pages directly in this directory
+- **Apply recursively** — does the same for all pages *and*
   subdirectories at every level below
 
-This is additive — existing permissions on child items are
-kept; the directory's permissions are added on top.
+This is additive — existing permission grants on child items
+are kept; the directory's grants are added on top. Settings
+are reset to Inherit so they follow the directory.
 
 ### Groups
 
@@ -522,14 +527,6 @@ This is useful for pages that should be broadly collaborative —
 for example, team wikis or shared documentation where anyone at
 FLP should be able to contribute.
 
-**Important constraint**: A page or directory cannot be set to
-"FLP Staff" editability if its visibility is "Private". This prevents
-granting edit access to users who can't even view the content.
-
-When you apply permissions recursively from a directory, the
-editability setting is also propagated to all child pages and
-subdirectories.
-
 ### Best practices
 
 - Use **Public** for documentation that should be widely accessible
@@ -538,9 +535,9 @@ subdirectories.
 - Use **Private directories** with group permissions for team
   spaces (e.g., grant the Engineering group Edit on `/c/engineering/`)
 - Use **Apply to children** after setting up directory permissions
-  to propagate them to existing pages
-- Use page-level permissions when only specific people need access
-  to a particular page
+  to reset inheritance and propagate grants
+- Use page-level permission overrides when only specific pages
+  need different settings from their directory
 - Prefer group-based permissions over per-user grants — they're
   easier to manage as people join and leave teams
 """,
@@ -1258,25 +1255,22 @@ generates a sitemap at [/sitemap.xml](/sitemap.xml).
 
 **How it works:**
 
-- Only **public** pages and directories are included
-- The entire directory ancestry must be public — a public page
-  inside a private or internal directory is automatically excluded
-- Pages and directories with **Include in search engines?** unchecked
-  are excluded, along with all their children
+- Only pages whose effective visibility is **Public** are included
+- Only pages whose effective sitemap setting is **Yes** are included
+- By default, pages and directories inherit these settings from
+  their parent directory (see #permissions-guide for details on
+  how settings inherit)
+- A page can override its inherited settings — for example, a page
+  can explicitly set itself to Public even if its directory is Private
 - The sitemap is automatically marked `noindex` by Django (search
   engines follow its links, not index the XML file itself)
 
 **Controlling sitemap inclusion:**
 
 Both pages and directories have an **Include in search engines?**
-checkbox on their edit forms. This setting is **hierarchical** —
-if you exclude a directory from the sitemap, all pages and
-subdirectories inside it are also excluded, regardless of their
-own setting. This works like the visibility system: a child cannot
-be more visible than its parent.
-
-The root directory always appears in the sitemap and cannot be
-excluded.
+dropdown on their edit forms. By default this is set to **Inherit**,
+meaning the page follows its parent directory's setting. You can
+override it to **Yes** or **No** for any individual item.
 
 ### What is llms.txt?
 
@@ -1320,16 +1314,10 @@ setting with three options:
   and should be fetched only when relevant
 - **No** — the page does not appear in llms.txt at all
 
-This setting is **hierarchical**, like the sitemap control. If a
-directory is set to "No", none of its pages or subdirectories
-will appear in llms.txt regardless of their own setting. If a
-directory is set to "On request", its children can be "On request"
-or "No" but not "Yes" — the most restrictive value in the
-chain always wins.
-
-The default for new pages and directories is **No**. Change it
-to "Yes" or "On request" on content you want AI assistants to
-find.
+Like all settings, this defaults to **Inherit** — the page follows
+its parent directory's setting. You can override it on any
+individual page or directory. Change it to "Yes" or "On request"
+on content you want AI assistants to find.
 
 ### robots.txt
 
@@ -1359,13 +1347,10 @@ crawlers to the sitemap.
 
 - **Set SEO descriptions** on important public pages — a concise,
   hand-written summary outperforms auto-generated ones
-- **Visibility matters** — only public pages in fully-public
-  directory chains appear in the sitemap and llms.txt. Private and
-  internal pages are automatically excluded and marked `noindex`
-- **Discoverability settings are hierarchical** — excluding
-  a directory removes the entire subtree. You cannot include a
-  child if a parent is excluded. Settings apply to subdirectories
-  and sub-pages unless overridden
+- **Settings inherit by default** — new pages and directories
+  inherit visibility, sitemap, and llms.txt settings from their
+  parent directory. Override any setting on an individual item
+  when needed. See #permissions-guide for the full inheritance model
 - **You don't need to do anything** for canonical URLs, JSON-LD,
   or robots.txt — these are all automatic
 - **Page titles** are used as the `og:title` and Article headline,
