@@ -6,6 +6,7 @@ from django.http import HttpResponse
 from django.template.loader import render_to_string
 from django.urls import reverse
 
+from wiki.directories.models import Directory
 from wiki.lib.inheritance import resolve_all_directory_settings
 from wiki.lib.seo import extract_description
 from wiki.lib.sitemap import (
@@ -83,6 +84,36 @@ def robots_txt(request):
     return HttpResponse("\n".join(lines), content_type="text/plain")
 
 
+def _directory_full_titles():
+    """Build a dict mapping directory ID to its full ancestor title path.
+
+    E.g. a directory "Foobar" under "Dev Guide" under "CourtListener"
+    returns "CourtListener / Dev Guide / Foobar".
+    The root directory (path="") is excluded from the path.
+    """
+    dirs = Directory.objects.values_list("id", "title", "parent_id")
+    title_map = {}
+    parent_map = {}
+    for dir_id, title, parent_id in dirs:
+        title_map[dir_id] = title
+        parent_map[dir_id] = parent_id
+
+    result = {}
+    for dir_id in title_map:
+        parts = []
+        current = dir_id
+        while current is not None:
+            parts.append(title_map[current])
+            current = parent_map.get(current)
+        parts.reverse()
+        # Drop the root directory title (first element, path="")
+        if len(parts) > 1:
+            result[dir_id] = " / ".join(parts[1:])
+        else:
+            result[dir_id] = title_map[dir_id]
+    return result
+
+
 def _llms_txt_entry(page, base_url):
     """Format a single llms.txt entry line."""
     desc = page.seo_description or extract_description(
@@ -135,6 +166,8 @@ def llms_txt(request):
         .order_by("directory__path", "title")
     )
 
+    dir_full_titles = _directory_full_titles()
+
     by_dir = defaultdict(list)
     optional_pages = []
     for page in pages:
@@ -154,8 +187,10 @@ def llms_txt(request):
         if effective == "optional":
             optional_pages.append(page)
         else:
-            dir_title = page.directory.title if page.directory else "Root"
-            by_dir[dir_title].append(page)
+            dir_heading = (
+                dir_full_titles.get(dir_id, "Root") if dir_id else "Root"
+            )
+            by_dir[dir_heading].append(page)
 
     lines = [
         "# FLP Wiki",
