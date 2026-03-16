@@ -23,6 +23,7 @@ from wiki.lib.edit_lock import (
     get_active_lock_for_page,
     release_lock_for_page,
 )
+from wiki.lib.inheritance import resolve_effective_value
 from wiki.lib.markdown import render_markdown
 from wiki.lib.path_utils import page_path_conflicts_with_directory
 from wiki.lib.permissions import (
@@ -30,8 +31,6 @@ from wiki.lib.permissions import (
     can_edit_page,
     can_view_directory,
     can_view_page,
-    is_editability_more_open_than_visibility,
-    is_more_open_than,
     is_system_owner,
     viewable_pages_q,
 )
@@ -144,8 +143,10 @@ def _resolve_or_create_directory(dir_path, user):
                 "parent": parent,
                 "owner": user,
                 "created_by": user,
-                "visibility": parent.visibility,
-                "editability": parent.editability,
+                "visibility": "inherit",
+                "editability": "inherit",
+                "in_sitemap": "inherit",
+                "in_llms_txt": "inherit",
             },
         )
         if created:
@@ -345,7 +346,8 @@ def _render_page_detail(request, page):
         ).count()
 
     # SEO
-    is_public = page.visibility == Page.Visibility.PUBLIC
+    eff_visibility, _ = resolve_effective_value(page, "visibility")
+    is_public = eff_visibility == "public"
     page_description = page.seo_description or extract_description(
         page.content
     )
@@ -418,12 +420,7 @@ def page_create(request, path=""):
             breadcrumbs.append((directory.title, directory.get_absolute_url()))
     breadcrumbs.append(("New Page", ""))
 
-    # Default visibility to match parent directory
-    initial = {}
-    if directory and directory.visibility != Directory.Visibility.PUBLIC:
-        initial["visibility"] = directory.visibility
-
-    form = PageForm(request.POST or None, initial=initial)
+    form = PageForm(request.POST or None, directory=directory)
     if request.method == "POST" and form.is_valid():
         page = form.save(commit=False)
 
@@ -435,54 +432,6 @@ def page_create(request, path=""):
             )
         else:
             page.directory = directory
-
-        # Validate: page can't be more open than its directory
-        if page.directory and is_more_open_than(
-            page.visibility, page.directory.visibility
-        ):
-            messages.error(
-                request,
-                "A page cannot be more open than its directory. "
-                "Change the directory visibility first, or use a "
-                "more restrictive setting for this page.",
-            )
-            return render(
-                request,
-                "pages/form.html",
-                {
-                    "form": form,
-                    "directory": directory,
-                    "editing": False,
-                    "breadcrumbs": breadcrumbs,
-                    "dir_segments_json": json.dumps(
-                        _build_dir_segments(directory)
-                    ),
-                },
-            )
-
-        # Validate: FLP Staff editability + Private visibility is invalid
-        if is_editability_more_open_than_visibility(
-            page.editability, page.visibility
-        ):
-            messages.error(
-                request,
-                "A page cannot have FLP Staff editability when its "
-                "visibility is Private. Change the visibility first, "
-                "or use Restricted editability.",
-            )
-            return render(
-                request,
-                "pages/form.html",
-                {
-                    "form": form,
-                    "directory": directory,
-                    "editing": False,
-                    "breadcrumbs": breadcrumbs,
-                    "dir_segments_json": json.dumps(
-                        _build_dir_segments(directory)
-                    ),
-                },
-            )
 
         page.owner = request.user
         page.created_by = request.user
@@ -512,6 +461,7 @@ def page_create(request, path=""):
             "editing": False,
             "breadcrumbs": breadcrumbs,
             "dir_segments_json": json.dumps(_build_dir_segments(directory)),
+            "inherit_meta": getattr(form, "inherit_meta", {}),
         },
     )
 
@@ -555,7 +505,12 @@ def page_edit(request, path):
         acquire_lock_for_page(page, request.user)
 
     old_slug = page.slug
-    form = PageForm(request.POST or None, instance=page, editing=True)
+    form = PageForm(
+        request.POST or None,
+        instance=page,
+        editing=True,
+        directory=page.directory,
+    )
     if request.method != "POST":
         form.initial["change_message"] = ""
     if request.method == "POST" and form.is_valid():
@@ -570,54 +525,6 @@ def page_edit(request, path):
             )
         else:
             page.directory = None
-
-        # Validate: page can't be more open than its directory
-        if page.directory and is_more_open_than(
-            page.visibility, page.directory.visibility
-        ):
-            messages.error(
-                request,
-                "A page cannot be more open than its directory. "
-                "Change the directory visibility first, or use a "
-                "more restrictive setting for this page.",
-            )
-            return render(
-                request,
-                "pages/form.html",
-                {
-                    "form": form,
-                    "page": page,
-                    "editing": True,
-                    "breadcrumbs": breadcrumbs,
-                    "dir_segments_json": json.dumps(
-                        _build_dir_segments(page.directory)
-                    ),
-                },
-            )
-
-        # Validate: FLP Staff editability + Private visibility is invalid
-        if is_editability_more_open_than_visibility(
-            page.editability, page.visibility
-        ):
-            messages.error(
-                request,
-                "A page cannot have FLP Staff editability when its "
-                "visibility is Private. Change the visibility first, "
-                "or use Restricted editability.",
-            )
-            return render(
-                request,
-                "pages/form.html",
-                {
-                    "form": form,
-                    "page": page,
-                    "editing": True,
-                    "breadcrumbs": breadcrumbs,
-                    "dir_segments_json": json.dumps(
-                        _build_dir_segments(page.directory)
-                    ),
-                },
-            )
 
         page.save()
 
@@ -660,6 +567,7 @@ def page_edit(request, path):
             "dir_segments_json": json.dumps(
                 _build_dir_segments(page.directory)
             ),
+            "inherit_meta": getattr(form, "inherit_meta", {}),
         },
     )
 
@@ -684,22 +592,6 @@ def page_move(request, path):
 
     if request.method == "POST" and form.is_valid():
         new_directory = form.cleaned_data["directory"]
-
-        # Validate: page can't be more open than its new directory
-        if new_directory and is_more_open_than(
-            page.visibility, new_directory.visibility
-        ):
-            messages.error(
-                request,
-                "Cannot move a page into a more restrictive directory. "
-                "Change the page visibility first, or choose a "
-                "directory that matches.",
-            )
-            return render(
-                request,
-                "pages/move.html",
-                {"form": form, "page": page},
-            )
 
         if page_path_conflicts_with_directory(page.slug, new_directory):
             messages.error(
@@ -1025,7 +917,10 @@ def check_page_permissions(request):
     users_without_access = []
     page = Page.objects.filter(slug=page_slug).first()
 
-    if page and page.visibility != Page.Visibility.PUBLIC:
+    page_eff_vis = None
+    if page:
+        page_eff_vis, _ = resolve_effective_value(page, "visibility")
+    if page and page_eff_vis != "public":
         for uname in usernames:
             email = f"{uname}@free.law"
             user = User.objects.filter(email=email).first()
@@ -1039,16 +934,18 @@ def check_page_permissions(request):
 
     # Check linked pages
     restrictive_links = []
+    _openness = {"private": 0, "internal": 1, "public": 2}
     if linked_slugs and page:
-        current_visibility = page.visibility
+        current_vis, _ = resolve_effective_value(page, "visibility")
         for slug in set(linked_slugs):
             if slug == page_slug:
                 continue
             linked = Page.objects.filter(slug=slug).first()
             if not linked:
                 continue
+            linked_vis, _ = resolve_effective_value(linked, "visibility")
             # Flag if current page is more open than the linked page
-            if is_more_open_than(current_visibility, linked.visibility):
+            if _openness.get(current_vis, 0) > _openness.get(linked_vis, 0):
                 restrictive_links.append(
                     {
                         "slug": linked.slug,
