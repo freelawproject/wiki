@@ -13,13 +13,13 @@ from wiki.lib.edit_lock import (
     get_active_lock_for_directory,
     release_lock_for_directory,
 )
+from wiki.lib.inheritance import resolve_effective_value
 from wiki.lib.markdown import render_markdown
 from wiki.lib.path_utils import directory_path_conflicts_with_page
 from wiki.lib.permissions import (
     can_edit_directory,
     can_view_directory,
     can_view_page,
-    is_editability_more_open_than_visibility,
 )
 from wiki.lib.ratelimiter import ratelimit_search
 from wiki.lib.seo import build_breadcrumbs_jsonld, extract_description
@@ -127,8 +127,8 @@ def root_view(request):
     if root.description:
         rendered_description = render_markdown(root.description)
 
-    # SEO
-    is_public = root.visibility == Directory.Visibility.PUBLIC
+    # SEO — root always has explicit values, but use resolve for consistency
+    is_public = root.visibility == "public"
     breadcrumbs = [("Home", reverse("root"))]
     directory_description = extract_description(root.description)
     breadcrumbs_json = ""
@@ -214,7 +214,12 @@ def directory_edit_root(request):
     return render(
         request,
         "directories/form.html",
-        {"form": form, "directory": root, "breadcrumbs": breadcrumbs},
+        {
+            "form": form,
+            "directory": root,
+            "breadcrumbs": breadcrumbs,
+            "inherit_meta": getattr(form, "inherit_meta", {}),
+        },
     )
 
 
@@ -246,7 +251,8 @@ def directory_detail(request, path):
         rendered_description = render_markdown(directory.description)
 
     # SEO
-    is_public = directory.visibility == Directory.Visibility.PUBLIC
+    eff_visibility, _ = resolve_effective_value(directory, "visibility")
+    is_public = eff_visibility == "public"
     breadcrumbs = directory.get_breadcrumbs()
     directory_description = extract_description(directory.description)
     breadcrumbs_json = ""
@@ -324,23 +330,6 @@ def directory_edit(request, path):
 
     form = DirectoryForm(request.POST or None, instance=directory)
     if request.method == "POST" and form.is_valid():
-        # Validate: FLP Staff editability + Private visibility is invalid
-        if is_editability_more_open_than_visibility(
-            form.cleaned_data["editability"],
-            form.cleaned_data["visibility"],
-        ):
-            messages.error(
-                request,
-                "A directory cannot have FLP Staff editability when "
-                "its visibility is Private. Change the visibility "
-                "first, or use Restricted editability.",
-            )
-            return render(
-                request,
-                "directories/form.html",
-                {"form": form, "directory": directory},
-            )
-
         form.save()
         _create_revision(
             directory,
@@ -359,6 +348,7 @@ def directory_edit(request, path):
             "form": form,
             "directory": directory,
             "breadcrumbs": breadcrumbs,
+            "inherit_meta": getattr(form, "inherit_meta", {}),
         },
     )
 
@@ -391,27 +381,6 @@ def directory_create(request, path=""):
         directory.owner = request.user
         directory.created_by = request.user
 
-        # Validate: FLP Staff editability + Private visibility is invalid
-        if is_editability_more_open_than_visibility(
-            directory.editability, directory.visibility
-        ):
-            messages.error(
-                request,
-                "A directory cannot have FLP Staff editability when "
-                "its visibility is Private. Change the visibility "
-                "first, or use Restricted editability.",
-            )
-            return render(
-                request,
-                "directories/form.html",
-                {
-                    "form": form,
-                    "parent": parent,
-                    "creating": True,
-                    "breadcrumbs": breadcrumbs,
-                },
-            )
-
         # Build the full path
         if parent and parent.path:
             directory.path = f"{parent.path}/{directory.path}"
@@ -431,6 +400,7 @@ def directory_create(request, path=""):
             "parent": parent,
             "creating": True,
             "breadcrumbs": breadcrumbs,
+            "inherit_meta": getattr(form, "inherit_meta", {}),
         },
     )
 
@@ -734,12 +704,21 @@ def _directory_apply_permissions_inner(request, directory):
         scope = request.POST.get("scope", "direct")
         dir_perms = directory.permissions.all()
 
-        def apply_to_pages(pages, source_dir):
-            """Apply directory permissions to a set of pages."""
+        def apply_to_pages(pages):
+            """Set pages to inherit and copy permission grants."""
             for page in pages:
-                page.visibility = source_dir.visibility
-                page.editability = source_dir.editability
-                page.save(update_fields=["visibility", "editability"])
+                page.visibility = "inherit"
+                page.editability = "inherit"
+                page.in_sitemap = "inherit"
+                page.in_llms_txt = "inherit"
+                page.save(
+                    update_fields=[
+                        "visibility",
+                        "editability",
+                        "in_sitemap",
+                        "in_llms_txt",
+                    ]
+                )
                 for dp in dir_perms:
                     kwargs = {
                         "page": page,
@@ -754,11 +733,20 @@ def _directory_apply_permissions_inner(request, directory):
                     PagePermission.objects.get_or_create(**kwargs)
 
         def apply_to_dirs_recursive(parent_dir):
-            """Recursively apply permissions to child directories."""
+            """Recursively set child directories to inherit."""
             for child in parent_dir.children.all():
-                child.visibility = directory.visibility
-                child.editability = directory.editability
-                child.save(update_fields=["visibility", "editability"])
+                child.visibility = "inherit"
+                child.editability = "inherit"
+                child.in_sitemap = "inherit"
+                child.in_llms_txt = "inherit"
+                child.save(
+                    update_fields=[
+                        "visibility",
+                        "editability",
+                        "in_sitemap",
+                        "in_llms_txt",
+                    ]
+                )
                 for dp in dir_perms:
                     kwargs = {
                         "directory": child,
@@ -772,12 +760,12 @@ def _directory_apply_permissions_inner(request, directory):
                         kwargs["defaults"] = {"user": None}
                     DirectoryPermission.objects.get_or_create(**kwargs)
                 # Apply to pages in this child directory
-                apply_to_pages(child.pages.all(), directory)
+                apply_to_pages(child.pages.all())
                 # Recurse
                 apply_to_dirs_recursive(child)
 
         # Always apply to direct child pages
-        apply_to_pages(direct_pages, directory)
+        apply_to_pages(direct_pages)
 
         if scope == "recursive":
             apply_to_dirs_recursive(directory)

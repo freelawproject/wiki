@@ -1,0 +1,64 @@
+{% load wiki_tags %}
+{# Custom dropdown for inheritable fields. Falls back to plain select without inheritance. #}
+{# Context: field (BoundField), meta (dict with value/display/source), field_name (str) #}
+{% if meta %}
+<div x-data="inheritSelect"
+     data-field="{{ field_name }}"
+     data-inherit-value="{{ meta.value }}"
+     data-inherit-display="{{ meta.display }}"
+     data-inherit-source="{{ meta.source }}"
+     class="relative"
+     @click.outside="close"
+     @keydown="onKeydown">
+  <input type="hidden" name="{{ field_name }}" value="{{ field.value|default:'inherit' }}">
+  <button type="button"
+          id="id_{{ field_name }}"
+          @click="toggle"
+          role="combobox"
+          aria-haspopup="listbox"
+          x-bind:aria-expanded="open"
+          aria-controls="listbox_{{ field_name }}"
+          class="input-text w-full text-left flex items-center justify-between gap-2">
+    <div class="min-w-0">
+      <span class="block" x-text="selectedLabel"></span>
+      <span x-show="showInheritSub"
+            x-text="inheritSubLabel"
+            class="block text-xs text-gray-400 dark:text-gray-500 truncate"
+            aria-hidden="true"></span>
+    </div>
+    <svg class="w-4 h-4 text-gray-400 shrink-0" aria-hidden="true" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+    </svg>
+  </button>
+  <div x-show="open"
+       id="listbox_{{ field_name }}"
+       role="listbox"
+       aria-label="{{ field_name }}"
+       style="display: none;"
+       class="absolute z-50 mt-1 w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg overflow-hidden">
+    {# Inherit option — two-line layout #}
+    <div @click="pick"
+         role="option"
+         data-value="inherit"
+         tabindex="-1"
+         class="px-3 py-2 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700 focus:bg-gray-100 dark:focus:bg-gray-700 outline-none">
+      <div class="text-sm font-medium">{{ meta.display }}</div>
+      <div class="text-xs text-gray-400 dark:text-gray-500" aria-hidden="true">Provided by {{ meta.source }}</div>
+      <span class="sr-only">(inherited from {{ meta.source }})</span>
+    </div>
+    {# Explicit options — rendered server-side, duplicate hidden #}
+    {% for value, label in field.field.choices %}{% if value != "inherit" and value != meta.value %}
+    <div @click="pick"
+         role="option"
+         data-value="{{ value }}"
+         data-option-value="{{ value }}"
+         tabindex="-1"
+         class="px-3 py-2 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700 focus:bg-gray-100 dark:focus:bg-gray-700 outline-none text-sm">
+      {{ label }}
+    </div>
+    {% endif %}{% endfor %}
+  </div>
+</div>
+{% else %}
+{{ field }}
+{% endif %}

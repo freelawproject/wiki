@@ -710,7 +710,7 @@ class TestDirectoryVisibility:
     ):
         client.force_login(user)
         r = client.get("/c/new-dir/")
-        assert b"id_visibility" in r.content
+        assert b'name="visibility"' in r.content
 
 
 class TestDirectoryGate:
@@ -894,9 +894,9 @@ class TestApplyPermissions:
             user=user,
             permission_type="edit",
         ).exists()
-        # Nested directory should have matching visibility
+        # Nested directory should inherit visibility from parent
         nested_directory.refresh_from_db()
-        assert nested_directory.visibility == "private"
+        assert nested_directory.visibility == "inherit"
         # Nested page should have the permission
         assert PagePermission.objects.filter(
             page=page, user=user, permission_type="edit"
@@ -952,12 +952,12 @@ class TestApplyPermissions:
             {"scope": "direct"},
         )
         page.refresh_from_db()
-        assert page.editability == "internal"
+        assert page.editability == "inherit"
 
     def test_apply_recursive_propagates_editability(
         self, client, user, sub_directory, nested_directory
     ):
-        """Recursive apply propagates editability to subdirs."""
+        """Recursive apply sets children to inherit editability."""
         sub_directory.editability = "internal"
         sub_directory.save(update_fields=["editability"])
         client.force_login(user)
@@ -966,7 +966,7 @@ class TestApplyPermissions:
             {"scope": "recursive"},
         )
         nested_directory.refresh_from_db()
-        assert nested_directory.editability == "internal"
+        assert nested_directory.editability == "inherit"
 
 
 # ── Directory Editability ──────────────────────────────────
@@ -1019,10 +1019,10 @@ class TestDirectoryEditability:
         sub_directory.refresh_from_db()
         assert sub_directory.editability == "internal"
 
-    def test_cannot_create_flp_editable_private_directory(
+    def test_can_create_flp_editable_private_directory(
         self, client, user, root_directory
     ):
-        """FLP Staff editability + Private should be rejected on create."""
+        """Explicit overrides always work — no editability/visibility validation."""
         client.force_login(user)
         r = client.post(
             "/c/new-dir/",
@@ -1033,14 +1033,13 @@ class TestDirectoryEditability:
                 "editability": "internal",
             },
         )
-        assert r.status_code == 200
-        assert b"FLP Staff" in r.content
-        assert not Directory.objects.filter(path="bad-dir").exists()
+        assert r.status_code == 302
+        assert Directory.objects.filter(path="bad-dir").exists()
 
-    def test_cannot_edit_to_flp_editable_private(
+    def test_can_edit_to_flp_editable_private(
         self, client, user, sub_directory
     ):
-        """FLP Staff editability + Private should be rejected on edit."""
+        """Explicit overrides always work — no editability/visibility validation."""
         client.force_login(user)
         r = client.post(
             "/c/engineering/edit-dir/",
@@ -1051,10 +1050,9 @@ class TestDirectoryEditability:
                 "editability": "internal",
             },
         )
-        assert r.status_code == 200
-        assert b"FLP Staff" in r.content
+        assert r.status_code == 302
         sub_directory.refresh_from_db()
-        assert sub_directory.editability == "restricted"
+        assert sub_directory.editability == "internal"
 
     def test_editability_defaults_when_omitted(
         self, client, user, root_directory
@@ -1078,7 +1076,138 @@ class TestDirectoryEditability:
     ):
         client.force_login(user)
         r = client.get("/c/new-dir/")
-        assert b"id_editability" in r.content
+        assert b'name="editability"' in r.content
+
+
+class TestDirectoryInheritableSettings:
+    """Tests for saving all four inheritable settings on directories."""
+
+    def test_edit_saves_in_llms_txt(self, client, user, sub_directory):
+        """in_llms_txt value is saved when editing a directory."""
+        client.force_login(user)
+        r = client.post(
+            "/c/engineering/edit-dir/",
+            {
+                "title": "Engineering",
+                "description": "",
+                "visibility": "public",
+                "editability": "restricted",
+                "in_sitemap": "include",
+                "in_llms_txt": "include",
+                "change_message": "Enable AI sharing",
+            },
+        )
+        assert r.status_code == 302
+        sub_directory.refresh_from_db()
+        assert sub_directory.in_llms_txt == "include"
+
+    def test_edit_saves_in_sitemap(self, client, user, sub_directory):
+        """in_sitemap value is saved when editing a directory."""
+        client.force_login(user)
+        r = client.post(
+            "/c/engineering/edit-dir/",
+            {
+                "title": "Engineering",
+                "description": "",
+                "visibility": "public",
+                "editability": "restricted",
+                "in_sitemap": "exclude",
+                "in_llms_txt": "exclude",
+                "change_message": "Remove from sitemap",
+            },
+        )
+        assert r.status_code == 302
+        sub_directory.refresh_from_db()
+        assert sub_directory.in_sitemap == "exclude"
+
+    def test_edit_saves_inherit_values(self, client, user, sub_directory):
+        """Setting fields to 'inherit' is saved correctly."""
+        client.force_login(user)
+        r = client.post(
+            "/c/engineering/edit-dir/",
+            {
+                "title": "Engineering",
+                "description": "",
+                "visibility": "inherit",
+                "editability": "inherit",
+                "in_sitemap": "inherit",
+                "in_llms_txt": "inherit",
+                "change_message": "Reset to inherit",
+            },
+        )
+        assert r.status_code == 302
+        sub_directory.refresh_from_db()
+        assert sub_directory.visibility == "inherit"
+        assert sub_directory.editability == "inherit"
+        assert sub_directory.in_sitemap == "inherit"
+        assert sub_directory.in_llms_txt == "inherit"
+
+    def test_edit_saves_explicit_override(self, client, user, sub_directory):
+        """Explicit values override inheritance."""
+        sub_directory.visibility = "inherit"
+        sub_directory.save(update_fields=["visibility"])
+
+        client.force_login(user)
+        r = client.post(
+            "/c/engineering/edit-dir/",
+            {
+                "title": "Engineering",
+                "description": "",
+                "visibility": "private",
+                "editability": "internal",
+                "in_sitemap": "exclude",
+                "in_llms_txt": "optional",
+                "change_message": "Set explicit values",
+            },
+        )
+        assert r.status_code == 302
+        sub_directory.refresh_from_db()
+        assert sub_directory.visibility == "private"
+        assert sub_directory.editability == "internal"
+        assert sub_directory.in_sitemap == "exclude"
+        assert sub_directory.in_llms_txt == "optional"
+
+    def test_create_saves_all_settings(self, client, user, root_directory):
+        """Creating a directory saves all four inheritable settings."""
+        client.force_login(user)
+        r = client.post(
+            "/c/new-dir/",
+            {
+                "title": "New Dir",
+                "description": "",
+                "visibility": "private",
+                "editability": "internal",
+                "in_sitemap": "exclude",
+                "in_llms_txt": "include",
+            },
+        )
+        assert r.status_code == 302
+        d = Directory.objects.get(path="new-dir")
+        assert d.visibility == "private"
+        assert d.editability == "internal"
+        assert d.in_sitemap == "exclude"
+        assert d.in_llms_txt == "include"
+
+    def test_create_defaults_to_inherit(self, client, user, sub_directory):
+        """New directories default to 'inherit' when parent is provided."""
+        client.force_login(user)
+        r = client.post(
+            "/c/engineering/new-dir/",
+            {
+                "title": "Sub Team",
+                "description": "",
+                "visibility": "inherit",
+                "editability": "inherit",
+                "in_sitemap": "inherit",
+                "in_llms_txt": "inherit",
+            },
+        )
+        assert r.status_code == 302
+        d = Directory.objects.get(path="engineering/sub-team")
+        assert d.visibility == "inherit"
+        assert d.editability == "inherit"
+        assert d.in_sitemap == "inherit"
+        assert d.in_llms_txt == "inherit"
 
 
 class TestDirectoryHistory:

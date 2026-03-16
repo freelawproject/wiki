@@ -23,15 +23,23 @@ class Page(models.Model):
         PUBLIC = "public", "Public"
         INTERNAL = "internal", "FLP Staff"
         PRIVATE = "private", "Private"
+        INHERIT = "inherit", "Inherit"
 
     class Editability(models.TextChoices):
         RESTRICTED = "restricted", "Restricted"
         INTERNAL = "internal", "FLP Staff"
+        INHERIT = "inherit", "Inherit"
+
+    class SitemapStatus(models.TextChoices):
+        INCLUDE = "include", "Yes"
+        EXCLUDE = "exclude", "No"
+        INHERIT = "inherit", "Inherit"
 
     class LlmsTxtStatus(models.TextChoices):
         EXCLUDE = "exclude", "No"
         INCLUDE = "include", "Yes"
         OPTIONAL = "optional", "On request"
+        INHERIT = "inherit", "Inherit"
 
     title = models.CharField(max_length=255)
     slug = models.SlugField(max_length=255)
@@ -65,8 +73,10 @@ class Page(models.Model):
         help_text="Short summary for search engines and llms.txt. "
         "If blank, auto-generated from first words of content.",
     )
-    in_sitemap = models.BooleanField(
-        default=True,
+    in_sitemap = models.CharField(
+        max_length=10,
+        choices=SitemapStatus.choices,
+        default=SitemapStatus.INCLUDE,
         help_text="Include this page in the sitemap.xml file.",
     )
     in_llms_txt = models.CharField(

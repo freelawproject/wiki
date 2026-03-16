@@ -1408,9 +1408,10 @@ class TestPageVisibilityInheritance:
         assert "selected" in content
         assert "private" in content
 
-    def test_cannot_create_public_page_in_private_dir(
+    def test_can_create_public_page_in_private_dir(
         self, client, user, private_directory
     ):
+        """Explicit overrides always work — no 'more open than parent' validation."""
         client.force_login(user)
         r = client.post(
             f"/c/{private_directory.path}/new/",
@@ -1422,10 +1423,8 @@ class TestPageVisibilityInheritance:
                 "directory_path": private_directory.path,
             },
         )
-        # Should stay on the form with an error
-        assert r.status_code == 200
-        assert b"cannot be more open than its directory" in r.content
-        assert not Page.objects.filter(slug="public-in-private").exists()
+        assert r.status_code == 302
+        assert Page.objects.filter(slug="public-in-private").exists()
 
     def test_can_create_private_page_in_private_dir(
         self, client, user, private_directory
@@ -1444,9 +1443,10 @@ class TestPageVisibilityInheritance:
         assert r.status_code == 302
         assert Page.objects.filter(slug="private-in-private").exists()
 
-    def test_cannot_edit_to_public_in_private_dir(
+    def test_can_edit_to_public_in_private_dir(
         self, client, user, private_directory
     ):
+        """Explicit overrides always work — no 'more open than parent' validation."""
         page = Page.objects.create(
             title="Secret Page",
             slug="secret-page-edit",
@@ -1476,22 +1476,7 @@ class TestPageVisibilityInheritance:
                 "directory_path": private_directory.path,
             },
         )
-        assert r.status_code == 200
-        assert b"cannot be more open than its directory" in r.content
-
-    def test_cannot_move_public_page_to_private_dir(
-        self, client, user, private_directory, page
-    ):
-        client.force_login(user)
-        r = client.post(
-            f"/c/{page.slug}/move/",
-            {"directory": private_directory.pk},
-        )
-        assert r.status_code == 200
-        assert (
-            b"Cannot move a page into a more restrictive directory"
-            in r.content
-        )
+        assert r.status_code == 302
 
 
 class TestCheckPagePermissions:
@@ -1656,10 +1641,8 @@ class TestPageEditability:
         p = Page.objects.get(slug="default-edit")
         assert p.editability == "restricted"
 
-    def test_cannot_set_flp_editable_with_private_visibility(
-        self, client, user
-    ):
-        """FLP Staff editability + Private should be rejected."""
+    def test_can_set_flp_editable_with_private_visibility(self, client, user):
+        """Explicit overrides always work — no editability/visibility validation."""
         client.force_login(user)
         r = client.post(
             "/c/new/",
@@ -1671,12 +1654,11 @@ class TestPageEditability:
                 "change_message": "test",
             },
         )
-        assert r.status_code == 200
-        assert b"FLP Staff" in r.content
-        assert not Page.objects.filter(slug="bad-combo").exists()
+        assert r.status_code == 302
+        assert Page.objects.filter(slug="bad-combo").exists()
 
-    def test_cannot_edit_to_flp_editable_with_private(self, client, user):
-        """Editing a private page to FLP Staff editability should be rejected."""
+    def test_can_edit_to_flp_editable_with_private(self, client, user):
+        """Explicit overrides always work — no editability/visibility validation."""
         page = Page.objects.create(
             title="Private Edit Test",
             slug="private-edit-test",
@@ -1705,8 +1687,7 @@ class TestPageEditability:
                 "change_message": "try bad combo",
             },
         )
-        assert r.status_code == 200
-        assert b"FLP Staff" in r.content
+        assert r.status_code == 302
 
     def test_form_includes_editability_field(self, client, user):
         """The page form includes the editability dropdown."""

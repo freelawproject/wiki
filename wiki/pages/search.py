@@ -14,6 +14,7 @@ from django.contrib.postgres.search import (
 )
 from django.db.models import F, Q, Value
 
+from wiki.lib.inheritance import resolve_all_directory_settings
 from wiki.lib.permissions import viewable_pages_q
 
 from .models import Page
@@ -69,7 +70,17 @@ def _apply_filters(qs, parsed):
         qs = qs.filter(owner_q)
 
     if parsed.visibility:
-        qs = qs.filter(visibility=parsed.visibility)
+        # Include both explicit and inherited matches
+        resolved = resolve_all_directory_settings("visibility")
+        matching_dir_ids = {
+            dir_id
+            for dir_id, (eff_value, _, _) in resolved.items()
+            if eff_value == parsed.visibility
+        }
+        qs = qs.filter(
+            Q(visibility=parsed.visibility)
+            | Q(visibility="inherit", directory_id__in=matching_dir_ids)
+        )
 
     if parsed.before_date:
         qs = qs.filter(updated_at__date__lte=parsed.before_date)

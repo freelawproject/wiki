@@ -1,3 +1,4 @@
+import json
 import re
 
 from django import template
@@ -47,3 +48,9 @@ def username_local(user):
     if "@" in username:
         return username.split("@")[0]
     return username
+
+
+@register.filter
+def json_encode(value):
+    """JSON-serialize a value for use in HTML data attributes."""
+    return mark_safe(json.dumps(value))

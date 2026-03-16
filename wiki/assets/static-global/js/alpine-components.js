@@ -345,6 +345,142 @@ document.addEventListener('alpine:init', () => {
     },
   }))
 
+  // Custom select for inheritable settings (visibility, editability, etc.)
+  // Shows the inherit option with a two-line layout: value + "Provided by X"
+  // Options are rendered server-side in the template; Alpine handles state.
+  Alpine.data('inheritSelect', () => ({
+    open: false,
+    selected: '',
+    inheritDisplay: '',
+    inheritSource: '',
+    labelMap: {},
+    focusedIndex: -1,
+
+    init() {
+      this.inheritDisplay = this.$el.getAttribute('data-inherit-display') || ''
+      this.inheritSource = this.$el.getAttribute('data-inherit-source') || ''
+
+      var input = this.$el.querySelector('input[type="hidden"]')
+      if (input) this.selected = input.value
+
+      // Build label map from server-rendered options for selectedLabel getter
+      var map = {}
+      this.$el.querySelectorAll('[data-option-value]').forEach(function(el) {
+        map[el.getAttribute('data-option-value')] = el.textContent.trim()
+      })
+      this.labelMap = map
+    },
+
+    toggle() {
+      this.open = !this.open
+      if (this.open) this.focusedIndex = 0
+    },
+
+    close() {
+      this.open = false
+      this.focusedIndex = -1
+    },
+
+    pick(event) {
+      var target = event.target.closest('[data-value]')
+      if (!target) return
+      var value = target.getAttribute('data-value')
+      this._selectValue(value)
+    },
+
+    _selectValue(value) {
+      this.selected = value
+      var root = this.$root || this.$el
+      var input = root.querySelector('input[type="hidden"]')
+      if (input) input.value = value
+      this.open = false
+      this.focusedIndex = -1
+      // Return focus to the button
+      var btn = root.querySelector('button')
+      if (btn) btn.focus()
+    },
+
+    _getOptions() {
+      var root = this.$root || this.$el
+      return root.querySelectorAll('[role="option"]')
+    },
+
+    onKeydown(event) {
+      var key = event.key
+      if (key === 'Escape') {
+        if (this.open) {
+          this.close()
+          var root = this.$root || this.$el
+          var btn = root.querySelector('button')
+          if (btn) btn.focus()
+          event.preventDefault()
+        }
+        return
+      }
+      if (key === 'ArrowDown') {
+        event.preventDefault()
+        if (!this.open) {
+          this.open = true
+          this.focusedIndex = 0
+        } else {
+          var options = this._getOptions()
+          if (this.focusedIndex < options.length - 1) this.focusedIndex++
+        }
+        this._focusCurrent()
+        return
+      }
+      if (key === 'ArrowUp') {
+        event.preventDefault()
+        if (this.open && this.focusedIndex > 0) {
+          this.focusedIndex--
+          this._focusCurrent()
+        }
+        return
+      }
+      if (key === 'Enter' || key === ' ') {
+        if (this.open) {
+          event.preventDefault()
+          var options = this._getOptions()
+          if (this.focusedIndex >= 0 && this.focusedIndex < options.length) {
+            var value = options[this.focusedIndex].getAttribute('data-value')
+            this._selectValue(value)
+          }
+        } else {
+          event.preventDefault()
+          this.open = true
+          this.focusedIndex = 0
+          var self = this
+          // Need a tick for the DOM to show options
+          setTimeout(function() { self._focusCurrent() }, 10)
+        }
+        return
+      }
+    },
+
+    _focusCurrent() {
+      var self = this
+      setTimeout(function() {
+        var options = self._getOptions()
+        if (self.focusedIndex >= 0 && self.focusedIndex < options.length) {
+          options[self.focusedIndex].focus()
+        }
+      }, 10)
+    },
+
+    get selectedLabel() {
+      if (this.selected === 'inherit') return this.inheritDisplay
+      return this.labelMap[this.selected] || this.selected
+    },
+
+    get showInheritSub() {
+      return this.selected === 'inherit'
+    },
+
+    get inheritSubLabel() {
+      return 'Provided by ' + this.inheritSource
+    },
+  }))
+
   // Proposal review — editor and deny toggles
   Alpine.data('proposalReview', () => ({
     showEditor: false,

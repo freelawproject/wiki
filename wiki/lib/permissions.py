@@ -8,32 +8,22 @@ Permission hierarchy:
   authenticated user, PRIVATE by explicit permission only
 
 Directory permissions are inherited: we walk up the parent chain.
+
+Settings inheritance: visibility, editability, in_sitemap, and in_llms_txt
+can be set to "inherit" to resolve from the nearest ancestor with an
+explicit value. Use resolve_effective_value() for single-object checks and
+resolve_all_directory_settings() for bulk queries.
 """
 
 from django.db.models import Q
 
 from wiki.directories.models import Directory, DirectoryPermission
+from wiki.lib.inheritance import (
+    resolve_all_directory_settings,
+    resolve_effective_value,
+)
 from wiki.pages.models import Page, PagePermission
 from wiki.users.models import SystemConfig
-
-# Openness ranking: higher number = more open
-_VISIBILITY_OPENNESS = {
-    "private": 0,
-    "internal": 1,
-    "public": 2,
-}
-
-
-def is_more_open_than(page_visibility, directory_visibility):
-    """Return True if a page's visibility is more open than its directory's."""
-    return _VISIBILITY_OPENNESS.get(
-        page_visibility, 0
-    ) > _VISIBILITY_OPENNESS.get(directory_visibility, 0)
-
-
-def is_editability_more_open_than_visibility(editability, visibility):
-    """FLP Staff editability + Private visibility is invalid."""
-    return editability == "internal" and visibility == "private"
 
 
 def is_system_owner(user):
@@ -76,13 +66,15 @@ def can_view_directory(user, directory):
     if directory.path == "":
         return True
 
-    if directory.visibility == Directory.Visibility.PUBLIC:
+    effective_visibility, _ = resolve_effective_value(directory, "visibility")
+
+    if effective_visibility == "public":
         return True
 
     if not user.is_authenticated:
         return False
 
-    if directory.visibility == Directory.Visibility.INTERNAL:
+    if effective_visibility == "internal":
         return True
 
     if is_system_owner(user):
@@ -114,7 +106,9 @@ def can_view_page(user, page):
     INTERNAL pages are viewable by any authenticated user.
     PRIVATE pages require owner, system owner, or explicit permission.
     """
-    if page.visibility == Page.Visibility.PUBLIC:
+    effective_visibility, _ = resolve_effective_value(page, "visibility")
+
+    if effective_visibility == "public":
         return True
 
     if not user.is_authenticated:
@@ -124,7 +118,7 @@ def can_view_page(user, page):
     if page.directory and not can_view_directory(user, page.directory):
         return False
 
-    if page.visibility == Page.Visibility.INTERNAL:
+    if effective_visibility == "internal":
         return True
 
     if is_system_owner(user):
@@ -158,11 +152,25 @@ def _viewable_directory_ids(user):
     }
 
 
+def _effectively_matching_dir_ids(field_name, values):
+    """Return directory IDs whose effective field value is in `values`.
+
+    Uses bulk resolution to handle inheritance.
+    """
+    resolved = resolve_all_directory_settings(field_name)
+    return {
+        dir_id
+        for dir_id, (eff_value, _, _) in resolved.items()
+        if eff_value in values
+    }
+
+
 def viewable_pages_q(user):
     """Return a Q filter for pages the user can view.
 
     Translates the can_view_page() logic into SQL-level filtering
     so that LIMIT/OFFSET apply to already-filtered results.
+    Handles both explicit and inherited visibility values.
     """
     if is_system_owner(user):
         return Q()
@@ -170,30 +178,42 @@ def viewable_pages_q(user):
     dir_ids = _viewable_directory_ids(user)
     dir_gate = Q(directory__isnull=True) | Q(directory_id__in=dir_ids)
 
+    # Directory IDs where effective visibility is public
+    public_dir_ids = _effectively_matching_dir_ids("visibility", {"public"})
+    # Directory IDs where effective visibility is public or internal
+    pub_int_dir_ids = _effectively_matching_dir_ids(
+        "visibility", {"public", "internal"}
+    )
+    # Directory IDs where effective visibility is private
+    private_dir_ids = _effectively_matching_dir_ids("visibility", {"private"})
+
     if not user.is_authenticated:
-        return Q(visibility=Page.Visibility.PUBLIC) & dir_gate
+        # Anonymous: only see explicitly public pages + inheriting-public
+        return (
+            Q(visibility="public")
+            | Q(visibility="inherit", directory_id__in=public_dir_ids)
+        ) & dir_gate
 
     # Authenticated user
     group_ids = _user_group_ids(user)
 
-    # Public or internal pages in viewable directories
+    # Public or internal pages (explicit or inherited) in viewable dirs
     public_internal = (
-        Q(visibility__in=[Page.Visibility.PUBLIC, Page.Visibility.INTERNAL])
-        & dir_gate
-    )
+        Q(visibility__in=["public", "internal"])
+        | Q(visibility="inherit", directory_id__in=pub_int_dir_ids)
+    ) & dir_gate
 
-    # Private pages the user owns (in viewable dirs)
-    private_owned = (
-        Q(visibility=Page.Visibility.PRIVATE, owner=user) & dir_gate
+    # Private pages (explicit or inherited) the user owns
+    private_q = Q(visibility="private") | Q(
+        visibility="inherit", directory_id__in=private_dir_ids
     )
+    private_owned = private_q & Q(owner=user) & dir_gate
 
     # Private pages with explicit page-level permission (user or groups)
     perm_q = Q(permissions__user=user)
     if group_ids:
         perm_q = perm_q | Q(permissions__group_id__in=group_ids)
-    private_permitted = (
-        Q(visibility=Page.Visibility.PRIVATE) & perm_q & dir_gate
-    )
+    private_permitted = private_q & perm_q & dir_gate
 
     # Private pages with directory-level permission (inherited)
     dir_perm_q = Q(directory__permissions__user=user)
@@ -201,9 +221,7 @@ def viewable_pages_q(user):
         dir_perm_q = dir_perm_q | Q(
             directory__permissions__group_id__in=group_ids
         )
-    private_dir_permitted = (
-        Q(visibility=Page.Visibility.PRIVATE) & dir_perm_q & dir_gate
-    )
+    private_dir_permitted = private_q & dir_perm_q & dir_gate
 
     return (
         public_internal
@@ -218,7 +236,9 @@ def can_edit_page(user, page):
     if not user.is_authenticated:
         return False
 
-    if page.editability == "internal":
+    effective_editability, _ = resolve_effective_value(page, "editability")
+
+    if effective_editability == "internal":
         return True
 
     if is_system_owner(user):
@@ -260,7 +280,11 @@ def can_edit_directory(user, directory):
     if not user.is_authenticated:
         return False
 
-    if directory.editability == "internal":
+    effective_editability, _ = resolve_effective_value(
+        directory, "editability"
+    )
+
+    if effective_editability == "internal":
         return True
 
     if is_system_owner(user):
@@ -302,12 +326,24 @@ def editable_page_ids(user):
     # Pages the user owns
     ids.update(Page.objects.filter(owner=user).values_list("id", flat=True))
 
-    # Pages with editability="internal" (any authenticated user can edit)
+    # Pages with editability="internal" (explicit)
     ids.update(
         Page.objects.filter(editability="internal").values_list(
             "id", flat=True
         )
     )
+
+    # Pages inheriting editability="internal" from their directory
+    internal_edit_dir_ids = _effectively_matching_dir_ids(
+        "editability", {"internal"}
+    )
+    if internal_edit_dir_ids:
+        ids.update(
+            Page.objects.filter(
+                editability="inherit",
+                directory_id__in=internal_edit_dir_ids,
+            ).values_list("id", flat=True)
+        )
 
     # Pages with explicit EDIT/OWNER PagePermission
     edit_types = [
