@@ -11,6 +11,8 @@ import markdown2
 import nh3
 from django.conf import settings
 
+from wiki.lib.inheritance import resolve_effective_value
+
 WIKI_LINK_RE = re.compile(r"(?<!\w)#([a-z0-9]+(?:-[a-z0-9]+)*)")
 
 # Pattern for auto-linking bare URLs (used by markdown2 link-patterns extra)
@@ -242,6 +244,67 @@ def strip_markdown(text: str) -> str:
     return text
 
 
+_INTERNAL_HREF_RE = re.compile(r'<a\s+href="((?:https?://[^"]*)?/c/[^"]+)"')
+
+
+def _add_nofollow_to_non_public_links(html):
+    """Add rel="nofollow" to internal links pointing to non-public pages.
+
+    Finds <a href="/c/..."> tags, extracts slugs, batch-checks their
+    effective visibility, and adds rel="nofollow" for non-public targets.
+    """
+    # Inline import to avoid circular dependency (pages/models ↔ lib/markdown)
+    from wiki.pages.models import Page
+
+    hrefs = _INTERNAL_HREF_RE.findall(html)
+    if not hrefs:
+        return html
+
+    # Extract slugs from internal URLs (last path segment after /c/)
+    slug_by_href = {}
+    for href in hrefs:
+        # For full URLs, extract just the path portion
+        if href.startswith("http"):
+            path = urlparse(href).path
+        else:
+            path = href
+        path = path.rstrip("/")
+        slug = path.rsplit("/", 1)[-1]
+        if slug:
+            slug_by_href[href] = slug
+
+    if not slug_by_href:
+        return html
+
+    # Batch-load pages for all referenced slugs
+    unique_slugs = set(slug_by_href.values())
+    pages = Page.objects.filter(slug__in=unique_slugs).select_related(
+        "directory", "directory__parent"
+    )
+    page_map = {p.slug: p for p in pages}
+
+    # Determine which hrefs need nofollow
+    nofollow_hrefs = set()
+    for href, slug in slug_by_href.items():
+        page = page_map.get(slug)
+        if not page:
+            continue
+        effective_vis, _ = resolve_effective_value(page, "visibility")
+        if effective_vis != "public":
+            nofollow_hrefs.add(href)
+
+    if not nofollow_hrefs:
+        return html
+
+    def add_rel(match):
+        href = match.group(1)
+        if href in nofollow_hrefs:
+            return f'<a rel="nofollow" href="{href}"'
+        return match.group(0)
+
+    return _INTERNAL_HREF_RE.sub(add_rel, html)
+
+
 def render_markdown(content):
     """Render markdown content to HTML with wiki link resolution and TOC."""
     content = resolve_wiki_links(content)
@@ -260,6 +323,7 @@ def render_markdown(content):
         link_patterns=[(_AUTOLINK_RE, r"\1")],
     )
     toc = getattr(html, "toc_html", "")
-    result = MarkdownResult(_sanitize(str(html)))
+    sanitized = _sanitize(str(html))
+    result = MarkdownResult(_add_nofollow_to_non_public_links(sanitized))
     result.toc_html = _sanitize(toc) if toc else ""
     return result
