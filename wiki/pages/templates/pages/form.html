@@ -26,7 +26,9 @@
     {% if editing %}Edit "{{ page.title }}"{% else %}New Page{% endif %}
   </h1>
 
-  <form method="post" class="space-y-4" id="page-form">
+  <form method="post" class="space-y-4" id="page-form"
+        x-data="editForm"
+        data-inherited-visibility="{{ inherit_meta.visibility.value|default:'' }}">
     {% csrf_token %}
 
     {# Location picker #}
@@ -67,7 +69,28 @@
       {{ form.content }}
     </div>
 
-    <fieldset class="rounded-lg border border-gray-200 dark:border-gray-700 px-4 pb-3 pt-2 space-y-3">
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div>
+        <label for="id_visibility" class="block text-sm font-medium mb-1">Visibility</label>
+        {% include "includes/_inherit_select.html" with field=form.visibility field_name="visibility" meta=inherit_meta.visibility %}
+      </div>
+      <div>
+        <label for="id_editability" class="block text-sm font-medium mb-1">Editability</label>
+        {% include "includes/_inherit_select.html" with field=form.editability field_name="editability" meta=inherit_meta.editability %}
+      </div>
+      <div>
+        <label for="id_change_message" class="block text-sm font-medium mb-1">
+          Change Message <span class="text-red-500">*</span>
+        </label>
+        {{ form.change_message }}
+        {% if form.change_message.errors %}
+        <p class="text-red-600 dark:text-red-400 text-sm mt-1">{{ form.change_message.errors.0 }}</p>
+        {% endif %}
+      </div>
+    </div>
+
+    <fieldset x-show="showDiscoverability" x-cloak
+              class="rounded-lg border border-gray-200 dark:border-gray-700 px-4 pb-3 pt-2 space-y-3">
       <legend class="text-sm font-medium px-1">
         Discoverability
         <a href="/c/help/seo-guide" class="text-xs font-normal text-gray-500 dark:text-gray-400 underline ml-1">help</a>
@@ -90,26 +113,6 @@
         </div>
       </div>
     </fieldset>
-
-    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-      <div>
-        <label for="id_visibility" class="block text-sm font-medium mb-1">Visibility</label>
-        {% include "includes/_inherit_select.html" with field=form.visibility field_name="visibility" meta=inherit_meta.visibility %}
-      </div>
-      <div>
-        <label for="id_editability" class="block text-sm font-medium mb-1">Editability</label>
-        {% include "includes/_inherit_select.html" with field=form.editability field_name="editability" meta=inherit_meta.editability %}
-      </div>
-      <div>
-        <label for="id_change_message" class="block text-sm font-medium mb-1">
-          Change Message <span class="text-red-500">*</span>
-        </label>
-        {{ form.change_message }}
-        {% if form.change_message.errors %}
-        <p class="text-red-600 dark:text-red-400 text-sm mt-1">{{ form.change_message.errors.0 }}</p>
-        {% endif %}
-      </div>
-    </div>
 
     <div class="flex gap-3">
       <button type="submit" class="btn-primary">

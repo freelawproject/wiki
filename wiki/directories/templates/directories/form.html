@@ -30,7 +30,9 @@
     {% endif %}
   </h1>
 
-  <form method="post" class="space-y-4">
+  <form method="post" class="space-y-4"
+        x-data="editForm"
+        data-inherited-visibility="{{ inherit_meta.visibility.value|default:'' }}">
     {% csrf_token %}
 
     <div>
@@ -45,25 +47,6 @@
       <label for="id_description" class="block text-sm font-medium mb-1">Description</label>
       {{ form.description }}
     </div>
-
-    {% if form.in_sitemap %}
-    <fieldset class="rounded-lg border border-gray-200 dark:border-gray-700 px-4 pb-3 pt-2">
-      <legend class="text-sm font-medium px-1">
-        Discoverability
-        <a href="/c/help/seo-guide" class="text-xs font-normal text-gray-500 dark:text-gray-400 underline ml-1">help</a>
-      </legend>
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div>
-          <label for="id_in_sitemap" class="block text-sm font-medium mb-1">Include in search engines?</label>
-          {% include "includes/_inherit_select.html" with field=form.in_sitemap field_name="in_sitemap" meta=inherit_meta.in_sitemap %}
-        </div>
-        <div>
-          <label for="id_in_llms_txt" class="block text-sm font-medium mb-1">Share with AI assistants?</label>
-          {% include "includes/_inherit_select.html" with field=form.in_llms_txt field_name="in_llms_txt" meta=inherit_meta.in_llms_txt %}
-        </div>
-      </div>
-    </fieldset>
-    {% endif %}
 
     <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
       <div>
@@ -81,6 +64,26 @@
       </div>
       {% endif %}
     </div>
+
+    {% if form.in_sitemap %}
+    <fieldset x-show="showDiscoverability" x-cloak
+              class="rounded-lg border border-gray-200 dark:border-gray-700 px-4 pb-3 pt-2">
+      <legend class="text-sm font-medium px-1">
+        Discoverability
+        <a href="/c/help/seo-guide" class="text-xs font-normal text-gray-500 dark:text-gray-400 underline ml-1">help</a>
+      </legend>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div>
+          <label for="id_in_sitemap" class="block text-sm font-medium mb-1">Include in search engines?</label>
+          {% include "includes/_inherit_select.html" with field=form.in_sitemap field_name="in_sitemap" meta=inherit_meta.in_sitemap %}
+        </div>
+        <div>
+          <label for="id_in_llms_txt" class="block text-sm font-medium mb-1">Share with AI assistants?</label>
+          {% include "includes/_inherit_select.html" with field=form.in_llms_txt field_name="in_llms_txt" meta=inherit_meta.in_llms_txt %}
+        </div>
+      </div>
+    </fieldset>
+    {% endif %}
 
     <div class="flex gap-3">
       <button type="submit" class="btn-primary">
