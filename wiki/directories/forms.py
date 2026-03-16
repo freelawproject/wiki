@@ -2,6 +2,7 @@ from django import forms
 from django.contrib.auth.models import Group
 from django.utils.text import slugify
 
+from wiki.lib.inheritance import resolve_effective_value
 from wiki.lib.path_utils import directory_path_conflicts_with_page
 from wiki.lib.permissions import can_view_directory
 
@@ -81,7 +82,7 @@ class DirectoryForm(forms.ModelForm):
             ),
             "visibility": forms.Select(attrs={"class": "input-text"}),
             "editability": forms.Select(attrs={"class": "input-text"}),
-            "in_sitemap": forms.CheckboxInput(attrs={"class": "rounded"}),
+            "in_sitemap": forms.Select(attrs={"class": "input-text"}),
             "in_llms_txt": forms.Select(attrs={"class": "input-text"}),
         }
 
@@ -89,15 +90,76 @@ class DirectoryForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         self.fields["editability"].required = False
         self.fields["in_llms_txt"].required = False
+        self.fields["in_sitemap"].required = False
+
         if is_root:
+            # Root directory: remove inherit option and discoverability fields
+            self._remove_inherit_choices()
             del self.fields["in_sitemap"]
             del self.fields["in_llms_txt"]
+        elif self.instance and self.instance.pk and self.instance.parent:
+            self._add_inherit_choices(self.instance.parent)
+        elif self.instance and self.instance.pk:
+            # Non-root directory without a parent (shouldn't happen, but safe)
+            self._remove_inherit_choices()
+
+    def _add_inherit_choices(self, parent):
+        """Build inherit metadata for each field."""
+        field_configs = {
+            "visibility": Directory.Visibility,
+            "editability": Directory.Editability,
+            "in_sitemap": Directory.SitemapStatus,
+            "in_llms_txt": Directory.LlmsTxtStatus,
+        }
+        self.inherit_meta = {}
+        for field_name, choices_class in field_configs.items():
+            if field_name not in self.fields:
+                continue
+            eff_value, source = resolve_effective_value(parent, field_name)
+            display = dict(choices_class.choices).get(eff_value, eff_value)
+            explicit_choices = [
+                c for c in choices_class.choices if c[0] != "inherit"
+            ]
+            self.fields[field_name].choices = [
+                ("inherit", display)
+            ] + explicit_choices
+            self.inherit_meta[field_name] = {
+                "value": eff_value,
+                "display": display,
+                "source": source.title,
+            }
+
+    def _remove_inherit_choices(self):
+        """Remove 'inherit' from all field choices."""
+        for field_name in (
+            "visibility",
+            "editability",
+            "in_sitemap",
+            "in_llms_txt",
+        ):
+            if field_name not in self.fields:
+                continue
+            self.fields[field_name].choices = [
+                c for c in self.fields[field_name].choices if c[0] != "inherit"
+            ]
 
     def clean_editability(self):
-        return self.cleaned_data.get("editability") or "restricted"
+        value = self.cleaned_data.get("editability")
+        if value == "inherit":
+            return value
+        return value or "restricted"
 
     def clean_in_llms_txt(self):
-        return self.cleaned_data.get("in_llms_txt") or "exclude"
+        value = self.cleaned_data.get("in_llms_txt")
+        if value == "inherit":
+            return value
+        return value or "exclude"
+
+    def clean_in_sitemap(self):
+        value = self.cleaned_data.get("in_sitemap")
+        if value == "inherit":
+            return value
+        return value or "include"
 
 
 class DirectoryCreateForm(forms.ModelForm):
@@ -129,7 +191,7 @@ class DirectoryCreateForm(forms.ModelForm):
             ),
             "visibility": forms.Select(attrs={"class": "input-text"}),
             "editability": forms.Select(attrs={"class": "input-text"}),
-            "in_sitemap": forms.CheckboxInput(attrs={"class": "rounded"}),
+            "in_sitemap": forms.Select(attrs={"class": "input-text"}),
             "in_llms_txt": forms.Select(attrs={"class": "input-text"}),
         }
 
@@ -138,12 +200,60 @@ class DirectoryCreateForm(forms.ModelForm):
         self.parent = parent
         self.fields["editability"].required = False
         self.fields["in_llms_txt"].required = False
+        self.fields["in_sitemap"].required = False
+
+        if parent:
+            self._add_inherit_choices(parent)
+            # Default new directories to "inherit"
+            for field_name in (
+                "visibility",
+                "editability",
+                "in_sitemap",
+                "in_llms_txt",
+            ):
+                self.initial.setdefault(field_name, "inherit")
+
+    def _add_inherit_choices(self, parent):
+        """Build inherit metadata for each field."""
+        field_configs = {
+            "visibility": Directory.Visibility,
+            "editability": Directory.Editability,
+            "in_sitemap": Directory.SitemapStatus,
+            "in_llms_txt": Directory.LlmsTxtStatus,
+        }
+        self.inherit_meta = {}
+        for field_name, choices_class in field_configs.items():
+            eff_value, source = resolve_effective_value(parent, field_name)
+            display = dict(choices_class.choices).get(eff_value, eff_value)
+            explicit_choices = [
+                c for c in choices_class.choices if c[0] != "inherit"
+            ]
+            self.fields[field_name].choices = [
+                ("inherit", display)
+            ] + explicit_choices
+            self.inherit_meta[field_name] = {
+                "value": eff_value,
+                "display": display,
+                "source": source.title,
+            }
 
     def clean_editability(self):
-        return self.cleaned_data.get("editability") or "restricted"
+        value = self.cleaned_data.get("editability")
+        if value == "inherit":
+            return value
+        return value or "restricted"
 
     def clean_in_llms_txt(self):
-        return self.cleaned_data.get("in_llms_txt") or "exclude"
+        value = self.cleaned_data.get("in_llms_txt")
+        if value == "inherit":
+            return value
+        return value or "exclude"
+
+    def clean_in_sitemap(self):
+        value = self.cleaned_data.get("in_sitemap")
+        if value == "inherit":
+            return value
+        return value or "include"
 
     def clean_title(self):
         title = self.cleaned_data["title"]
