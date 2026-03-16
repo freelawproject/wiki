@@ -6,8 +6,12 @@ from django.http import HttpResponse
 from django.template.loader import render_to_string
 from django.urls import reverse
 
+from wiki.lib.inheritance import resolve_all_directory_settings
 from wiki.lib.seo import extract_description
-from wiki.lib.sitemap import _llms_directory_map, _public_directory_ids
+from wiki.lib.sitemap import (
+    _effectively_public_directory_ids,
+    _llms_directory_map,
+)
 from wiki.pages.models import Page
 
 
@@ -97,46 +101,52 @@ def llms_txt(request):
     Links point to the .md (raw markdown) endpoint for each page.
     Format follows https://llmstxt.org/ spec.
 
-    Pages are included based on their in_llms_txt setting and their
-    directory chain's effective llms.txt status.  The most restrictive
-    value in the chain wins (exclude > optional > include).
+    Pages are included based on their effective in_llms_txt and
+    visibility values (resolved through the inheritance chain).
     """
     base = settings.BASE_URL
-    dir_map = _llms_directory_map()  # dir_id -> effective status
-    public_dir_ids = _public_directory_ids()
+    dir_map = _llms_directory_map()  # dir_id -> effective llms status
+    public_dir_ids = _effectively_public_directory_ids()
 
-    # Fetch all public pages in public directory chains that are NOT
-    # excluded from llms.txt at the page level.
+    # Resolve effective llms.txt status for directory-level inheritance
+    llms_resolved = resolve_all_directory_settings("in_llms_txt")
+
+    # Directory IDs where effective llms status is not "exclude"
+    non_excluded_dir_ids = {
+        dir_id
+        for dir_id, (eff_value, _, _) in llms_resolved.items()
+        if eff_value != "exclude" and dir_id in public_dir_ids
+    }
+
+    # Fetch pages that are effectively public and not excluded from llms.txt
+    # We need to handle both explicit and inherited values
     pages = (
-        Page.objects.filter(visibility=Page.Visibility.PUBLIC)
-        .exclude(in_llms_txt="exclude")
-        .filter(Q(directory__isnull=True) | Q(directory_id__in=public_dir_ids))
+        Page.objects.filter(
+            # Effectively public
+            Q(visibility="public")
+            | Q(visibility="inherit", directory_id__in=public_dir_ids)
+        )
+        .exclude(in_llms_txt="exclude")  # Explicitly excluded pages
+        .filter(
+            Q(directory__isnull=True)
+            | Q(directory_id__in=non_excluded_dir_ids)
+        )
         .select_related("directory")
         .order_by("directory__path", "title")
     )
-
-    # Restrictiveness ranking for combining page + directory status
-    _rank = {"exclude": 2, "optional": 1, "include": 0}
 
     by_dir = defaultdict(list)
     optional_pages = []
     for page in pages:
         dir_id = page.directory_id
-        if dir_id:
-            dir_status = dir_map.get(dir_id, "exclude")
-        else:
-            # Root-level pages: no directory restriction
-            dir_status = "include"
 
-        if dir_status == "exclude":
-            continue
-
-        # Effective status: most restrictive of page + directory
-        page_status = page.in_llms_txt
-        if _rank.get(dir_status, 2) > _rank.get(page_status, 0):
-            effective = dir_status
+        # Determine effective llms status for this page
+        if page.in_llms_txt != "inherit":
+            effective = page.in_llms_txt
+        elif dir_id:
+            effective = dir_map.get(dir_id, "exclude")
         else:
-            effective = page_status
+            effective = "exclude"  # Root-level page with "inherit" = default
 
         if effective == "exclude":
             continue
