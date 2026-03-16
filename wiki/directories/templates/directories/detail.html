@@ -44,17 +44,7 @@
 
 {% block content %}
 <div class="max-w-3xl">
-  {# Breadcrumbs #}
-  <nav class="breadcrumbs mb-5">
-    {% for title, url in breadcrumbs %}
-      {% if not forloop.last %}
-        <a href="{{ url }}">{{ title }}</a>
-        <span class="separator">/</span>
-      {% else %}
-        <span class="current">{{ title }}</span>
-      {% endif %}
-    {% endfor %}
-  </nav>
+  <c-breadcrumbs :breadcrumbs="breadcrumbs" />
 
   <div class="flex flex-col xl:flex-row xl:items-center justify-between gap-3 mb-8">
     <h1>
