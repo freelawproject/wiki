@@ -25,6 +25,7 @@
       <label class="block text-sm font-medium mb-1">Location</label>
       <input type="hidden" name="directory_path" id="directory-path-input"
              value="{% if editing and page.directory %}{{ page.directory.path }}{% elif directory %}{{ directory.path }}{% endif %}">
+      <input type="hidden" name="directory_titles" id="directory-titles-input" value="{}">
       <div class="relative">
         <div id="location-picker" class="input-text w-full flex items-center flex-wrap gap-1 min-h-[2.5rem] cursor-text px-2 py-1">
           <span class="text-gray-400 dark:text-gray-500 text-sm select-none">/</span>

@@ -117,15 +117,23 @@ def _process_mentions_and_grants(page, request):
         )
 
 
-def _resolve_or_create_directory(dir_path, user):
+def _resolve_or_create_directory(dir_path, user, title_overrides=None):
     """Resolve a directory path, creating missing segments as needed.
 
     New directories inherit visibility, editability, and permission
     grants from their parent directory.
+
+    ``title_overrides`` is an optional dict mapping full segment paths
+    to display titles (e.g. {"eng/api": "API"}).  When a new directory
+    is created and its path appears in the mapping, the provided title
+    is used instead of deriving one from the slug.
     """
     directory = Directory.objects.filter(path=dir_path).first()
     if directory:
         return directory
+
+    if title_overrides is None:
+        title_overrides = {}
 
     # Build each segment of the path, creating as needed
     segments = dir_path.strip("/").split("/")
@@ -136,10 +144,13 @@ def _resolve_or_create_directory(dir_path, user):
 
     for segment in segments:
         current_path = f"{current_path}/{segment}" if current_path else segment
+        title = title_overrides.get(
+            current_path, segment.replace("-", " ").title()
+        )
         directory, created = Directory.objects.get_or_create(
             path=current_path,
             defaults={
-                "title": segment.replace("-", " ").title(),
+                "title": title,
                 "parent": parent,
                 "owner": user,
                 "created_by": user,
@@ -162,6 +173,24 @@ def _resolve_or_create_directory(dir_path, user):
         parent = directory
 
     return directory
+
+
+def _parse_directory_titles(post_data):
+    """Parse the directory_titles JSON from POST data.
+
+    Returns a dict mapping directory paths to user-provided titles
+    for newly created directories, e.g. {"eng/api": "API"}.
+    """
+    raw = post_data.get("directory_titles", "").strip()
+    if not raw:
+        return {}
+    try:
+        titles = json.loads(raw)
+    except (json.JSONDecodeError, ValueError):
+        return {}
+    if not isinstance(titles, dict):
+        return {}
+    return {k: v for k, v in titles.items() if isinstance(v, str) and v}
 
 
 def resolve_path(request, path):
@@ -386,6 +415,7 @@ def _render_page_detail(request, page):
             "breadcrumbs_json": breadcrumbs_json,
             "article_json": article_json,
             "canonical_url": canonical_url,
+            "effective_visibility": eff_visibility,
         },
     )
 
@@ -427,8 +457,9 @@ def page_create(request, path=""):
         # Use directory from location picker if provided
         dir_path = request.POST.get("directory_path", "").strip()
         if dir_path:
+            title_overrides = _parse_directory_titles(request.POST)
             page.directory = _resolve_or_create_directory(
-                dir_path, request.user
+                dir_path, request.user, title_overrides
             )
         else:
             page.directory = directory
@@ -520,8 +551,9 @@ def page_edit(request, path):
         # Handle directory change from location picker
         dir_path = request.POST.get("directory_path", "").strip()
         if dir_path:
+            title_overrides = _parse_directory_titles(request.POST)
             page.directory = _resolve_or_create_directory(
-                dir_path, request.user
+                dir_path, request.user, title_overrides
             )
         else:
             page.directory = None

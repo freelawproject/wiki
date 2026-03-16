@@ -21,12 +21,14 @@
   var locationChips = document.getElementById('location-chips');
   var dirDropdown = document.getElementById('dir-dropdown');
   var dirPathInput = document.getElementById('directory-path-input');
+  var dirTitlesInput = document.getElementById('directory-titles-input');
 
   var segments = config.dirSegments;
   var searchTimeout = null;
 
   function renderChips() {
     locationChips.innerHTML = '';
+    var titles = {};
     segments.forEach(function(seg) {
       var chip = document.createElement('span');
       chip.className = 'inline-flex items-center gap-1 px-2 py-0.5 rounded bg-primary-100 dark:bg-primary-900 text-primary-800 dark:text-primary-200 text-sm';
@@ -36,8 +38,12 @@
       sep.className = 'text-gray-400 text-sm select-none';
       sep.textContent = '/';
       locationChips.appendChild(sep);
+      if (seg.isNew) {
+        titles[seg.path] = seg.title;
+      }
     });
     dirPathInput.value = segments.length > 0 ? segments[segments.length - 1].path : '';
+    dirTitlesInput.value = JSON.stringify(titles);
   }
 
   function currentParentPath() {
