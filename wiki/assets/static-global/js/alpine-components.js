@@ -345,6 +345,46 @@ document.addEventListener('alpine:init', () => {
     },
   }))
 
+  // Edit form wrapper — shows/hides Discoverability based on visibility
+  Alpine.data('editForm', () => ({
+    showDiscoverability: true,
+    _inheritedVisibility: '',
+
+    init() {
+      this._inheritedVisibility = this.$el.getAttribute('data-inherited-visibility') || ''
+      var self = this
+      // Hidden input (inherit select) or plain <select> (root-level)
+      var visInput = this.$el.querySelector('input[name="visibility"]')
+      var visSelect = this.$el.querySelector('select[name="visibility"]')
+      if (visInput) {
+        visInput.addEventListener('input', function() {
+          self._checkVisibility()
+        })
+      }
+      if (visSelect) {
+        visSelect.addEventListener('change', function() {
+          self._checkVisibility()
+        })
+      }
+      this._checkVisibility()
+    },
+
+    _checkVisibility() {
+      var el = this.$el.querySelector('input[name="visibility"]')
+          || this.$el.querySelector('select[name="visibility"]')
+      if (!el) {
+        this.showDiscoverability = true
+        return
+      }
+      var val = el.value
+      if (val === 'inherit') {
+        this.showDiscoverability = this._inheritedVisibility === 'public'
+      } else {
+        this.showDiscoverability = val === 'public'
+      }
+    },
+  }))
+
   // Custom select for inheritable settings (visibility, editability, etc.)
   // Shows the inherit option with a two-line layout: value + "Provided by X"
   // Options are rendered server-side in the template; Alpine handles state.
@@ -392,7 +432,11 @@ document.addEventListener('alpine:init', () => {
       this.selected = value
       var root = this.$root || this.$el
       var input = root.querySelector('input[type="hidden"]')
-      if (input) input.value = value
+      if (input) {
+        input.value = value
+        // Notify parent components (e.g. editForm) of the change
+        input.dispatchEvent(new Event('input', { bubbles: true }))
+      }
       this.open = false
       this.focusedIndex = -1
       // Return focus to the button
