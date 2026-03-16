@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% load static %}
+{% load static wiki_tags %}
 
 {% block title %}{% if creating %}New Subdirectory{% else %}Edit Directory: {{ directory.title }}{% endif %} - FLP Wiki{% endblock %}
 
@@ -54,31 +54,25 @@
       </legend>
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div>
-          <label class="block text-sm font-medium mb-1">Include in search engines?</label>
-          <label class="inline-flex items-center gap-2 text-sm cursor-pointer">
-            {{ form.in_sitemap }}
-            Yes
-          </label>
+          <label for="id_in_sitemap" class="block text-sm font-medium mb-1">Include in search engines?</label>
+          {% include "includes/_inherit_select.html" with field=form.in_sitemap field_name="in_sitemap" meta=inherit_meta.in_sitemap %}
         </div>
         <div>
           <label for="id_in_llms_txt" class="block text-sm font-medium mb-1">Share with AI assistants?</label>
-          {{ form.in_llms_txt }}
+          {% include "includes/_inherit_select.html" with field=form.in_llms_txt field_name="in_llms_txt" meta=inherit_meta.in_llms_txt %}
         </div>
       </div>
-      <p class="text-xs text-gray-500 dark:text-gray-400 mt-3">
-        These settings apply to subdirectories and sub-pages unless overridden.
-      </p>
     </fieldset>
     {% endif %}
 
     <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
       <div>
         <label for="id_visibility" class="block text-sm font-medium mb-1">Visibility</label>
-        {{ form.visibility }}
+        {% include "includes/_inherit_select.html" with field=form.visibility field_name="visibility" meta=inherit_meta.visibility %}
       </div>
       <div>
         <label for="id_editability" class="block text-sm font-medium mb-1">Editability</label>
-        {{ form.editability }}
+        {% include "includes/_inherit_select.html" with field=form.editability field_name="editability" meta=inherit_meta.editability %}
       </div>
       {% if not creating %}
       <div>
