@@ -14,15 +14,23 @@ class Directory(models.Model):
         PUBLIC = "public", "Public"
         INTERNAL = "internal", "FLP Staff"
         PRIVATE = "private", "Private"
+        INHERIT = "inherit", "Inherit"
 
     class Editability(models.TextChoices):
         RESTRICTED = "restricted", "Restricted"
         INTERNAL = "internal", "FLP Staff"
+        INHERIT = "inherit", "Inherit"
+
+    class SitemapStatus(models.TextChoices):
+        INCLUDE = "include", "Yes"
+        EXCLUDE = "exclude", "No"
+        INHERIT = "inherit", "Inherit"
 
     class LlmsTxtStatus(models.TextChoices):
         EXCLUDE = "exclude", "No"
         INCLUDE = "include", "Yes"
         OPTIONAL = "optional", "On request"
+        INHERIT = "inherit", "Inherit"
 
     path = models.CharField(
         max_length=500,
@@ -57,17 +65,17 @@ class Directory(models.Model):
         choices=Editability.choices,
         default=Editability.RESTRICTED,
     )
-    in_sitemap = models.BooleanField(
-        default=True,
-        help_text="Include this directory in the sitemap.xml file. "
-        "Excluding a directory also excludes all its children.",
+    in_sitemap = models.CharField(
+        max_length=10,
+        choices=SitemapStatus.choices,
+        default=SitemapStatus.INCLUDE,
+        help_text="Include this directory in the sitemap.xml file.",
     )
     in_llms_txt = models.CharField(
         max_length=10,
         choices=LlmsTxtStatus.choices,
         default=LlmsTxtStatus.EXCLUDE,
-        help_text="Whether to list this directory's pages in llms.txt. "
-        "Excluding a directory also excludes all its children.",
+        help_text="Whether to list this directory's pages in llms.txt.",
     )
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
