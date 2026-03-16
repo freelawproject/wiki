@@ -263,10 +263,10 @@ class TestSitemap:
         content = response.content.decode()
         assert "/c/secret" not in content
 
-    def test_sitemap_excludes_public_page_in_private_directory(
+    def test_sitemap_includes_public_page_in_private_directory(
         self, client, user
     ):
-        """A public page inside a private directory should not appear."""
+        """Under inheritance, a page with explicit visibility=public is included."""
         private_dir = Directory.objects.create(
             path="private-dir",
             title="Private Dir",
@@ -275,7 +275,7 @@ class TestSitemap:
         Page.objects.create(
             title="Hidden Page",
             slug="hidden-page",
-            content="Should not be indexed",
+            content="Explicitly public",
             directory=private_dir,
             owner=user,
             created_by=user,
@@ -284,54 +284,7 @@ class TestSitemap:
         )
         response = client.get("/sitemap.xml")
         content = response.content.decode()
-        assert "hidden-page" not in content
-
-    def test_sitemap_excludes_public_page_in_internal_directory(
-        self, client, user
-    ):
-        """A public page inside an internal directory should not appear."""
-        internal_dir = Directory.objects.create(
-            path="internal-dir",
-            title="Internal Dir",
-            visibility=Directory.Visibility.INTERNAL,
-        )
-        Page.objects.create(
-            title="Staff Page",
-            slug="staff-page",
-            content="Staff only",
-            directory=internal_dir,
-            owner=user,
-            created_by=user,
-            updated_by=user,
-            visibility=Page.Visibility.PUBLIC,
-        )
-        response = client.get("/sitemap.xml")
-        content = response.content.decode()
-        assert "staff-page" not in content
-
-    def test_sitemap_excludes_public_child_of_private_ancestor(
-        self, client, user
-    ):
-        """A public dir under a private parent should not appear."""
-        root = Directory.objects.create(
-            path="", title="Home", visibility=Directory.Visibility.PUBLIC
-        )
-        private_parent = Directory.objects.create(
-            path="locked",
-            title="Locked",
-            parent=root,
-            visibility=Directory.Visibility.PRIVATE,
-        )
-        Directory.objects.create(
-            path="locked/open",
-            title="Open",
-            parent=private_parent,
-            visibility=Directory.Visibility.PUBLIC,
-        )
-        response = client.get("/sitemap.xml")
-        content = response.content.decode()
-        assert "/c/locked/open" not in content
-        assert "/c/locked" not in content
+        assert "hidden-page" in content
 
 
 # ── Raw markdown headers ─────────────────────────────────────────────
@@ -613,10 +566,10 @@ class TestLlmsTxt:
         content = response.content.decode()
         assert "Cascade Excluded Page" not in content
 
-    def test_llms_txt_directory_optional_downgrades_include(
+    def test_llms_txt_directory_optional_does_not_downgrade_include(
         self, client, user
     ):
-        """A page with include is downgraded to optional when dir is optional."""
+        """Under inheritance, a page's own explicit in_llms_txt takes effect."""
         root = Directory.objects.get_or_create(
             path="",
             defaults={
@@ -632,8 +585,8 @@ class TestLlmsTxt:
             in_llms_txt=Directory.LlmsTxtStatus.OPTIONAL,
         )
         Page.objects.create(
-            title="Downgraded Page",
-            slug="downgraded-page",
+            title="Kept Page",
+            slug="kept-page",
             content="Content.",
             directory=optional_dir,
             owner=user,
@@ -644,12 +597,12 @@ class TestLlmsTxt:
         )
         response = client.get("/llms.txt")
         content = response.content.decode()
-        assert "Downgraded Page" in content
-        # Should appear in Optional section, not main
-        assert "## Optional" in content
-        optional_pos = content.index("## Optional")
-        page_pos = content.index("Downgraded Page")
-        assert page_pos > optional_pos
+        assert "Kept Page" in content
+        # Should appear in main section (before Optional), not downgraded
+        if "## Optional" in content:
+            optional_pos = content.index("## Optional")
+            page_pos = content.index("Kept Page")
+            assert page_pos < optional_pos
 
     def test_robots_txt_allows_llms_txt(self, client):
         response = client.get("/robots.txt")
@@ -677,7 +630,7 @@ class TestSitemapInSitemapField:
         content = response.content.decode()
         assert "no-sitemap-page" not in content
 
-    def test_page_included_when_in_sitemap_true(self, client, user):
+    def test_page_included_when_in_sitemap_include(self, client, user):
         Page.objects.create(
             title="Sitemap Page",
             slug="sitemap-page",
@@ -686,7 +639,7 @@ class TestSitemapInSitemapField:
             created_by=user,
             updated_by=user,
             visibility=Page.Visibility.PUBLIC,
-            in_sitemap=True,
+            in_sitemap=Page.SitemapStatus.INCLUDE,
         )
         response = client.get("/sitemap.xml")
         content = response.content.decode()

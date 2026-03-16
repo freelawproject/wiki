@@ -401,9 +401,10 @@ Every page and directory has four settings: **visibility**,
 
 - **Inherit** (default) — the setting resolves from the nearest
   ancestor directory that has an explicit value. The edit form
-  shows what you'll get, e.g. "Private (Inherited from Legal)".
-- **Explicit override** — pick any value and it takes effect
-  directly, regardless of what ancestors have set.
+  shows a dropdown with the inherited value and "Provided by"
+  the source directory, so you always know where it comes from.
+- **Explicit override** — pick any other value from the dropdown
+  and it takes effect directly, regardless of what ancestors set.
 
 The root directory always has explicit values since there's
 nothing above it to inherit from.
