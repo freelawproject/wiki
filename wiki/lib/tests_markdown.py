@@ -3,6 +3,7 @@
 from unittest.mock import patch
 
 from wiki.lib.markdown import (
+    extract_all_wiki_slugs,
     extract_slugs_from_internal_urls,
     render_markdown,
     strip_markdown,
@@ -155,3 +156,70 @@ class TestExtractSlugsFromInternalUrls:
         content = "See /c/my-page for details"
         slugs = extract_slugs_from_internal_urls(content)
         assert "my-page" in slugs
+
+
+class TestExtractAllWikiSlugs:
+    """extract_all_wiki_slugs should find slugs from all wiki link syntaxes."""
+
+    def test_standalone_hash_slug(self):
+        assert "my-page" in extract_all_wiki_slugs("See #my-page for info")
+
+    def test_markdown_link_with_hash_slug(self):
+        assert "my-page" in extract_all_wiki_slugs(
+            "See [my page](#my-page) for info"
+        )
+
+    def test_reference_link_with_hash_slug(self):
+        slugs = extract_all_wiki_slugs("[ref]: #my-page")
+        assert "my-page" in slugs
+
+    def test_all_patterns_combined(self):
+        content = (
+            "See #standalone-page and [linked](#linked-page).\n\n"
+            "[ref]: #ref-page"
+        )
+        slugs = extract_all_wiki_slugs(content)
+        assert slugs == {"standalone-page", "linked-page", "ref-page"}
+
+    def test_no_slugs(self):
+        assert extract_all_wiki_slugs("No wiki links here.") == set()
+
+
+class TestWikiLinkRegexes:
+    """Test that wiki link regexes match the correct patterns."""
+
+    def test_standalone_not_matched_in_parens(self):
+        """WIKI_LINK_RE should not match #slug inside parentheses."""
+        from wiki.lib.markdown import WIKI_LINK_RE
+
+        assert WIKI_LINK_RE.findall("(#some-slug)") == []
+
+    def test_standalone_matched_normally(self):
+        from wiki.lib.markdown import WIKI_LINK_RE
+
+        assert WIKI_LINK_RE.findall("See #some-slug here") == ["some-slug"]
+
+    def test_md_link_regex_matches(self):
+        from wiki.lib.markdown import _MD_LINK_WIKI_RE
+
+        m = _MD_LINK_WIKI_RE.search("[click here](#my-page)")
+        assert m is not None
+        assert m.group(1) == "click here"
+        assert m.group(2) == "my-page"
+
+    def test_md_link_regex_no_match_for_url(self):
+        from wiki.lib.markdown import _MD_LINK_WIKI_RE
+
+        assert _MD_LINK_WIKI_RE.search("[text](https://example.com)") is None
+
+    def test_ref_link_regex_matches(self):
+        from wiki.lib.markdown import _REF_LINK_WIKI_RE
+
+        m = _REF_LINK_WIKI_RE.search("[ref]: #my-page")
+        assert m is not None
+        assert m.group(2) == "my-page"
+
+    def test_ref_link_regex_no_match_for_url(self):
+        from wiki.lib.markdown import _REF_LINK_WIKI_RE
+
+        assert _REF_LINK_WIKI_RE.search("[ref]: https://example.com") is None
