@@ -15,6 +15,7 @@ from wiki.directories.models import (
     DirectoryRevision,
 )
 from wiki.lib.edit_lock import acquire_lock_for_directory
+from wiki.lib.inheritance import clean_redundant_overrides
 from wiki.lib.models import EditLock
 from wiki.lib.permissions import can_edit_directory
 from wiki.pages.models import Page, PagePermission
@@ -1451,3 +1452,195 @@ class TestMovePageFormSecurity:
         r = client.get("/c/getting-started/move/")
         assert r.status_code == 200
         assert b"Private Target" not in r.content
+
+
+@pytest.mark.django_db
+class TestCleanRedundantOverrides:
+    """clean_redundant_overrides resets descendants whose explicit value
+    matches the new parent value back to 'inherit'."""
+
+    def test_direct_child_page_reset(self, sub_directory, user):
+        """Page with explicit value matching new parent → inherit."""
+        page = Page.objects.create(
+            title="P",
+            slug="p",
+            directory=sub_directory,
+            owner=user,
+            created_by=user,
+            updated_by=user,
+            visibility="private",
+        )
+        # Directory changes from public → private
+        sub_directory.visibility = "private"
+        sub_directory.save()
+        clean_redundant_overrides(sub_directory, {"visibility": "private"})
+
+        page.refresh_from_db()
+        assert page.visibility == "inherit"
+
+    def test_page_with_different_value_untouched(self, sub_directory, user):
+        """Page whose value differs from new parent is NOT changed."""
+        page = Page.objects.create(
+            title="P",
+            slug="p",
+            directory=sub_directory,
+            owner=user,
+            created_by=user,
+            updated_by=user,
+            visibility="internal",
+        )
+        sub_directory.visibility = "private"
+        sub_directory.save()
+        clean_redundant_overrides(sub_directory, {"visibility": "private"})
+
+        page.refresh_from_db()
+        assert page.visibility == "internal"
+
+    def test_child_directory_reset(self, sub_directory, nested_directory):
+        """Child dir with explicit value matching new parent → inherit."""
+        nested_directory.visibility = "private"
+        nested_directory.save()
+
+        sub_directory.visibility = "private"
+        sub_directory.save()
+        clean_redundant_overrides(sub_directory, {"visibility": "private"})
+
+        nested_directory.refresh_from_db()
+        assert nested_directory.visibility == "inherit"
+
+    def test_grandchild_page_through_inherit_dir(
+        self, sub_directory, nested_directory, user
+    ):
+        """Grandchild page is reset when its parent dir is 'inherit'."""
+        nested_directory.visibility = "inherit"
+        nested_directory.save()
+        page = Page.objects.create(
+            title="P",
+            slug="p",
+            directory=nested_directory,
+            owner=user,
+            created_by=user,
+            updated_by=user,
+            visibility="private",
+        )
+        sub_directory.visibility = "private"
+        sub_directory.save()
+        clean_redundant_overrides(sub_directory, {"visibility": "private"})
+
+        page.refresh_from_db()
+        assert page.visibility == "inherit"
+
+    def test_grandchild_behind_explicit_dir_untouched(
+        self, sub_directory, nested_directory, user
+    ):
+        """Grandchild behind a dir with a different explicit value is
+        NOT touched — that dir blocks propagation."""
+        nested_directory.visibility = "internal"
+        nested_directory.save()
+        page = Page.objects.create(
+            title="P",
+            slug="p",
+            directory=nested_directory,
+            owner=user,
+            created_by=user,
+            updated_by=user,
+            visibility="private",
+        )
+        sub_directory.visibility = "private"
+        sub_directory.save()
+        clean_redundant_overrides(sub_directory, {"visibility": "private"})
+
+        page.refresh_from_db()
+        assert page.visibility == "private"
+
+    def test_multiple_fields_cleaned(self, sub_directory, user):
+        """Both visibility and editability are cleaned in one call."""
+        page = Page.objects.create(
+            title="P",
+            slug="p",
+            directory=sub_directory,
+            owner=user,
+            created_by=user,
+            updated_by=user,
+            visibility="private",
+            editability="internal",
+        )
+        sub_directory.visibility = "private"
+        sub_directory.editability = "internal"
+        sub_directory.save()
+        clean_redundant_overrides(
+            sub_directory,
+            {"visibility": "private", "editability": "internal"},
+        )
+
+        page.refresh_from_db()
+        assert page.visibility == "inherit"
+        assert page.editability == "inherit"
+
+    def test_inherit_page_untouched(self, sub_directory, user):
+        """Page already set to 'inherit' stays that way."""
+        page = Page.objects.create(
+            title="P",
+            slug="p",
+            directory=sub_directory,
+            owner=user,
+            created_by=user,
+            updated_by=user,
+            visibility="inherit",
+        )
+        sub_directory.visibility = "private"
+        sub_directory.save()
+        clean_redundant_overrides(sub_directory, {"visibility": "private"})
+
+        page.refresh_from_db()
+        assert page.visibility == "inherit"
+
+    def test_recursive_dir_and_page_cleanup(
+        self, sub_directory, nested_directory, user
+    ):
+        """Dir override reset cascades to its child pages too."""
+        nested_directory.visibility = "private"
+        nested_directory.save()
+        page = Page.objects.create(
+            title="P",
+            slug="p",
+            directory=nested_directory,
+            owner=user,
+            created_by=user,
+            updated_by=user,
+            visibility="private",
+        )
+
+        sub_directory.visibility = "private"
+        sub_directory.save()
+        clean_redundant_overrides(sub_directory, {"visibility": "private"})
+
+        nested_directory.refresh_from_db()
+        page.refresh_from_db()
+        assert nested_directory.visibility == "inherit"
+        assert page.visibility == "inherit"
+
+    def test_view_triggers_cleanup(self, client, user, sub_directory):
+        """Editing a directory via the form cleans up child overrides."""
+        page = Page.objects.create(
+            title="P",
+            slug="p",
+            directory=sub_directory,
+            owner=user,
+            created_by=user,
+            updated_by=user,
+            visibility="private",
+        )
+        client.force_login(user)
+        r = client.post(
+            "/c/engineering/edit-dir/",
+            {
+                "title": sub_directory.title,
+                "description": sub_directory.description,
+                "visibility": "private",
+                "editability": "restricted",
+            },
+        )
+        assert r.status_code == 302
+        page.refresh_from_db()
+        assert page.visibility == "inherit"

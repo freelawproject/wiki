@@ -104,7 +104,7 @@ def _resolve_cached(dir_id, field_name, dir_data, cache):
     if dir_id in cache:
         return cache[dir_id]
 
-    parent_id, value, title, path = dir_data[dir_id]
+    parent_id, value, title, _path = dir_data[dir_id]
 
     if value != "inherit":
         cache[dir_id] = (value, dir_id, title)
@@ -120,3 +120,44 @@ def _resolve_cached(dir_id, field_name, dir_data, cache):
     parent_result = _resolve_cached(parent_id, field_name, dir_data, cache)
     cache[dir_id] = parent_result
     return parent_result
+
+
+def clean_redundant_overrides(directory, changed_fields):
+    """Reset descendants whose explicit value is now redundant to "inherit".
+
+    When a directory's setting changes (e.g. visibility from "public" to
+    "private"), descendants that had explicitly overridden the OLD value to
+    get the NEW value no longer need the override — their parent now provides
+    it.  Setting them to "inherit" keeps the database clean without changing
+    any effective access.
+
+    ``changed_fields`` is a dict mapping field names to their new values,
+    e.g. {"visibility": "private"}.
+    """
+    from wiki.pages.models import Page
+
+    for field_name, new_value in changed_fields.items():
+        _clean_field_overrides(directory, field_name, new_value, Page)
+
+
+def _clean_field_overrides(directory, field_name, new_value, Page):
+    """Recursively reset redundant overrides for a single field."""
+    # Reset direct child pages that explicitly match the new value
+    Page.objects.filter(
+        directory=directory,
+        **{field_name: new_value},
+    ).update(**{field_name: "inherit"})
+
+    # Process child directories
+    for child_dir in directory.children.all():
+        current = getattr(child_dir, field_name)
+        if current == new_value:
+            # Redundant override — reset to inherit
+            setattr(child_dir, field_name, "inherit")
+            child_dir.save(update_fields=[field_name])
+            # This child now inherits new_value; recurse to clean its children
+            _clean_field_overrides(child_dir, field_name, new_value, Page)
+        elif current == "inherit":
+            # Already inheriting — its effective value just changed to
+            # new_value, so its children might have redundant overrides too
+            _clean_field_overrides(child_dir, field_name, new_value, Page)

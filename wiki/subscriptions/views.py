@@ -9,7 +9,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 
 from wiki.directories.models import Directory
-from wiki.lib.permissions import can_view_page
+from wiki.lib.permissions import can_view_directory, can_view_page
 from wiki.pages.models import Page
 
 from .models import (
@@ -86,6 +86,9 @@ def toggle_directory_subscription(request, path=""):
 
     clean_path = path.strip("/") if path else ""
     directory = get_object_or_404(Directory, path=clean_path)
+
+    if not can_view_directory(request.user, directory):
+        raise Http404
 
     currently_subscribed = is_effectively_subscribed_to_directory(
         request.user, directory

@@ -2,6 +2,7 @@ from django.conf import settings as django_settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
+from django.db import transaction
 from django.db.models import Q
 from django.http import Http404, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -13,7 +14,11 @@ from wiki.lib.edit_lock import (
     get_active_lock_for_directory,
     release_lock_for_directory,
 )
-from wiki.lib.inheritance import resolve_effective_value
+from wiki.lib.inheritance import (
+    INHERITABLE_FIELDS,
+    clean_redundant_overrides,
+    resolve_effective_value,
+)
 from wiki.lib.markdown import render_markdown
 from wiki.lib.path_utils import directory_path_conflicts_with_page
 from wiki.lib.permissions import (
@@ -328,14 +333,30 @@ def directory_edit(request, path):
             )
         acquire_lock_for_directory(directory, request.user)
 
+    # Snapshot old values before form binding (is_valid modifies instance)
+    old_values = {f: getattr(directory, f) for f in INHERITABLE_FIELDS}
+
     form = DirectoryForm(request.POST or None, instance=directory)
     if request.method == "POST" and form.is_valid():
-        form.save()
-        _create_revision(
-            directory,
-            request.user,
-            form.cleaned_data.get("change_message", ""),
-        )
+        with transaction.atomic():
+            form.save()
+
+            # Clean up descendants whose overrides are now redundant
+            changed = {
+                f: form.cleaned_data[f]
+                for f in old_values
+                if f in form.cleaned_data
+                and old_values[f] != form.cleaned_data[f]
+                and form.cleaned_data[f] != "inherit"
+            }
+            if changed:
+                clean_redundant_overrides(directory, changed)
+
+            _create_revision(
+                directory,
+                request.user,
+                form.cleaned_data.get("change_message", ""),
+            )
         release_lock_for_directory(directory)
         messages.success(request, f'Directory "{directory.title}" updated.')
         return redirect(directory.get_absolute_url())

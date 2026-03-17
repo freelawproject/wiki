@@ -666,12 +666,12 @@ def page_delete(request, path):
         )
         return redirect(page.get_absolute_url())
 
-    incoming_links = list(
+    all_incoming = list(
         page.incoming_links.select_related("from_page", "from_page__directory")
     )
 
     if request.method == "POST":
-        if incoming_links:
+        if all_incoming:
             messages.error(
                 request,
                 "Cannot delete this page because other pages link to it.",
@@ -688,10 +688,22 @@ def page_delete(request, path):
         messages.success(request, f'Page "{title}" deleted.')
         return redirect(redirect_url)
 
+    # Filter to only links the user can view (don't leak private titles)
+    visible_links = [
+        link
+        for link in all_incoming
+        if can_view_page(request.user, link.from_page)
+    ]
+    hidden_count = len(all_incoming) - len(visible_links)
+
     return render(
         request,
         "pages/delete_confirm.html",
-        {"page": page, "incoming_links": incoming_links},
+        {
+            "page": page,
+            "incoming_links": visible_links,
+            "hidden_link_count": hidden_count,
+        },
     )
 
 

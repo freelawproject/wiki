@@ -5,14 +5,13 @@
 {% block content %}
 <div class="max-w-lg">
   <h1 class="text-2xl mb-4">Delete Page</h1>
-  {% if incoming_links %}
+  {% if incoming_links or hidden_link_count %}
   <div class="card border-red-300 dark:border-red-700">
     <p class="mb-3 font-medium text-red-700 dark:text-red-400">
-      This page cannot be deleted because {{ incoming_links|length }}
-      page{{ incoming_links|pluralize }} link{{ incoming_links|pluralize:"s," }} to it.
-      Update {{ incoming_links|pluralize:"this page,these pages" }} first to remove
-      the #{{ page.slug }} reference{{ incoming_links|pluralize:".,s." }}
+      This page cannot be deleted because other pages link to it.
+      Update them first to remove the #{{ page.slug }} reference.
     </p>
+    {% if incoming_links %}
     <ul class="space-y-1 mb-4">
       {% for link in incoming_links %}
       <li>
@@ -23,6 +22,12 @@
       </li>
       {% endfor %}
     </ul>
+    {% endif %}
+    {% if hidden_link_count %}
+    <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
+      Plus {{ hidden_link_count }} other page{{ hidden_link_count|pluralize }} you don't have access to view.
+    </p>
+    {% endif %}
     <a href="{{ page.get_absolute_url }}" class="btn-outline">Back to Page</a>
   </div>
   {% else %}
