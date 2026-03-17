@@ -190,11 +190,11 @@ class Page(models.Model):
 
         # Inline import to avoid circular dependency (pages/models ↔ lib/markdown)
         from wiki.lib.markdown import (
-            WIKI_LINK_RE,
+            extract_all_wiki_slugs,
             extract_slugs_from_internal_urls,
         )
 
-        slugs = set(WIKI_LINK_RE.findall(self.content))
+        slugs = extract_all_wiki_slugs(self.content)
         slugs |= extract_slugs_from_internal_urls(self.content)
 
         if not slugs:

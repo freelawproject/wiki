@@ -13,7 +13,16 @@ from django.conf import settings
 
 from wiki.lib.inheritance import resolve_effective_value
 
-WIKI_LINK_RE = re.compile(r"(?<!\w)#([a-z0-9]+(?:-[a-z0-9]+)*)")
+WIKI_LINK_RE = re.compile(r"(?<!\w)(?<!\()#([a-z0-9]+(?:-[a-z0-9]+)*)")
+
+# Matches [text](#slug) markdown links where #slug is a wiki page reference
+_MD_LINK_WIKI_RE = re.compile(r"\[([^\]]+)\]\(#([a-z0-9]+(?:-[a-z0-9]+)*)\)")
+
+# Matches reference-style link definitions: [ref]: #slug
+_REF_LINK_WIKI_RE = re.compile(
+    r"^(\[[^\]]+\]:\s*)#([a-z0-9]+(?:-[a-z0-9]+)*)\s*$",
+    re.MULTILINE,
+)
 
 # Pattern for auto-linking bare URLs (used by markdown2 link-patterns extra)
 _AUTOLINK_RE = re.compile(r"(?<!\()(https?://[^\s<>\)\]\"]+)")
@@ -166,22 +175,33 @@ def _sanitize(html):
 def resolve_wiki_links(content):
     """Replace #slug references with proper markdown links.
 
-    Known slugs become [Title](/dir/path/slug).
-    Unknown slugs become red links.
+    Handles three syntaxes:
+    - Standalone: #slug → [Title](/dir/path/slug)
+    - Inline link: [text](#slug) → [text](/dir/path/slug)
+    - Reference link: [ref]: #slug → [ref]: /dir/path/slug
+
+    Known slugs are resolved to page URLs. Unknown standalone slugs
+    become red links. Unknown slugs in [text](#slug) and reference
+    definitions are left as-is (they may be heading anchors).
     """
     # Inline import to avoid circular dependency (pages/models ↔ lib/markdown)
     from wiki.pages.models import Page, SlugRedirect
 
-    slugs = set(WIKI_LINK_RE.findall(content))
-    if not slugs:
+    # Collect slugs from all three patterns
+    standalone_slugs = set(WIKI_LINK_RE.findall(content))
+    md_link_slugs = {m.group(2) for m in _MD_LINK_WIKI_RE.finditer(content)}
+    ref_link_slugs = {m.group(2) for m in _REF_LINK_WIKI_RE.finditer(content)}
+    all_slugs = standalone_slugs | md_link_slugs | ref_link_slugs
+
+    if not all_slugs:
         return content
 
     # Build a slug → page mapping
-    pages = Page.objects.filter(slug__in=slugs).select_related("directory")
+    pages = Page.objects.filter(slug__in=all_slugs).select_related("directory")
     slug_map = {p.slug: p for p in pages}
 
     # Check redirects for slugs not found directly
-    missing = slugs - set(slug_map.keys())
+    missing = all_slugs - set(slug_map.keys())
     if missing:
         redirects = SlugRedirect.objects.filter(
             old_slug__in=missing
@@ -189,6 +209,25 @@ def resolve_wiki_links(content):
         for r in redirects:
             slug_map[r.old_slug] = r.page
 
+    # 1) Replace [text](#slug) — known slugs get resolved, unknown left as-is
+    def replace_md_link(match):
+        text, slug = match.group(1), match.group(2)
+        if slug in slug_map:
+            return f"[{text}]({slug_map[slug].get_absolute_url()})"
+        return match.group(0)
+
+    content = _MD_LINK_WIKI_RE.sub(replace_md_link, content)
+
+    # 2) Replace [ref]: #slug — known slugs get resolved, unknown left as-is
+    def replace_ref_link(match):
+        prefix, slug = match.group(1), match.group(2)
+        if slug in slug_map:
+            return f"{prefix}{slug_map[slug].get_absolute_url()}"
+        return match.group(0)
+
+    content = _REF_LINK_WIKI_RE.sub(replace_ref_link, content)
+
+    # 3) Replace standalone #slug — known → link, unknown → red text
     def replace_link(match):
         slug = match.group(1)
         if slug in slug_map:
@@ -199,6 +238,20 @@ def resolve_wiki_links(content):
             return f'<span class="text-red-500 dark:text-red-400" title="Page not found">#{slug}</span>'
 
     return WIKI_LINK_RE.sub(replace_link, content)
+
+
+def extract_all_wiki_slugs(content):
+    """Extract page slugs from all wiki link syntaxes in raw content.
+
+    Finds slugs from:
+    - Standalone #slug references
+    - [text](#slug) markdown links
+    - [ref]: #slug reference definitions
+    """
+    slugs = set(WIKI_LINK_RE.findall(content))
+    slugs |= {m.group(2) for m in _MD_LINK_WIKI_RE.finditer(content)}
+    slugs |= {m.group(2) for m in _REF_LINK_WIKI_RE.finditer(content)}
+    return slugs
 
 
 # ── Markdown stripping (plain-text extraction) ──────────────────────
