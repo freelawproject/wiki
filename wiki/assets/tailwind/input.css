@@ -236,6 +236,58 @@
     @apply mr-2;
   }
 
+  /* === GitHub-style alerts === */
+  .wiki-content .markdown-alert {
+    @apply border-l-4 pl-5 my-5 py-3 pr-4 rounded-r-lg;
+  }
+  .wiki-content .markdown-alert p {
+    @apply my-1;
+  }
+  .wiki-content .markdown-alert-title {
+    @apply font-semibold;
+  }
+  .wiki-content .markdown-alert-note {
+    @apply border-blue-400 bg-blue-50/50 dark:bg-blue-900/10 dark:border-blue-500;
+  }
+  .wiki-content .markdown-alert-note .markdown-alert-title {
+    @apply text-blue-600 dark:text-blue-400;
+  }
+  .wiki-content .markdown-alert-tip {
+    @apply border-green-400 bg-green-50/50 dark:bg-green-900/10 dark:border-green-500;
+  }
+  .wiki-content .markdown-alert-tip .markdown-alert-title {
+    @apply text-green-600 dark:text-green-400;
+  }
+  .wiki-content .markdown-alert-important {
+    @apply border-purple-400 bg-purple-50/50 dark:bg-purple-900/10 dark:border-purple-500;
+  }
+  .wiki-content .markdown-alert-important .markdown-alert-title {
+    @apply text-purple-600 dark:text-purple-400;
+  }
+  .wiki-content .markdown-alert-warning {
+    @apply border-yellow-400 bg-yellow-50/50 dark:bg-yellow-900/10 dark:border-yellow-500;
+  }
+  .wiki-content .markdown-alert-warning .markdown-alert-title {
+    @apply text-yellow-600 dark:text-yellow-400;
+  }
+  .wiki-content .markdown-alert-caution {
+    @apply border-red-400 bg-red-50/50 dark:bg-red-900/10 dark:border-red-500;
+  }
+  .wiki-content .markdown-alert-caution .markdown-alert-title {
+    @apply text-red-600 dark:text-red-400;
+  }
+
+  /* === Button links in wiki content === */
+  .wiki-content a.btn-primary {
+    @apply text-white no-underline hover:text-white hover:no-underline;
+  }
+  .wiki-content a.btn-outline {
+    @apply no-underline hover:no-underline;
+  }
+  .wiki-content a.btn-danger {
+    @apply text-white no-underline hover:text-white hover:no-underline;
+  }
+
   /* === Code block wrapper (copy button + highlight.js) === */
   .code-block-wrapper {
     @apply relative my-3;

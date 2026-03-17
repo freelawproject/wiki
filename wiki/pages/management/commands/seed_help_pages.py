@@ -226,6 +226,59 @@ To link to another wiki page, use the #slug syntax (see #linking-pages).
 > It can span multiple lines.
 ```
 
+### Alerts
+
+Use GitHub-style alerts to highlight important information. Start
+a blockquote with `[!TYPE]` where TYPE is one of NOTE, TIP,
+IMPORTANT, WARNING, or CAUTION:
+
+```markdown
+> [!NOTE]
+> Useful background information.
+```
+
+Here's what each type looks like:
+
+> [!NOTE]
+> Useful background information the reader should be aware of.
+
+> [!TIP]
+> Helpful advice for getting the most out of something.
+
+> [!IMPORTANT]
+> Key information users need to know to achieve their goal.
+
+> [!WARNING]
+> Urgent information that needs immediate attention to avoid problems.
+
+> [!CAUTION]
+> Warns about risks or negative outcomes of an action.
+
+### Button links
+
+You can make any link render as a button by adding `{button}`
+after it:
+
+```markdown
+[Get started](https://example.com){button}
+[Learn more](https://example.com){button-outline}
+[Delete this](https://example.com){button-danger}
+```
+
+Three styles are available:
+
+| Syntax | Style |
+|---|---|
+| `{button}` | Primary (filled, blue) |
+| `{button-outline}` | Outline (bordered) |
+| `{button-danger}` | Danger (filled, red) |
+
+Here's what they look like:
+
+[Primary button](https://example.com){button}
+[Outline button](https://example.com){button-outline}
+[Danger button](https://example.com){button-danger}
+
 ### Code blocks
 
 Use triple backticks with an optional language name for syntax

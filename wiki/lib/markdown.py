@@ -13,6 +13,30 @@ from django.conf import settings
 
 from wiki.lib.inheritance import resolve_effective_value
 
+# ── Alert types (GitHub-style) ───────────────────────────────────────
+_ALERT_TITLES = {
+    "NOTE": "Note",
+    "TIP": "Tip",
+    "IMPORTANT": "Important",
+    "WARNING": "Warning",
+    "CAUTION": "Caution",
+}
+
+# Matches blockquotes starting with [!TYPE] (runs on sanitized HTML)
+_ALERT_BLOCKQUOTE_RE = re.compile(
+    r"<blockquote>\s*<p>\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]"
+    r"\s*(?:<br\s*/?>)?\s*"
+    r"(.*?)</blockquote>",
+    re.DOTALL | re.IGNORECASE,
+)
+
+# Matches links followed by {button} suffix (runs on sanitized HTML)
+_BUTTON_LINK_RE = re.compile(
+    r'(<a\s[^>]*href="[^"]*"[^>]*)>(.*?)</a>'
+    r"\s*\{button(?:-(outline|danger))?\}",
+    re.DOTALL,
+)
+
 WIKI_LINK_RE = re.compile(r"(?<!\w)(?<!\()#([a-z0-9]+(?:-[a-z0-9]+)*)")
 
 # Matches [text](#slug) markdown links where #slug is a wiki page reference
@@ -230,6 +254,15 @@ def resolve_wiki_links(content):
     # 3) Replace standalone #slug — known → link, unknown → red text
     def replace_link(match):
         slug = match.group(1)
+        # Skip if this #slug sits inside a reference-style definition
+        # ([ref]: #slug) — step 2 already handled those.
+        line_start = match.string.rfind("\n", 0, match.start()) + 1
+        line_end = match.string.find("\n", match.end())
+        if line_end == -1:
+            line_end = len(match.string)
+        line = match.string[line_start:line_end]
+        if _REF_LINK_WIKI_RE.match(line):
+            return match.group(0)
         if slug in slug_map:
             page = slug_map[slug]
             url = page.get_absolute_url()
@@ -266,6 +299,10 @@ _STRIKETHROUGH_RE = re.compile(r"~~")
 _HTML_TAG_RE = re.compile(r"<[^>]+>")
 _HR_RE = re.compile(r"^[-*_]{3,}\s*$", re.MULTILINE)
 _BLOCKQUOTE_RE = re.compile(r"^>\s?", re.MULTILINE)
+_ALERT_MARKER_STRIP_RE = re.compile(
+    r"\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*", re.IGNORECASE
+)
+_BUTTON_SUFFIX_STRIP_RE = re.compile(r"\{button(?:-(outline|danger))?\}")
 _UL_RE = re.compile(r"^[\s]*[-*+]\s+", re.MULTILINE)
 _OL_RE = re.compile(r"^[\s]*\d+\.\s+", re.MULTILINE)
 _WHITESPACE_RE = re.compile(r"\s+")
@@ -291,6 +328,8 @@ def strip_markdown(text: str) -> str:
     text = _HTML_TAG_RE.sub("", text)
     text = _HR_RE.sub("", text)
     text = _BLOCKQUOTE_RE.sub("", text)
+    text = _ALERT_MARKER_STRIP_RE.sub("", text)
+    text = _BUTTON_SUFFIX_STRIP_RE.sub("", text)
     text = _UL_RE.sub("", text)
     text = _OL_RE.sub("", text)
     text = _WHITESPACE_RE.sub(" ", text).strip()
@@ -358,6 +397,49 @@ def _add_nofollow_to_non_public_links(html):
     return _INTERNAL_HREF_RE.sub(add_rel, html)
 
 
+def _convert_alerts(html):
+    """Convert GitHub-style alert blockquotes to styled divs.
+
+    Transforms blockquotes starting with [!NOTE], [!TIP], [!IMPORTANT],
+    [!WARNING], or [!CAUTION] into styled alert containers. Runs after
+    sanitization so injected HTML is already stripped.
+    """
+
+    def replace_alert(match):
+        alert_type = match.group(1).upper()
+        css_class = alert_type.lower()
+        title = _ALERT_TITLES[alert_type]
+        content = match.group(2).strip()
+        # Ensure content starts with a <p> tag (it was mid-paragraph)
+        if not content.startswith("<p>"):
+            content = "<p>" + content
+        return (
+            f'<div class="markdown-alert markdown-alert-{css_class}">'
+            f'<p class="markdown-alert-title">{title}</p>'
+            f"\n{content}"
+            f"\n</div>"
+        )
+
+    return _ALERT_BLOCKQUOTE_RE.sub(replace_alert, html)
+
+
+def _convert_button_links(html):
+    """Convert links with {button} suffix to button-styled links.
+
+    Transforms [text](url){button} into a link with btn btn-primary classes.
+    Also supports {button-outline}, {button-danger}, {button-ghost}. Runs
+    after sanitization so the class attribute is safely added.
+    """
+
+    def replace_button(match):
+        tag_attrs = match.group(1)
+        text = match.group(2)
+        variant = match.group(3) or "primary"
+        return f'{tag_attrs} class="btn btn-{variant}">{text}</a>'
+
+    return _BUTTON_LINK_RE.sub(replace_button, html)
+
+
 def render_markdown(content):
     """Render markdown content to HTML with wiki link resolution and TOC."""
     content = resolve_wiki_links(content)
@@ -377,6 +459,9 @@ def render_markdown(content):
     )
     toc = getattr(html, "toc_html", "")
     sanitized = _sanitize(str(html))
-    result = MarkdownResult(_add_nofollow_to_non_public_links(sanitized))
+    processed = _add_nofollow_to_non_public_links(sanitized)
+    processed = _convert_alerts(processed)
+    processed = _convert_button_links(processed)
+    result = MarkdownResult(processed)
     result.toc_html = _sanitize(toc) if toc else ""
     return result
