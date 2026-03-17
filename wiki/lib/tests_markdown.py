@@ -351,11 +351,6 @@ class TestConvertButtonLinks:
         result = _convert_button_links(html)
         assert 'class="btn btn-danger"' in result
 
-    def test_button_ghost(self):
-        html = '<a href="/info">Info</a>{button-ghost}'
-        result = _convert_button_links(html)
-        assert 'class="btn btn-ghost"' in result
-
     def test_no_button_suffix_unchanged(self):
         html = '<a href="https://example.com">Click</a>'
         result = _convert_button_links(html)

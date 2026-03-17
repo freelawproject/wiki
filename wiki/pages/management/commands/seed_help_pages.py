@@ -235,23 +235,24 @@ IMPORTANT, WARNING, or CAUTION:
 ```markdown
 > [!NOTE]
 > Useful background information.
+```
+
+Here's what each type looks like:
+
+> [!NOTE]
+> Useful background information the reader should be aware of.
 
 > [!TIP]
 > Helpful advice for getting the most out of something.
 
 > [!IMPORTANT]
-> Key information users need to know.
+> Key information users need to know to achieve their goal.
 
 > [!WARNING]
-> Urgent information that needs immediate attention.
+> Urgent information that needs immediate attention to avoid problems.
 
 > [!CAUTION]
-> Warns about risks or negative outcomes.
-```
-
-Each type has its own color and label — blue for notes, green for
-tips, purple for important, yellow for warnings, and red for
-caution.
+> Warns about risks or negative outcomes of an action.
 
 ### Button links
 
@@ -261,16 +262,22 @@ after it:
 ```markdown
 [Get started](https://example.com){button}
 [Learn more](https://example.com){button-outline}
+[Delete this](https://example.com){button-danger}
 ```
 
-Four styles are available:
+Three styles are available:
 
 | Syntax | Style |
 |---|---|
 | `{button}` | Primary (filled, blue) |
 | `{button-outline}` | Outline (bordered) |
 | `{button-danger}` | Danger (filled, red) |
-| `{button-ghost}` | Ghost (text only) |
+
+Here's what they look like:
+
+[Primary button](https://example.com){button}
+[Outline button](https://example.com){button-outline}
+[Danger button](https://example.com){button-danger}
 
 ### Code blocks
 

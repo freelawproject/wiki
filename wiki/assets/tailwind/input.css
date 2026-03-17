@@ -287,9 +287,6 @@
   .wiki-content a.btn-danger {
     @apply text-white no-underline hover:text-white hover:no-underline;
   }
-  .wiki-content a.btn-ghost {
-    @apply no-underline hover:no-underline;
-  }
 
   /* === Code block wrapper (copy button + highlight.js) === */
   .code-block-wrapper {

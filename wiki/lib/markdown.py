@@ -33,7 +33,7 @@ _ALERT_BLOCKQUOTE_RE = re.compile(
 # Matches links followed by {button} suffix (runs on sanitized HTML)
 _BUTTON_LINK_RE = re.compile(
     r'(<a\s[^>]*href="[^"]*"[^>]*)>(.*?)</a>'
-    r"\s*\{button(?:-(outline|danger|ghost))?\}",
+    r"\s*\{button(?:-(outline|danger))?\}",
     re.DOTALL,
 )
 
@@ -302,7 +302,7 @@ _BLOCKQUOTE_RE = re.compile(r"^>\s?", re.MULTILINE)
 _ALERT_MARKER_STRIP_RE = re.compile(
     r"\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*", re.IGNORECASE
 )
-_BUTTON_SUFFIX_STRIP_RE = re.compile(r"\{button(?:-(outline|danger|ghost))?\}")
+_BUTTON_SUFFIX_STRIP_RE = re.compile(r"\{button(?:-(outline|danger))?\}")
 _UL_RE = re.compile(r"^[\s]*[-*+]\s+", re.MULTILINE)
 _OL_RE = re.compile(r"^[\s]*\d+\.\s+", re.MULTILINE)
 _WHITESPACE_RE = re.compile(r"\s+")
