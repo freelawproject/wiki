@@ -2,7 +2,11 @@
 
 from unittest.mock import patch
 
+import pytest
+
 from wiki.lib.markdown import (
+    _convert_alerts,
+    _convert_button_links,
     extract_all_wiki_slugs,
     extract_slugs_from_internal_urls,
     render_markdown,
@@ -223,3 +227,218 @@ class TestWikiLinkRegexes:
         from wiki.lib.markdown import _REF_LINK_WIKI_RE
 
         assert _REF_LINK_WIKI_RE.search("[ref]: https://example.com") is None
+
+    def test_standalone_skips_ref_definition_line(self):
+        """Standalone replacement must not mangle #slug inside [ref]: #slug."""
+        from wiki.lib.markdown import WIKI_LINK_RE
+
+        content = "[food]: #nonexistent-slug"
+        # The standalone regex matches #nonexistent-slug ...
+        assert WIKI_LINK_RE.search(content) is not None
+        # ... but the line is a reference definition, so resolve_wiki_links
+        # should leave it alone (tested in TestRefLinkUnknownSlug below).
+
+
+@pytest.mark.django_db
+class TestRefLinkUnknownSlug:
+    """Reference-style links with unknown slugs must not be mangled."""
+
+    def test_unknown_ref_slug_not_turned_into_red_span(self):
+        """[ref]: #unknown should stay as-is, not become a red span URL."""
+        md = "[click here][food]\n\n[food]: #nonexistent-slug"
+        html = render_markdown(md)
+        # The red span HTML should NOT appear inside an href
+        assert "text-red-500" not in html or 'href="' not in html
+        # The link text should still appear
+        assert "click here" in html
+
+    def test_standalone_slug_still_gets_red_link(self):
+        """Standalone #unknown on a normal line should still get red styling."""
+        md = "See #nonexistent-slug for details.\n\n[food]: #nonexistent-slug"
+        html = render_markdown(md)
+        assert "text-red-500" in html
+        assert "Page not found" in html
+
+
+class TestConvertAlerts:
+    """GitHub-style alert blockquotes should be converted to styled divs."""
+
+    def test_note_alert(self):
+        html = "<blockquote>\n<p>[!NOTE]<br />\nThis is a note.</p>\n</blockquote>"
+        result = _convert_alerts(html)
+        assert 'class="markdown-alert markdown-alert-note"' in result
+        assert 'class="markdown-alert-title"' in result
+        assert ">Note<" in result
+        assert "This is a note." in result
+        assert "<blockquote>" not in result
+
+    def test_tip_alert(self):
+        html = (
+            "<blockquote>\n<p>[!TIP]<br />\nHelpful advice.</p>\n</blockquote>"
+        )
+        result = _convert_alerts(html)
+        assert "markdown-alert-tip" in result
+        assert ">Tip<" in result
+
+    def test_important_alert(self):
+        html = (
+            "<blockquote>\n<p>[!IMPORTANT]<br />\nKey info.</p>\n</blockquote>"
+        )
+        result = _convert_alerts(html)
+        assert "markdown-alert-important" in result
+        assert ">Important<" in result
+
+    def test_warning_alert(self):
+        html = (
+            "<blockquote>\n<p>[!WARNING]<br />\nBe careful.</p>\n</blockquote>"
+        )
+        result = _convert_alerts(html)
+        assert "markdown-alert-warning" in result
+        assert ">Warning<" in result
+
+    def test_caution_alert(self):
+        html = "<blockquote>\n<p>[!CAUTION]<br />\nDanger zone.</p>\n</blockquote>"
+        result = _convert_alerts(html)
+        assert "markdown-alert-caution" in result
+        assert ">Caution<" in result
+
+    def test_case_insensitive(self):
+        html = "<blockquote>\n<p>[!note]<br />\nLowercase.</p>\n</blockquote>"
+        result = _convert_alerts(html)
+        assert "markdown-alert-note" in result
+
+    def test_regular_blockquote_unchanged(self):
+        html = "<blockquote>\n<p>Just a regular quote.</p>\n</blockquote>"
+        result = _convert_alerts(html)
+        assert "<blockquote>" in result
+        assert "markdown-alert" not in result
+
+    def test_multi_paragraph_alert(self):
+        html = (
+            "<blockquote>\n<p>[!NOTE]<br />\n"
+            "First paragraph.</p>\n\n<p>Second paragraph.</p>\n</blockquote>"
+        )
+        result = _convert_alerts(html)
+        assert "markdown-alert-note" in result
+        assert "First paragraph." in result
+        assert "Second paragraph." in result
+
+    def test_alert_without_br(self):
+        """Alert marker without <br> separator should still work."""
+        html = "<blockquote>\n<p>[!NOTE]\nContent here.</p>\n</blockquote>"
+        result = _convert_alerts(html)
+        assert "markdown-alert-note" in result
+        assert "Content here." in result
+
+
+class TestConvertButtonLinks:
+    """Links with {button} suffix should be converted to button-styled links."""
+
+    def test_basic_button(self):
+        html = '<a href="https://example.com">Click</a>{button}'
+        result = _convert_button_links(html)
+        assert 'class="btn btn-primary"' in result
+        assert "{button}" not in result
+        assert ">Click</a>" in result
+
+    def test_button_outline(self):
+        html = '<a href="/page">Go</a>{button-outline}'
+        result = _convert_button_links(html)
+        assert 'class="btn btn-outline"' in result
+
+    def test_button_danger(self):
+        html = '<a href="/delete">Delete</a>{button-danger}'
+        result = _convert_button_links(html)
+        assert 'class="btn btn-danger"' in result
+
+    def test_button_ghost(self):
+        html = '<a href="/info">Info</a>{button-ghost}'
+        result = _convert_button_links(html)
+        assert 'class="btn btn-ghost"' in result
+
+    def test_no_button_suffix_unchanged(self):
+        html = '<a href="https://example.com">Click</a>'
+        result = _convert_button_links(html)
+        assert result == html
+        assert "btn" not in result
+
+    def test_button_with_space_before(self):
+        html = '<a href="https://example.com">Click</a> {button}'
+        result = _convert_button_links(html)
+        assert 'class="btn btn-primary"' in result
+
+    def test_preserves_existing_attributes(self):
+        html = '<a rel="nofollow" href="/page">Go</a>{button}'
+        result = _convert_button_links(html)
+        assert 'rel="nofollow"' in result
+        assert 'class="btn btn-primary"' in result
+
+    def test_literal_button_text_not_after_link(self):
+        html = "<p>Use {button} syntax for buttons.</p>"
+        result = _convert_button_links(html)
+        assert result == html
+
+
+class TestAlertEndToEnd:
+    """Test alert rendering through the full render_markdown pipeline."""
+
+    def test_note_renders(self):
+        md = "> [!NOTE]\n> This is a note about something."
+        html = render_markdown(md)
+        assert "markdown-alert-note" in html
+        assert "Note" in html
+        assert "This is a note about something." in html
+
+    def test_mixed_content(self):
+        md = "Some text.\n\n> [!WARNING]\n> Be careful here.\n\nMore text."
+        html = render_markdown(md)
+        assert "markdown-alert-warning" in html
+        assert "Some text." in html
+        assert "More text." in html
+
+
+class TestButtonEndToEnd:
+    """Test button link rendering through the full render_markdown pipeline."""
+
+    def test_button_renders(self):
+        md = "[Click here](https://example.com){button}"
+        html = render_markdown(md)
+        assert 'class="btn btn-primary"' in html
+        assert 'href="https://example.com"' in html
+
+    def test_button_outline_renders(self):
+        md = "[Secondary](https://example.com){button-outline}"
+        html = render_markdown(md)
+        assert 'class="btn btn-outline"' in html
+
+
+class TestStripMarkdownAlerts:
+    """strip_markdown should remove alert markers."""
+
+    def test_strips_note_marker(self):
+        result = strip_markdown("> [!NOTE]\n> Important info here.")
+        assert "[!NOTE]" not in result
+        assert "Important info here." in result
+
+    def test_strips_warning_marker(self):
+        result = strip_markdown("> [!WARNING]\n> Be careful.")
+        assert "[!WARNING]" not in result
+        assert "Be careful." in result
+
+
+class TestStripMarkdownButtons:
+    """strip_markdown should remove {button} suffixes."""
+
+    def test_strips_button(self):
+        result = strip_markdown("[Click](https://example.com){button}")
+        assert "{button}" not in result
+        assert "Click" in result
+
+    def test_strips_button_outline(self):
+        result = strip_markdown("[Go](/page){button-outline}")
+        assert "{button-outline}" not in result
+        assert "Go" in result
+
+    def test_strips_button_danger(self):
+        result = strip_markdown("[Delete](/x){button-danger}")
+        assert "{button-danger}" not in result
