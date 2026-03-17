@@ -32,9 +32,8 @@ _ALERT_BLOCKQUOTE_RE = re.compile(
 
 # Matches links followed by {button} suffix (runs on sanitized HTML)
 _BUTTON_LINK_RE = re.compile(
-    r'(<a\s[^>]*href="[^"]*"[^>]*)>(.*?)</a>'
+    r'(<a\s[^>]*href="[^"]*"[^>]*)>((?:(?!</a>).)*)</a>'
     r"\s*\{button(?:-(outline|danger))?\}",
-    re.DOTALL,
 )
 
 WIKI_LINK_RE = re.compile(r"(?<!\w)(?<!\()#([a-z0-9]+(?:-[a-z0-9]+)*)")

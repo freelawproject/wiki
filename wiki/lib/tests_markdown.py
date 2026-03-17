@@ -373,6 +373,19 @@ class TestConvertButtonLinks:
         result = _convert_button_links(html)
         assert result == html
 
+    def test_earlier_link_not_swallowed_by_later_button(self):
+        """A regular link before a button link must not become the button."""
+        html = (
+            '<p>see <a href="/c/help/linking-pages">Linking Pages</a>).</p>\n'
+            '<p><a href="https://example.com">Click</a>{button}</p>'
+        )
+        result = _convert_button_links(html)
+        # The first link must remain untouched (no btn class)
+        assert '<a href="/c/help/linking-pages">Linking Pages</a>' in result
+        # The second link gets the button class
+        assert 'class="btn btn-primary"' in result
+        assert ">Click</a>" in result
+
 
 class TestAlertEndToEnd:
     """Test alert rendering through the full render_markdown pipeline."""
