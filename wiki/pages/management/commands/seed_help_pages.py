@@ -1427,7 +1427,7 @@ crawlers to the sitemap.
 """,
     },
     {
-        "title": "Data Sources Guide",
+        "title": "External Data Sources Guide",
         "slug": "data-sources-guide",
         "content": """\
 ## Pulling live data into pages
