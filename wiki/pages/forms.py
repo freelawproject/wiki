@@ -2,6 +2,7 @@ from django import forms
 from django.contrib.auth.models import Group
 
 from wiki.directories.models import Directory
+from wiki.lib.data_source import is_domain_allowed
 from wiki.lib.inheritance import resolve_effective_value
 from wiki.lib.permissions import can_view_directory
 
@@ -39,6 +40,8 @@ class PageForm(forms.ModelForm):
             "seo_description",
             "in_sitemap",
             "in_llms_txt",
+            "data_source_url",
+            "data_source_ttl",
             "visibility",
             "editability",
             "change_message",
@@ -66,6 +69,19 @@ class PageForm(forms.ModelForm):
             ),
             "in_sitemap": forms.Select(attrs={"class": "input-text"}),
             "in_llms_txt": forms.Select(attrs={"class": "input-text"}),
+            "data_source_url": forms.URLInput(
+                attrs={
+                    "class": "input-text w-full",
+                    "placeholder": "https://api.example.com/data.json",
+                    "autocomplete": "off",
+                }
+            ),
+            "data_source_ttl": forms.NumberInput(
+                attrs={
+                    "class": "input-text w-24",
+                    "min": "10",
+                }
+            ),
             "visibility": forms.Select(attrs={"class": "input-text"}),
             "editability": forms.Select(attrs={"class": "input-text"}),
             "change_message": forms.TextInput(
@@ -84,6 +100,7 @@ class PageForm(forms.ModelForm):
         self.fields["editability"].required = False
         self.fields["in_llms_txt"].required = False
         self.fields["in_sitemap"].required = False
+        self.fields["data_source_ttl"].required = False
 
         # Build inherit labels for each field
         if directory:
@@ -160,6 +177,17 @@ class PageForm(forms.ModelForm):
         if value == "inherit":
             return value
         return value or "include"
+
+    def clean_data_source_url(self):
+        url = self.cleaned_data.get("data_source_url", "")
+        if url and not is_domain_allowed(url):
+            raise forms.ValidationError(
+                "This domain is not in the allowed data source list."
+            )
+        return url
+
+    def clean_data_source_ttl(self):
+        return self.cleaned_data.get("data_source_ttl") or 300
 
 
 class PagePermissionForm(forms.Form):
