@@ -3,7 +3,7 @@ import uuid
 from django.conf import settings
 from django.contrib.postgres.indexes import GinIndex
 from django.contrib.postgres.search import SearchVector, SearchVectorField
-from django.db import models
+from django.db import models, transaction
 from django.utils.text import slugify
 
 from wiki.lib.path_utils import page_path_conflicts_with_directory
@@ -218,13 +218,16 @@ class Page(models.Model):
 
         target_pages = set(pages_by_slug.values())
 
-        # Replace all links atomically
-        PageLink.objects.filter(from_page=self).delete()
-        if target_pages:
-            PageLink.objects.bulk_create(
-                [PageLink(from_page=self, to_page=tp) for tp in target_pages],
-                ignore_conflicts=True,
-            )
+        with transaction.atomic():
+            PageLink.objects.filter(from_page=self).delete()
+            if target_pages:
+                PageLink.objects.bulk_create(
+                    [
+                        PageLink(from_page=self, to_page=tp)
+                        for tp in target_pages
+                    ],
+                    ignore_conflicts=True,
+                )
 
     def _update_search_vector(self):
         """Update the search_vector for this page in the DB."""
