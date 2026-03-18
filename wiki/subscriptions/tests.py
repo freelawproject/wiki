@@ -8,7 +8,7 @@ from django.test import Client
 from wiki.subscriptions.models import (
     DirectorySubscription,
     PageSubscription,
-    SubscriptionExclusion,
+    SubscriptionStatus,
 )
 from wiki.subscriptions.tasks import notify_subscribers
 from wiki.subscriptions.utils import (
@@ -17,6 +17,9 @@ from wiki.subscriptions.utils import (
     is_effectively_subscribed_to_directory,
     is_effectively_subscribed_to_page,
 )
+
+S = SubscriptionStatus.SUBSCRIBED
+U = SubscriptionStatus.UNSUBSCRIBED
 
 
 @pytest.fixture
@@ -33,7 +36,13 @@ class TestDirectorySubscriptionModel:
             user=user, directory=sub_directory
         )
         assert ds.pk is not None
-        assert str(ds) == f"{user} → {sub_directory}"
+        assert str(ds) == f"{user} → {sub_directory} (subscribed)"
+
+    def test_create_unsubscribed(self, user, sub_directory):
+        ds = DirectorySubscription.objects.create(
+            user=user, directory=sub_directory, status=U
+        )
+        assert str(ds) == f"{user} → {sub_directory} (unsubscribed)"
 
     def test_unique_together(self, user, sub_directory):
         DirectorySubscription.objects.create(
@@ -52,31 +61,15 @@ class TestDirectorySubscriptionModel:
         assert not DirectorySubscription.objects.filter(user=user).exists()
 
 
-class TestSubscriptionExclusionModel:
-    def test_page_exclusion(self, user, page):
-        ex = SubscriptionExclusion.objects.create(user=user, page=page)
-        assert ex.pk is not None
+class TestPageSubscriptionModel:
+    def test_create(self, user, page):
+        ps = PageSubscription.objects.create(user=user, page=page)
+        assert ps.pk is not None
+        assert str(ps) == f"{user} → {page} (subscribed)"
 
-    def test_directory_exclusion(self, user, sub_directory):
-        ex = SubscriptionExclusion.objects.create(
-            user=user, directory=sub_directory
-        )
-        assert ex.pk is not None
-
-    def test_cannot_have_both(self, user, page, sub_directory):
-        with pytest.raises(Exception):
-            SubscriptionExclusion.objects.create(
-                user=user, page=page, directory=sub_directory
-            )
-
-    def test_cannot_have_neither(self, user, db):
-        with pytest.raises(Exception):
-            SubscriptionExclusion.objects.create(user=user)
-
-    def test_unique_per_user_page(self, user, page):
-        SubscriptionExclusion.objects.create(user=user, page=page)
-        with pytest.raises(Exception):
-            SubscriptionExclusion.objects.create(user=user, page=page)
+    def test_create_unsubscribed(self, user, page):
+        ps = PageSubscription.objects.create(user=user, page=page, status=U)
+        assert str(ps) == f"{user} → {page} (unsubscribed)"
 
 
 # ── Utility function tests ───────────────────────────────────────
@@ -87,6 +80,12 @@ class TestGetSubscriberInfoForPage:
         PageSubscription.objects.create(user=user, page=page)
         page_subs, dir_subs = get_subscriber_info_for_page(page)
         assert user.id in page_subs
+        assert not dir_subs
+
+    def test_page_unsub_not_included(self, user, page):
+        PageSubscription.objects.create(user=user, page=page, status=U)
+        page_subs, dir_subs = get_subscriber_info_for_page(page)
+        assert user.id not in page_subs
         assert not dir_subs
 
     def test_dir_sub(self, user, sub_directory, page_in_directory):
@@ -107,29 +106,29 @@ class TestGetSubscriberInfoForPage:
         _, dir_subs = get_subscriber_info_for_page(page_in_directory)
         assert user.id in dir_subs
 
-    def test_page_exclusion_blocks(
+    def test_dir_unsub_blocks(self, user, sub_directory, page_in_directory):
+        """An UNSUBSCRIBED directory record blocks inheritance."""
+        DirectorySubscription.objects.create(
+            user=user, directory=sub_directory, status=U
+        )
+        _, dir_subs = get_subscriber_info_for_page(page_in_directory)
+        assert user.id not in dir_subs
+
+    def test_page_unsub_overrides_dir_sub(
         self, user, sub_directory, page_in_directory
     ):
+        """Page-level UNSUBSCRIBED overrides directory SUBSCRIBED."""
         DirectorySubscription.objects.create(
             user=user, directory=sub_directory
         )
-        SubscriptionExclusion.objects.create(user=user, page=page_in_directory)
-        _, dir_subs = get_subscriber_info_for_page(page_in_directory)
+        PageSubscription.objects.create(
+            user=user, page=page_in_directory, status=U
+        )
+        page_subs, dir_subs = get_subscriber_info_for_page(page_in_directory)
+        assert user.id not in page_subs
         assert user.id not in dir_subs
 
-    def test_dir_exclusion_blocks(
-        self, user, root_directory, sub_directory, page_in_directory
-    ):
-        DirectorySubscription.objects.create(
-            user=user, directory=root_directory
-        )
-        SubscriptionExclusion.objects.create(
-            user=user, directory=sub_directory
-        )
-        _, dir_subs = get_subscriber_info_for_page(page_in_directory)
-        assert user.id not in dir_subs
-
-    def test_closer_sub_overrides_parent_exclusion(
+    def test_closer_dir_overrides_parent(
         self,
         user,
         root_directory,
@@ -137,13 +136,14 @@ class TestGetSubscriberInfoForPage:
         nested_directory,
         page_in_nested_directory,
     ):
-        """User subscribes to root, excludes engineering, subscribes to devops.
-        Should still get notifications for pages in devops."""
+        """User subscribes to root, unsubscribes from engineering,
+        subscribes to devops. Should still get notifications for devops
+        pages."""
         DirectorySubscription.objects.create(
             user=user, directory=root_directory
         )
-        SubscriptionExclusion.objects.create(
-            user=user, directory=sub_directory
+        DirectorySubscription.objects.create(
+            user=user, directory=sub_directory, status=U
         )
         DirectorySubscription.objects.create(
             user=user, directory=nested_directory
@@ -152,16 +152,17 @@ class TestGetSubscriberInfoForPage:
         assert user.id in dir_subs
         assert dir_subs[user.id] == nested_directory
 
-    def test_both_page_and_dir_sub(
+    def test_page_sub_takes_priority_over_dir_sub(
         self, user, sub_directory, page_in_directory
     ):
+        """Page-level SUBSCRIBED wins; user only in page_sub_user_ids."""
         PageSubscription.objects.create(user=user, page=page_in_directory)
         DirectorySubscription.objects.create(
             user=user, directory=sub_directory
         )
         page_subs, dir_subs = get_subscriber_info_for_page(page_in_directory)
         assert user.id in page_subs
-        assert user.id in dir_subs
+        assert user.id not in dir_subs
 
     def test_no_subs(self, page):
         page_subs, dir_subs = get_subscriber_info_for_page(page)
@@ -182,30 +183,38 @@ class TestIsEffectivelySubscribedToPage:
         PageSubscription.objects.create(user=user, page=page)
         assert is_effectively_subscribed_to_page(user, page)
 
+    def test_direct_unsub(self, user, page):
+        PageSubscription.objects.create(user=user, page=page, status=U)
+        assert not is_effectively_subscribed_to_page(user, page)
+
     def test_dir_sub(self, user, sub_directory, page_in_directory):
         DirectorySubscription.objects.create(
             user=user, directory=sub_directory
         )
         assert is_effectively_subscribed_to_page(user, page_in_directory)
 
-    def test_excluded(self, user, sub_directory, page_in_directory):
+    def test_page_unsub_overrides_dir_sub(
+        self, user, sub_directory, page_in_directory
+    ):
         DirectorySubscription.objects.create(
             user=user, directory=sub_directory
         )
-        SubscriptionExclusion.objects.create(user=user, page=page_in_directory)
+        PageSubscription.objects.create(
+            user=user, page=page_in_directory, status=U
+        )
         assert not is_effectively_subscribed_to_page(user, page_in_directory)
 
     def test_not_subscribed(self, user, page):
         assert not is_effectively_subscribed_to_page(user, page)
 
-    def test_dir_exclusion_blocks(
+    def test_dir_unsub_blocks_parent_sub(
         self, user, root_directory, sub_directory, page_in_directory
     ):
         DirectorySubscription.objects.create(
             user=user, directory=root_directory
         )
-        SubscriptionExclusion.objects.create(
-            user=user, directory=sub_directory
+        DirectorySubscription.objects.create(
+            user=user, directory=sub_directory, status=U
         )
         assert not is_effectively_subscribed_to_page(user, page_in_directory)
 
@@ -217,6 +226,12 @@ class TestIsEffectivelySubscribedToDirectory:
         )
         assert is_effectively_subscribed_to_directory(user, sub_directory)
 
+    def test_direct_unsub(self, user, sub_directory):
+        DirectorySubscription.objects.create(
+            user=user, directory=sub_directory, status=U
+        )
+        assert not is_effectively_subscribed_to_directory(user, sub_directory)
+
     def test_inherited(self, user, root_directory, sub_directory):
         DirectorySubscription.objects.create(
             user=user, directory=root_directory
@@ -226,14 +241,30 @@ class TestIsEffectivelySubscribedToDirectory:
     def test_not_subscribed(self, user, sub_directory):
         assert not is_effectively_subscribed_to_directory(user, sub_directory)
 
-    def test_excluded(self, user, root_directory, sub_directory):
+    def test_unsub_overrides_parent(self, user, root_directory, sub_directory):
         DirectorySubscription.objects.create(
             user=user, directory=root_directory
         )
-        SubscriptionExclusion.objects.create(
-            user=user, directory=sub_directory
+        DirectorySubscription.objects.create(
+            user=user, directory=sub_directory, status=U
         )
         assert not is_effectively_subscribed_to_directory(user, sub_directory)
+
+    def test_re_subscribe_below_unsub(
+        self, user, root_directory, sub_directory, nested_directory
+    ):
+        """Subscribe root, unsub engineering, subscribe devops → devops
+        is subscribed."""
+        DirectorySubscription.objects.create(
+            user=user, directory=root_directory
+        )
+        DirectorySubscription.objects.create(
+            user=user, directory=sub_directory, status=U
+        )
+        DirectorySubscription.objects.create(
+            user=user, directory=nested_directory
+        )
+        assert is_effectively_subscribed_to_directory(user, nested_directory)
 
 
 class TestGetEffectiveWatchers:
@@ -261,7 +292,7 @@ class TestUserJourneyScenarios:
     def test_page_sub_then_dir_sub_then_dir_unsub_preserves_page_sub(
         self, user, sub_directory, page_in_directory
     ):
-        """Scenario 1: Subscribe to page → subscribe to parent dir →
+        """Subscribe to page → subscribe to parent dir →
         unsub from dir → still subscribed to page."""
         PageSubscription.objects.create(user=user, page=page_in_directory)
         DirectorySubscription.objects.create(
@@ -270,25 +301,24 @@ class TestUserJourneyScenarios:
         # Unsubscribe from directory
         DirectorySubscription.objects.filter(
             user=user, directory=sub_directory
-        ).delete()
-        # Page subscription should still exist
-        assert PageSubscription.objects.filter(
-            user=user, page=page_in_directory
-        ).exists()
+        ).update(status=U)
+        # Page subscription should still be active
         assert is_effectively_subscribed_to_page(user, page_in_directory)
 
-    def test_dir_sub_then_exclude_page(
+    def test_dir_sub_then_unsub_page(
         self, user, sub_directory, page_in_directory
     ):
-        """Scenario 2: Subscribe to dir, unsubscribe from sub-page →
+        """Subscribe to dir, override page to unsubscribed →
         no notifications for that page."""
         DirectorySubscription.objects.create(
             user=user, directory=sub_directory
         )
-        SubscriptionExclusion.objects.create(user=user, page=page_in_directory)
+        PageSubscription.objects.create(
+            user=user, page=page_in_directory, status=U
+        )
         assert not is_effectively_subscribed_to_page(user, page_in_directory)
 
-    def test_dir_sub_then_exclude_subdir(
+    def test_dir_sub_then_unsub_subdir(
         self,
         user,
         root_directory,
@@ -296,15 +326,45 @@ class TestUserJourneyScenarios:
         nested_directory,
         page_in_nested_directory,
     ):
-        """Scenario 3: Subscribe to root, exclude engineering/devops →
+        """Subscribe to root, override devops to unsubscribed →
         no notifications for pages in devops."""
         DirectorySubscription.objects.create(
             user=user, directory=root_directory
         )
-        SubscriptionExclusion.objects.create(
-            user=user, directory=nested_directory
+        DirectorySubscription.objects.create(
+            user=user, directory=nested_directory, status=U
         )
         assert not is_effectively_subscribed_to_page(
+            user, page_in_nested_directory
+        )
+
+    def test_inheritance_chain(
+        self,
+        user,
+        root_directory,
+        sub_directory,
+        nested_directory,
+        page_in_nested_directory,
+        page_in_directory,
+    ):
+        """Subscribe root, unsub engineering → pages in engineering are
+        unsubscribed, but re-subscribing devops overrides for that subtree."""
+        DirectorySubscription.objects.create(
+            user=user, directory=root_directory
+        )
+        DirectorySubscription.objects.create(
+            user=user, directory=sub_directory, status=U
+        )
+        assert not is_effectively_subscribed_to_page(user, page_in_directory)
+        assert not is_effectively_subscribed_to_page(
+            user, page_in_nested_directory
+        )
+
+        DirectorySubscription.objects.create(
+            user=user, directory=nested_directory
+        )
+        assert not is_effectively_subscribed_to_page(user, page_in_directory)
+        assert is_effectively_subscribed_to_page(
             user, page_in_nested_directory
         )
 
@@ -317,15 +377,17 @@ class TestToggleSubscription:
         client.force_login(user)
         r = client.post(f"/c/{page.slug}/subscribe/")
         assert r.status_code == 302
-        assert PageSubscription.objects.filter(user=user, page=page).exists()
+        assert PageSubscription.objects.filter(
+            user=user, page=page, status=S
+        ).exists()
 
     def test_unsubscribe_from_page(self, client, user, page):
         PageSubscription.objects.create(user=user, page=page)
         client.force_login(user)
         r = client.post(f"/c/{page.slug}/subscribe/")
         assert r.status_code == 302
-        assert not PageSubscription.objects.filter(
-            user=user, page=page
+        assert PageSubscription.objects.filter(
+            user=user, page=page, status=U
         ).exists()
 
     def test_htmx_subscribe_returns_button(self, client, user, page):
@@ -356,11 +418,11 @@ class TestToggleSubscription:
         r = client.get(f"/c/{page.slug}/subscribe/")
         assert r.status_code == 404
 
-    def test_unsub_page_creates_exclusion_when_dir_subscribed(
+    def test_unsub_page_when_dir_subscribed(
         self, client, user, sub_directory, page_in_directory
     ):
         """Unsubscribing from a page when subscribed via directory
-        should create an exclusion."""
+        should create an UNSUBSCRIBED page override."""
         DirectorySubscription.objects.create(
             user=user, directory=sub_directory
         )
@@ -369,35 +431,35 @@ class TestToggleSubscription:
             f"/c/{sub_directory.path}/{page_in_directory.slug}/subscribe/"
         )
         assert r.status_code == 302
-        assert SubscriptionExclusion.objects.filter(
-            user=user, page=page_in_directory
+        assert PageSubscription.objects.filter(
+            user=user, page=page_in_directory, status=U
         ).exists()
 
-    def test_subscribe_removes_exclusion(
+    def test_subscribe_after_unsub(
         self, client, user, sub_directory, page_in_directory
     ):
-        """Subscribing to a page should remove any exclusion."""
+        """Subscribing to a page that has UNSUBSCRIBED override should
+        flip it to SUBSCRIBED."""
         DirectorySubscription.objects.create(
             user=user, directory=sub_directory
         )
-        SubscriptionExclusion.objects.create(user=user, page=page_in_directory)
+        PageSubscription.objects.create(
+            user=user, page=page_in_directory, status=U
+        )
         client.force_login(user)
         r = client.post(
             f"/c/{sub_directory.path}/{page_in_directory.slug}/subscribe/"
         )
         assert r.status_code == 302
-        assert not SubscriptionExclusion.objects.filter(
-            user=user, page=page_in_directory
-        ).exists()
         assert PageSubscription.objects.filter(
-            user=user, page=page_in_directory
+            user=user, page=page_in_directory, status=S
         ).exists()
 
     def test_unsub_both_direct_and_dir(
         self, client, user, sub_directory, page_in_directory
     ):
-        """If user has both direct and dir sub, unsubscribe removes direct
-        and creates exclusion."""
+        """If user has both direct page sub and dir sub, unsubscribe
+        sets page override to UNSUBSCRIBED."""
         PageSubscription.objects.create(user=user, page=page_in_directory)
         DirectorySubscription.objects.create(
             user=user, directory=sub_directory
@@ -407,11 +469,8 @@ class TestToggleSubscription:
             f"/c/{sub_directory.path}/{page_in_directory.slug}/subscribe/"
         )
         assert r.status_code == 302
-        assert not PageSubscription.objects.filter(
-            user=user, page=page_in_directory
-        ).exists()
-        assert SubscriptionExclusion.objects.filter(
-            user=user, page=page_in_directory
+        assert PageSubscription.objects.filter(
+            user=user, page=page_in_directory, status=U
         ).exists()
 
 
@@ -424,7 +483,7 @@ class TestToggleDirectorySubscription:
         )
         assert r.status_code == 204
         assert DirectorySubscription.objects.filter(
-            user=user, directory=sub_directory
+            user=user, directory=sub_directory, status=S
         ).exists()
 
     def test_unsubscribe_from_directory(self, client, user, sub_directory):
@@ -437,8 +496,8 @@ class TestToggleDirectorySubscription:
             HTTP_X_REQUESTED_WITH="XMLHttpRequest",
         )
         assert r.status_code == 204
-        assert not DirectorySubscription.objects.filter(
-            user=user, directory=sub_directory
+        assert DirectorySubscription.objects.filter(
+            user=user, directory=sub_directory, status=U
         ).exists()
 
     def test_subscribe_root(self, client, user, root_directory):
@@ -449,7 +508,7 @@ class TestToggleDirectorySubscription:
         )
         assert r.status_code == 204
         assert DirectorySubscription.objects.filter(
-            user=user, directory=root_directory
+            user=user, directory=root_directory, status=S
         ).exists()
 
     def test_requires_login(self, client, sub_directory):
@@ -462,7 +521,7 @@ class TestToggleDirectorySubscription:
         r = client.get(f"/c/{sub_directory.path}/subscribe-dir/")
         assert r.status_code == 404
 
-    def test_unsub_creates_exclusion_when_parent_subscribed(
+    def test_unsub_creates_override_when_parent_subscribed(
         self, client, user, root_directory, sub_directory
     ):
         DirectorySubscription.objects.create(
@@ -477,22 +536,19 @@ class TestToggleDirectorySubscription:
             HTTP_X_REQUESTED_WITH="XMLHttpRequest",
         )
         assert r.status_code == 204
-        assert not DirectorySubscription.objects.filter(
-            user=user, directory=sub_directory
-        ).exists()
-        # Should create exclusion since parent sub still covers it
-        assert SubscriptionExclusion.objects.filter(
-            user=user, directory=sub_directory
+        # Should flip to UNSUBSCRIBED
+        assert DirectorySubscription.objects.filter(
+            user=user, directory=sub_directory, status=U
         ).exists()
 
-    def test_subscribe_removes_exclusion(
+    def test_subscribe_flips_unsub_to_sub(
         self, client, user, root_directory, sub_directory
     ):
         DirectorySubscription.objects.create(
             user=user, directory=root_directory
         )
-        SubscriptionExclusion.objects.create(
-            user=user, directory=sub_directory
+        DirectorySubscription.objects.create(
+            user=user, directory=sub_directory, status=U
         )
         client.force_login(user)
         r = client.post(
@@ -500,11 +556,8 @@ class TestToggleDirectorySubscription:
             HTTP_X_REQUESTED_WITH="XMLHttpRequest",
         )
         assert r.status_code == 204
-        assert not SubscriptionExclusion.objects.filter(
-            user=user, directory=sub_directory
-        ).exists()
         assert DirectorySubscription.objects.filter(
-            user=user, directory=sub_directory
+            user=user, directory=sub_directory, status=S
         ).exists()
 
     def test_non_ajax_redirects(self, client, user, sub_directory):
@@ -556,14 +609,15 @@ class TestNotifyWithDirectorySubscriptions:
         body = mail.outbox[0].body
         assert body.count("/unsubscribe/") == 2
 
-    def test_excluded_user_not_notified(
+    def test_unsub_user_not_notified(
         self, user, other_user, sub_directory, page_in_directory
     ):
+        """UNSUBSCRIBED page override blocks notification."""
         DirectorySubscription.objects.create(
             user=other_user, directory=sub_directory
         )
-        SubscriptionExclusion.objects.create(
-            user=other_user, page=page_in_directory
+        PageSubscription.objects.create(
+            user=other_user, page=page_in_directory, status=U
         )
         notify_subscribers(page_in_directory.id, user.id, "Updated")
         assert len(mail.outbox) == 0
@@ -579,7 +633,7 @@ class TestNotifyWithDirectorySubscriptions:
         self, user, other_user, sub_directory, page_in_directory
     ):
         """User with both page and dir sub should get one email (page sub
-        takes priority in the mapping)."""
+        takes priority)."""
         PageSubscription.objects.create(
             user=other_user, page=page_in_directory
         )
@@ -587,8 +641,10 @@ class TestNotifyWithDirectorySubscriptions:
             user=other_user, directory=sub_directory
         )
         notify_subscribers(page_in_directory.id, user.id, "Updated")
-        # Should only get one email — the direct page subscription one
         assert len(mail.outbox) == 1
+        # Page sub takes priority → simple unsub email (1 unsub link)
+        body = mail.outbox[0].body
+        assert body.count("/unsubscribe/") == 1
 
     def test_security_no_notification_for_private_page(
         self, user, other_user, sub_directory, page_in_directory
@@ -645,7 +701,7 @@ class TestNotifyWithDirectorySubscriptions:
         assert other_user.email in recipients
         assert third.email in recipients
 
-    def test_dir_exclusion_blocks_notification(
+    def test_dir_unsub_blocks_notification(
         self,
         user,
         other_user,
@@ -656,15 +712,15 @@ class TestNotifyWithDirectorySubscriptions:
         DirectorySubscription.objects.create(
             user=other_user, directory=root_directory
         )
-        SubscriptionExclusion.objects.create(
-            user=other_user, directory=sub_directory
+        DirectorySubscription.objects.create(
+            user=other_user, directory=sub_directory, status=U
         )
         notify_subscribers(page_in_directory.id, user.id, "Blocked update")
         assert len(mail.outbox) == 0
 
 
 class TestNotifySubscribers:
-    """Original backward-compatible tests for direct page subscriptions."""
+    """Tests for direct page subscriptions."""
 
     def test_notifies_other_subscribers(self, user, other_user, page):
         PageSubscription.objects.create(user=other_user, page=page)
@@ -714,8 +770,8 @@ class TestUnsubscribeLanding:
         token = signer.sign(f"{user.id}:{page.id}")
         r = client.post(f"/unsubscribe/{token}/")
         assert r.status_code == 302
-        assert not PageSubscription.objects.filter(
-            user=user, page=page
+        assert PageSubscription.objects.filter(
+            user=user, page=page, status=U
         ).exists()
 
     def test_invalid_token_redirects(self, client, db):
@@ -734,7 +790,7 @@ class TestUnsubscribeLanding:
 
 
 class TestDirectoryUnsubscribeViaEmail:
-    def test_post_removes_dir_subscription(self, client, user, sub_directory):
+    def test_post_sets_dir_unsubscribed(self, client, user, sub_directory):
         DirectorySubscription.objects.create(
             user=user, directory=sub_directory
         )
@@ -742,15 +798,14 @@ class TestDirectoryUnsubscribeViaEmail:
         token = signer.sign(f"d:{user.id}:{sub_directory.id}")
         r = client.post(f"/unsubscribe/{token}/")
         assert r.status_code == 302
-        assert not DirectorySubscription.objects.filter(
-            user=user, directory=sub_directory
+        assert DirectorySubscription.objects.filter(
+            user=user, directory=sub_directory, status=U
         ).exists()
 
-    def test_page_unsub_creates_exclusion_when_dir_covers(
+    def test_page_unsub_creates_override(
         self, client, user, sub_directory, page_in_directory
     ):
-        """Unsubscribing from page via email link should create exclusion
-        if still covered by directory subscription."""
+        """Unsubscribing from page via email sets page to UNSUBSCRIBED."""
         DirectorySubscription.objects.create(
             user=user, directory=sub_directory
         )
@@ -759,11 +814,8 @@ class TestDirectoryUnsubscribeViaEmail:
         token = signer.sign(f"{user.id}:{page_in_directory.id}")
         r = client.post(f"/unsubscribe/{token}/")
         assert r.status_code == 302
-        assert not PageSubscription.objects.filter(
-            user=user, page=page_in_directory
-        ).exists()
-        assert SubscriptionExclusion.objects.filter(
-            user=user, page=page_in_directory
+        assert PageSubscription.objects.filter(
+            user=user, page=page_in_directory, status=U
         ).exists()
 
 
@@ -774,8 +826,8 @@ class TestOneClickUnsubscribe:
         token = signer.sign(f"{user.id}:{page.id}")
         r = client.post(f"/unsubscribe/{token}/one-click/")
         assert r.status_code == 200
-        assert not PageSubscription.objects.filter(
-            user=user, page=page
+        assert PageSubscription.objects.filter(
+            user=user, page=page, status=U
         ).exists()
 
     def test_dir_one_click(self, client, user, sub_directory):
@@ -786,13 +838,15 @@ class TestOneClickUnsubscribe:
         token = signer.sign(f"d:{user.id}:{sub_directory.id}")
         r = client.post(f"/unsubscribe/{token}/one-click/")
         assert r.status_code == 200
-        assert not DirectorySubscription.objects.filter(
-            user=user, directory=sub_directory
+        assert DirectorySubscription.objects.filter(
+            user=user, directory=sub_directory, status=U
         ).exists()
 
-    def test_page_one_click_creates_exclusion(
+    def test_page_one_click_creates_override(
         self, client, user, sub_directory, page_in_directory
     ):
+        """One-click page unsub when covered by dir sub creates
+        UNSUBSCRIBED override."""
         DirectorySubscription.objects.create(
             user=user, directory=sub_directory
         )
@@ -800,8 +854,8 @@ class TestOneClickUnsubscribe:
         token = signer.sign(f"{user.id}:{page_in_directory.id}")
         r = client.post(f"/unsubscribe/{token}/one-click/")
         assert r.status_code == 200
-        assert SubscriptionExclusion.objects.filter(
-            user=user, page=page_in_directory
+        assert PageSubscription.objects.filter(
+            user=user, page=page_in_directory, status=U
         ).exists()
 
 
