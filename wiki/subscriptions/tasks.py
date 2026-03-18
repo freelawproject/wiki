@@ -55,7 +55,35 @@ def notify_subscribers(
         if not can_view_page(user, page):
             continue
 
-        if uid in dir_sub_mapping:
+        if uid in page_sub_user_ids:
+            # Direct page subscriber (page-level override takes priority)
+            token = signer.sign(f"{uid}:{page.id}")
+            unsub_landing = (
+                f"{base}{reverse('unsubscribe', kwargs={'token': token})}"
+            )
+            unsub_one_click = f"{base}{reverse('unsubscribe_one_click', kwargs={'token': token})}"
+
+            body = (
+                f"{display_name(editor)} "
+                f'updated "{page.title}".\n\n'
+                f"Change: {change_message or 'No description'}\n\n"
+                f"View: {page_url}\n\n"
+                f"{diff_line}"
+                f"Unsubscribe: {unsub_landing}"
+            )
+
+            msg = EmailMessage(
+                subject=f'[FLP Wiki] "{page.title}" was updated',
+                body=body,
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                to=[user.email],
+                headers={
+                    "List-Unsubscribe": f"<{unsub_one_click}>",
+                    "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+                },
+            )
+            msg.send()
+        elif uid in dir_sub_mapping:
             # Directory-based subscriber
             directory = dir_sub_mapping[uid]
             page_token = signer.sign(f"{uid}:{page.id}")
@@ -86,34 +114,6 @@ def notify_subscribers(
                 to=[user.email],
                 headers={
                     "List-Unsubscribe": f"<{page_unsub_one_click}>",
-                    "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
-                },
-            )
-            msg.send()
-        else:
-            # Direct page subscriber
-            token = signer.sign(f"{uid}:{page.id}")
-            unsub_landing = (
-                f"{base}{reverse('unsubscribe', kwargs={'token': token})}"
-            )
-            unsub_one_click = f"{base}{reverse('unsubscribe_one_click', kwargs={'token': token})}"
-
-            body = (
-                f"{display_name(editor)} "
-                f'updated "{page.title}".\n\n'
-                f"Change: {change_message or 'No description'}\n\n"
-                f"View: {page_url}\n\n"
-                f"{diff_line}"
-                f"Unsubscribe: {unsub_landing}"
-            )
-
-            msg = EmailMessage(
-                subject=f'[FLP Wiki] "{page.title}" was updated',
-                body=body,
-                from_email=settings.DEFAULT_FROM_EMAIL,
-                to=[user.email],
-                headers={
-                    "List-Unsubscribe": f"<{unsub_one_click}>",
                     "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
                 },
             )

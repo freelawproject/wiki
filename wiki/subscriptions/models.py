@@ -2,8 +2,19 @@ from django.conf import settings
 from django.db import models
 
 
+class SubscriptionStatus(models.TextChoices):
+    SUBSCRIBED = "subscribed", "Subscribed"
+    UNSUBSCRIBED = "unsubscribed", "Unsubscribed"
+
+
 class PageSubscription(models.Model):
-    """Tracks which users are subscribed to page change notifications."""
+    """Per-user subscription override for a specific page.
+
+    An explicit SUBSCRIBED or UNSUBSCRIBED status overrides whatever
+    the user would inherit from directory subscriptions.  The absence
+    of a record means "inherit from the nearest ancestor directory
+    that has a DirectorySubscription for this user".
+    """
 
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -15,17 +26,28 @@ class PageSubscription(models.Model):
         on_delete=models.CASCADE,
         related_name="subscriptions",
     )
+    status = models.CharField(
+        max_length=20,
+        choices=SubscriptionStatus.choices,
+        default=SubscriptionStatus.SUBSCRIBED,
+    )
     subscribed_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         unique_together = [("user", "page")]
 
     def __str__(self):
-        return f"{self.user} → {self.page}"
+        return f"{self.user} → {self.page} ({self.status})"
 
 
 class DirectorySubscription(models.Model):
-    """Tracks which users are subscribed to a directory and all its contents."""
+    """Per-user subscription override for a directory.
+
+    An explicit SUBSCRIBED or UNSUBSCRIBED status is inherited by all
+    descendant directories and pages that do not have their own
+    override.  The absence of a record means "inherit from parent
+    directory".  The implicit default at the root is UNSUBSCRIBED.
+    """
 
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -37,67 +59,15 @@ class DirectorySubscription(models.Model):
         on_delete=models.CASCADE,
         related_name="subscriptions",
     )
+    status = models.CharField(
+        max_length=20,
+        choices=SubscriptionStatus.choices,
+        default=SubscriptionStatus.SUBSCRIBED,
+    )
     subscribed_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         unique_together = [("user", "directory")]
 
     def __str__(self):
-        return f"{self.user} → {self.directory}"
-
-
-class SubscriptionExclusion(models.Model):
-    """Opt-out from a directory subscription for a specific page or subdirectory.
-
-    Exactly one of ``page`` or ``directory`` must be set (enforced by a
-    CheckConstraint).  When a user subscribes to a parent directory but
-    wants to stop receiving notifications for a particular child page or
-    subdirectory, an exclusion record is created instead of removing the
-    broader subscription.
-    """
-
-    user = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE,
-        related_name="subscription_exclusions",
-    )
-    page = models.ForeignKey(
-        "pages.Page",
-        on_delete=models.CASCADE,
-        related_name="subscription_exclusions",
-        null=True,
-        blank=True,
-    )
-    directory = models.ForeignKey(
-        "directories.Directory",
-        on_delete=models.CASCADE,
-        related_name="subscription_exclusions",
-        null=True,
-        blank=True,
-    )
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        constraints = [
-            models.CheckConstraint(
-                condition=(
-                    models.Q(page__isnull=False, directory__isnull=True)
-                    | models.Q(page__isnull=True, directory__isnull=False)
-                ),
-                name="exclusion_has_exactly_one_target",
-            ),
-            models.UniqueConstraint(
-                fields=("user", "page"),
-                condition=models.Q(page__isnull=False),
-                name="unique_user_page_exclusion",
-            ),
-            models.UniqueConstraint(
-                fields=("user", "directory"),
-                condition=models.Q(directory__isnull=False),
-                name="unique_user_dir_exclusion",
-            ),
-        ]
-
-    def __str__(self):
-        target = self.page or self.directory
-        return f"{self.user} excludes {target}"
+        return f"{self.user} → {self.directory} ({self.status})"

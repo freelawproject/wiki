@@ -15,7 +15,7 @@ from wiki.pages.models import Page
 from .models import (
     DirectorySubscription,
     PageSubscription,
-    SubscriptionExclusion,
+    SubscriptionStatus,
 )
 from .utils import (
     is_effectively_subscribed_to_directory,
@@ -41,20 +41,18 @@ def toggle_subscription(request, path):
     )
 
     if currently_subscribed:
-        # Unsubscribe: delete direct subscription
-        PageSubscription.objects.filter(user=request.user, page=page).delete()
-        # If still covered by a directory subscription, create an exclusion
-        if is_effectively_subscribed_to_page(request.user, page):
-            SubscriptionExclusion.objects.get_or_create(
-                user=request.user, page=page
-            )
+        PageSubscription.objects.update_or_create(
+            user=request.user,
+            page=page,
+            defaults={"status": SubscriptionStatus.UNSUBSCRIBED},
+        )
         subscribed = False
     else:
-        # Subscribe: create direct subscription and remove any exclusion
-        PageSubscription.objects.get_or_create(user=request.user, page=page)
-        SubscriptionExclusion.objects.filter(
-            user=request.user, page=page
-        ).delete()
+        PageSubscription.objects.update_or_create(
+            user=request.user,
+            page=page,
+            defaults={"status": SubscriptionStatus.SUBSCRIBED},
+        )
         subscribed = True
 
     # HTMX response
@@ -95,24 +93,18 @@ def toggle_directory_subscription(request, path=""):
     )
 
     if currently_subscribed:
-        # Unsubscribe: delete direct subscription
-        DirectorySubscription.objects.filter(
-            user=request.user, directory=directory
-        ).delete()
-        # If still covered by a parent directory subscription, create exclusion
-        if is_effectively_subscribed_to_directory(request.user, directory):
-            SubscriptionExclusion.objects.get_or_create(
-                user=request.user, directory=directory
-            )
+        DirectorySubscription.objects.update_or_create(
+            user=request.user,
+            directory=directory,
+            defaults={"status": SubscriptionStatus.UNSUBSCRIBED},
+        )
         subscribed = False
     else:
-        # Subscribe: create subscription and remove any exclusion
-        DirectorySubscription.objects.get_or_create(
-            user=request.user, directory=directory
+        DirectorySubscription.objects.update_or_create(
+            user=request.user,
+            directory=directory,
+            defaults={"status": SubscriptionStatus.SUBSCRIBED},
         )
-        SubscriptionExclusion.objects.filter(
-            user=request.user, directory=directory
-        ).delete()
         subscribed = True
 
     # Ajax response
@@ -127,14 +119,14 @@ def toggle_directory_subscription(request, path=""):
 def _unsubscribe_page(request, user_id, page_id):
     """Handle page unsubscribe from email link."""
     if request.method == "POST":
-        PageSubscription.objects.filter(
-            user_id=user_id, page_id=page_id
-        ).delete()
-        # If still covered by directory subscription, create exclusion
-        page = Page.objects.filter(id=page_id).first()
         user = User.objects.filter(id=user_id).first()
-        if page and user and is_effectively_subscribed_to_page(user, page):
-            SubscriptionExclusion.objects.get_or_create(user=user, page=page)
+        page = Page.objects.filter(id=page_id).first()
+        if user and page:
+            PageSubscription.objects.update_or_create(
+                user=user,
+                page=page,
+                defaults={"status": SubscriptionStatus.UNSUBSCRIBED},
+            )
         messages.success(request, "You've been unsubscribed.")
         return redirect("root")
 
@@ -149,9 +141,14 @@ def _unsubscribe_page(request, user_id, page_id):
 def _unsubscribe_directory(request, user_id, directory_id):
     """Handle directory unsubscribe from email link."""
     if request.method == "POST":
-        DirectorySubscription.objects.filter(
-            user_id=user_id, directory_id=directory_id
-        ).delete()
+        user = User.objects.filter(id=user_id).first()
+        directory = Directory.objects.filter(id=directory_id).first()
+        if user and directory:
+            DirectorySubscription.objects.update_or_create(
+                user=user,
+                directory=directory,
+                defaults={"status": SubscriptionStatus.UNSUBSCRIBED},
+            )
         messages.success(request, "You've been unsubscribed.")
         return redirect("root")
 
@@ -210,9 +207,14 @@ def unsubscribe_one_click(request, token):
             _, user_id, directory_id = value.split(":")
         except ValueError:
             return HttpResponse("Invalid token", status=400)
-        DirectorySubscription.objects.filter(
-            user_id=user_id, directory_id=directory_id
-        ).delete()
+        user = User.objects.filter(id=user_id).first()
+        directory = Directory.objects.filter(id=directory_id).first()
+        if user and directory:
+            DirectorySubscription.objects.update_or_create(
+                user=user,
+                directory=directory,
+                defaults={"status": SubscriptionStatus.UNSUBSCRIBED},
+            )
         return HttpResponse("Unsubscribed", status=200)
 
     # Page token format: "{user_id}:{page_id}"
@@ -221,12 +223,13 @@ def unsubscribe_one_click(request, token):
     except ValueError:
         return HttpResponse("Invalid token", status=400)
 
-    # Delete direct subscription
-    PageSubscription.objects.filter(user_id=user_id, page_id=page_id).delete()
-    # If still covered by directory subscription, create exclusion
-    page = Page.objects.filter(id=page_id).first()
     user = User.objects.filter(id=user_id).first()
-    if page and user and is_effectively_subscribed_to_page(user, page):
-        SubscriptionExclusion.objects.get_or_create(user=user, page=page)
+    page = Page.objects.filter(id=page_id).first()
+    if user and page:
+        PageSubscription.objects.update_or_create(
+            user=user,
+            page=page,
+            defaults={"status": SubscriptionStatus.UNSUBSCRIBED},
+        )
 
     return HttpResponse("Unsubscribed", status=200)
