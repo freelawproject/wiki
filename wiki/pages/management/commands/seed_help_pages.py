@@ -1426,6 +1426,137 @@ crawlers to the sitemap.
   so write clear, descriptive titles
 """,
     },
+    {
+        "title": "Data Sources Guide",
+        "slug": "data-sources-guide",
+        "content": """\
+## Pulling live data into pages
+
+Pages can fetch JSON from an external API and display the values
+inline using simple placeholders. This is useful for dashboards,
+status pages, or any content that references data from another
+system.
+
+### Setting up a data source
+
+On the page edit form, the **Data Source** section has two fields:
+
+- **API URL** — the full URL of a JSON endpoint
+  (e.g. `https://api.example.com/stats.json`). The wiki makes a
+  GET request to this URL and parses the response as JSON.
+- **Cache (seconds)** — how long to cache the response before
+  fetching again. Defaults to 300 (5 minutes). Set a higher
+  value for data that changes infrequently.
+
+Leave the API URL blank if the page doesn't need external data.
+
+### Using placeholders
+
+Once a data source is configured, use `[[ key ]]` placeholders
+anywhere in your page content. When the page is viewed, each
+placeholder is replaced with the corresponding value from the
+JSON response.
+
+**Example:** if the API returns:
+
+```json
+{
+  "total_cases": 5123,
+  "last_updated": "2026-03-15"
+}
+```
+
+Then this markdown:
+
+```
+We have [[ total_cases ]] cases as of [[ last_updated ]].
+```
+
+Renders as:
+
+> We have 5123 cases as of 2026-03-15.
+
+### Nested keys
+
+Use dot notation to access nested objects. If the API returns:
+
+```json
+{
+  "stats": {
+    "open": 42,
+    "closed": 108
+  }
+}
+```
+
+You can write `[[ stats.open ]]` and `[[ stats.closed ]]`.
+
+### Unresolved placeholders
+
+If a placeholder doesn't match any key in the JSON (or the key's
+value is `null`), the placeholder is left as-is in the rendered
+page. This makes it easy to spot typos or missing data.
+
+### Code blocks are safe
+
+Placeholders inside fenced code blocks (`` ``` ``) or inline code
+(`` ` ``) are **not** replaced. This means you can document the
+placeholder syntax itself without it being interpreted:
+
+````
+```
+Use [[ total_cases ]] to show the count.
+```
+````
+
+### Caching and stale data
+
+The wiki caches each data source response in memory for the
+configured TTL. If the API is slow or unavailable when the cache
+expires, the wiki serves **stale cached data** for up to three
+times the TTL before giving up. This means a page with a
+5-minute TTL can tolerate up to 15 minutes of API downtime
+without showing missing data.
+
+If the very first fetch fails (no cached data exists), the
+placeholders are left as-is.
+
+### Domain allowlist
+
+For security, the wiki only allows data source URLs from approved
+domains. By default, only `www.courtlistener.com` is allowed.
+
+If you enter a URL whose domain is not on the allowlist, the form
+will show a validation error. Administrators can update the list
+by setting the `DATA_SOURCE_ALLOWED_DOMAINS` environment variable
+to a comma-separated list of hostnames:
+
+```
+DATA_SOURCE_ALLOWED_DOMAINS=www.courtlistener.com,api.example.com
+```
+
+If the variable is set to an empty string, all domains are allowed
+(not recommended in production).
+
+### Limits and timeouts
+
+- Responses larger than 100 KB are rejected
+- API requests time out after 5 seconds
+- Only JSON responses are supported
+
+### Tips
+
+- **Use stable API endpoints** — if the URL changes, update the
+  page's data source field
+- **Set a reasonable cache TTL** — very short TTLs (under 30
+  seconds) mean more requests to the external API on every page
+  view
+- **Keep payloads small** — only include the data you actually
+  need in the API response
+- **Test the URL** — open it in a browser first to verify the
+  JSON structure, then write your placeholders to match
+""",
+    },
 ]
 
 

@@ -184,6 +184,16 @@ MESSAGE_TAGS = {
     message_constants.ERROR: "danger",
 }
 
+################
+# Data Sources #
+################
+# Comma-separated list of domains allowed as page data source URLs.
+# SECURITY: prevents SSRF by restricting which hosts pages can fetch from.
+DATA_SOURCE_ALLOWED_DOMAINS = env.list(
+    "DATA_SOURCE_ALLOWED_DOMAINS",
+    default=["www.courtlistener.com"],
+)
+
 ##########
 # Search #
 ##########

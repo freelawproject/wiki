@@ -85,6 +85,16 @@ class Page(models.Model):
         default=LlmsTxtStatus.EXCLUDE,
         help_text="Whether to list this page in llms.txt.",
     )
+    data_source_url = models.URLField(
+        max_length=500,
+        blank=True,
+        help_text="URL returning JSON whose values replace [[ key ]] "
+        "placeholders in this page's content.",
+    )
+    data_source_ttl = models.PositiveIntegerField(
+        default=300,
+        help_text="How many seconds to cache the data source response.",
+    )
     change_message = models.CharField(max_length=500, blank=True)
     is_pinned = models.BooleanField(
         default=False,
