@@ -55,7 +55,9 @@ class TestSubstituteDataVariables:
     def test_missing_key_left_as_is(self):
         content = "Value: [[ missing ]]"
         data = {"other": "x"}
-        assert substitute_data_variables(content, data) == "Value: [[ missing ]]"
+        assert (
+            substitute_data_variables(content, data) == "Value: [[ missing ]]"
+        )
 
     def test_partial_nested_key_left_as_is(self):
         content = "[[ a.b.c ]]"
@@ -210,9 +212,7 @@ class TestFetchPageData:
             _cache[url]["fetched_at"] -= 120
 
         # Patch to return new data
-        with patch(
-            "wiki.lib.data_source._do_fetch", return_value={"v": 2}
-        ):
+        with patch("wiki.lib.data_source._do_fetch", return_value={"v": 2}):
             data = fetch_page_data(url, ttl=60)
         assert data == {"v": 2}
         # Cache should now be fresh
@@ -263,15 +263,11 @@ class TestPageDataSourceIntegration:
 
 
 class TestDomainAllowlist:
-    @override_settings(
-        DATA_SOURCE_ALLOWED_DOMAINS=["www.courtlistener.com"]
-    )
+    @override_settings(DATA_SOURCE_ALLOWED_DOMAINS=["www.courtlistener.com"])
     def test_allowed_domain(self):
         assert is_domain_allowed("https://www.courtlistener.com/api/rest/v4/")
 
-    @override_settings(
-        DATA_SOURCE_ALLOWED_DOMAINS=["www.courtlistener.com"]
-    )
+    @override_settings(DATA_SOURCE_ALLOWED_DOMAINS=["www.courtlistener.com"])
     def test_disallowed_domain(self):
         assert not is_domain_allowed("https://evil.example.com/data")
 
@@ -287,9 +283,7 @@ class TestDomainAllowlist:
         assert is_domain_allowed("https://b.example.com/y")
         assert not is_domain_allowed("https://c.example.com/z")
 
-    @override_settings(
-        DATA_SOURCE_ALLOWED_DOMAINS=["www.courtlistener.com"]
-    )
+    @override_settings(DATA_SOURCE_ALLOWED_DOMAINS=["www.courtlistener.com"])
     def test_blocked_domain_returns_empty_dict(self):
         data = fetch_page_data("https://evil.example.com/data", ttl=60)
         assert data == {}
