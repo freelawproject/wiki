@@ -19,6 +19,7 @@ from django.views.decorators.http import require_POST
 
 from wiki.comments.models import PageComment
 from wiki.directories.models import Directory, DirectoryPermission
+from wiki.lib.data_source import fetch_page_data, substitute_data_variables
 from wiki.lib.edit_lock import (
     acquire_lock_for_page,
     get_active_lock_for_page,
@@ -352,7 +353,11 @@ def _render_page_detail(request, page):
     # Record page view tally
     PageViewTally.objects.create(page=page)
 
-    rendered_content = render_markdown(page.content)
+    content = page.content
+    if page.data_source_url:
+        data = fetch_page_data(page.data_source_url, page.data_source_ttl)
+        content = substitute_data_variables(content, data)
+    rendered_content = render_markdown(content)
     toc = getattr(rendered_content, "toc_html", "")
 
     breadcrumbs = _build_page_breadcrumbs(request, page)

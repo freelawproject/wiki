@@ -103,6 +103,31 @@
       </div>
     </fieldset>
 
+    <fieldset class="rounded-lg border border-gray-200 dark:border-gray-700 px-4 pb-3 pt-2 space-y-3">
+      <legend class="text-sm font-medium px-1">
+        External Data Source
+        <a href="/c/help/data-sources-guide" class="text-xs font-normal text-gray-500 dark:text-gray-400 underline ml-1">help</a>
+      </legend>
+      <div>
+        <label for="id_data_source_url" class="block text-sm font-medium mb-1">API URL</label>
+        {{ form.data_source_url }}
+        {% if form.data_source_url.errors %}
+        <p class="text-red-600 dark:text-red-400 text-sm mt-1">{{ form.data_source_url.errors.0 }}</p>
+        {% endif %}
+        <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+          JSON endpoint whose values replace <code class="text-xs">[[ key ]]</code> placeholders in content.
+        </p>
+      </div>
+      <div>
+        <label for="id_data_source_ttl" class="block text-sm font-medium mb-1">Cache (seconds)</label>
+        {{ form.data_source_ttl }}
+        <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
+          How long to cache the response. Stale data is served for up to 3&times; this value if the API is down.
+        </p>
+      </div>
+    </fieldset>
+
+
     <div class="flex gap-3">
       <button type="submit" class="btn-primary">
         {% if editing %}Save Changes{% else %}Create Page{% endif %}
