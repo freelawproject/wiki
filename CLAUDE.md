@@ -71,7 +71,22 @@ wiki/
 8. **JavaScript vendoring**: MUST vendor all JS libraries locally in `wiki/assets/static-global/js/`.
    NEVER load JS from CDNs at runtime.
 
-9. **Alpine.js (CSP build)**: The project uses `@alpinejs/csp`, which does NOT support inline
+10. **Transactions**: MUST wrap multi-step database writes in `transaction.atomic()` when they
+   should succeed or fail together. Keep side-effect-only operations (email sends, notifications)
+   outside the transaction block so a notification failure doesn't roll back committed data.
+   ```python
+   # Good
+   with transaction.atomic():
+       page.save()
+       page.create_revision(user)
+   notify_subscribers(page.id, ...)
+
+   # Bad — partial failure leaves page without a revision
+   page.save()
+   page.create_revision(user)
+   ```
+
+11. **Alpine.js (CSP build)**: The project uses `@alpinejs/csp`, which does NOT support inline
    JavaScript expressions in templates. MUST follow these rules:
    - Register all components in `wiki/assets/static-global/js/alpine-components.js` using `Alpine.data()`
    - Use `x-data="componentName"` (not inline objects like `x-data="{ open: false }"`)

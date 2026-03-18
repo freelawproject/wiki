@@ -207,10 +207,13 @@ def directory_edit_root(request):
 
     form = DirectoryForm(request.POST or None, instance=root, is_root=True)
     if request.method == "POST" and form.is_valid():
-        form.save()
-        _create_revision(
-            root, request.user, form.cleaned_data.get("change_message", "")
-        )
+        with transaction.atomic():
+            form.save()
+            _create_revision(
+                root,
+                request.user,
+                form.cleaned_data.get("change_message", ""),
+            )
         release_lock_for_directory(root)
         messages.success(request, f'Directory "{root.title}" updated.')
         return redirect(reverse("root"))
@@ -405,8 +408,9 @@ def directory_create(request, path=""):
         # Build the full path
         if parent and parent.path:
             directory.path = f"{parent.path}/{directory.path}"
-        directory.save()
-        _create_revision(directory, request.user, "Initial creation")
+        with transaction.atomic():
+            directory.save()
+            _create_revision(directory, request.user, "Initial creation")
         messages.success(
             request,
             f'Directory "{directory.title}" created.',
@@ -609,10 +613,11 @@ def _move_directory(directory, new_parent):
     if directory_path_conflicts_with_page(new_path):
         return f'A page named "{directory.title}" already exists at the destination path.'
 
-    directory.parent = new_parent
-    directory.path = new_path
-    directory.save()
-    _update_descendant_paths(directory)
+    with transaction.atomic():
+        directory.parent = new_parent
+        directory.path = new_path
+        directory.save()
+        _update_descendant_paths(directory)
     return None
 
 
@@ -785,11 +790,12 @@ def _directory_apply_permissions_inner(request, directory):
                 # Recurse
                 apply_to_dirs_recursive(child)
 
-        # Always apply to direct child pages
-        apply_to_pages(direct_pages)
+        with transaction.atomic():
+            apply_to_pages(direct_pages)
+            if scope == "recursive":
+                apply_to_dirs_recursive(directory)
 
         if scope == "recursive":
-            apply_to_dirs_recursive(directory)
             messages.success(
                 request,
                 "Permissions applied recursively to all pages "
@@ -979,12 +985,13 @@ def _directory_revert_inner(request, directory, rev_num):
     if request.method == "POST":
         directory.title = revision.title
         directory.description = revision.description
-        directory.save()
-        _create_revision(
-            directory,
-            request.user,
-            f"Reverted to v{rev_num}",
-        )
+        with transaction.atomic():
+            directory.save()
+            _create_revision(
+                directory,
+                request.user,
+                f"Reverted to v{rev_num}",
+            )
         messages.success(
             request,
             f'Reverted "{directory.title}" to v{rev_num}.',

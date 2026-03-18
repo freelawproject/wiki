@@ -9,6 +9,7 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
 from django.core.paginator import Paginator
+from django.db import transaction
 from django.http import FileResponse, Http404, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -142,35 +143,40 @@ def _resolve_or_create_directory(dir_path, user, title_overrides=None):
     )
     current_path = ""
 
-    for segment in segments:
-        current_path = f"{current_path}/{segment}" if current_path else segment
-        title = title_overrides.get(
-            current_path, segment.replace("-", " ").title()
-        )
-        directory, created = Directory.objects.get_or_create(
-            path=current_path,
-            defaults={
-                "title": title,
-                "parent": parent,
-                "owner": user,
-                "created_by": user,
-                "visibility": "inherit",
-                "editability": "inherit",
-                "in_sitemap": "inherit",
-                "in_llms_txt": "inherit",
-            },
-        )
-        if created:
-            # Copy permission grants from the parent directory
-            parent_perms = DirectoryPermission.objects.filter(directory=parent)
-            for perm in parent_perms:
-                DirectoryPermission.objects.create(
-                    directory=directory,
-                    user=perm.user,
-                    group=perm.group,
-                    permission_type=perm.permission_type,
+    with transaction.atomic():
+        for segment in segments:
+            current_path = (
+                f"{current_path}/{segment}" if current_path else segment
+            )
+            title = title_overrides.get(
+                current_path, segment.replace("-", " ").title()
+            )
+            directory, created = Directory.objects.get_or_create(
+                path=current_path,
+                defaults={
+                    "title": title,
+                    "parent": parent,
+                    "owner": user,
+                    "created_by": user,
+                    "visibility": "inherit",
+                    "editability": "inherit",
+                    "in_sitemap": "inherit",
+                    "in_llms_txt": "inherit",
+                },
+            )
+            if created:
+                # Copy permission grants from the parent directory
+                parent_perms = DirectoryPermission.objects.filter(
+                    directory=parent
                 )
-        parent = directory
+                for perm in parent_perms:
+                    DirectoryPermission.objects.create(
+                        directory=directory,
+                        user=perm.user,
+                        group=perm.group,
+                        permission_type=perm.permission_type,
+                    )
+            parent = directory
 
     return directory
 
@@ -467,17 +473,15 @@ def page_create(request, path=""):
         page.owner = request.user
         page.created_by = request.user
         page.updated_by = request.user
-        page.save()
+        with transaction.atomic():
+            page.save()
+            page.create_revision(
+                request.user, page.change_message or "Initial creation"
+            )
+            PageSubscription.objects.get_or_create(
+                user=request.user, page=page
+            )
 
-        # Create initial revision
-        page.create_revision(
-            request.user, page.change_message or "Initial creation"
-        )
-
-        # Auto-subscribe the creator
-        PageSubscription.objects.get_or_create(user=request.user, page=page)
-
-        # Process @mentions
         _process_mentions_and_grants(page, request)
 
         messages.success(request, f'Page "{page.title}" created.')
@@ -558,19 +562,15 @@ def page_edit(request, path):
         else:
             page.directory = None
 
-        page.save()
+        with transaction.atomic():
+            page.save()
+            if page.slug != old_slug:
+                SlugRedirect.objects.update_or_create(
+                    old_slug=old_slug,
+                    defaults={"page": page},
+                )
+            rev = page.create_revision(request.user)
 
-        # Create slug redirect if slug changed
-        if page.slug != old_slug:
-            SlugRedirect.objects.update_or_create(
-                old_slug=old_slug,
-                defaults={"page": page},
-            )
-
-        # Create revision
-        rev = page.create_revision(request.user)
-
-        # Notify subscribers
         notify_subscribers(
             page.id,
             request.user.id,
@@ -580,8 +580,6 @@ def page_edit(request, path):
             else None,
             new_rev=rev.revision_number,
         )
-
-        # Process @mentions from content + change message
         _process_mentions_and_grants(page, request)
 
         release_lock_for_page(page)
@@ -906,9 +904,9 @@ def page_revert(request, path, rev_num):
         page.content = old_rev.content
         page.change_message = f"Reverted to version {rev_num}"
         page.updated_by = request.user
-        page.save()
-
-        rev = page.create_revision(request.user)
+        with transaction.atomic():
+            page.save()
+            rev = page.create_revision(request.user)
 
         notify_subscribers(
             page.id,
@@ -1185,9 +1183,9 @@ def confirm_upload(request):
         content_type=pending.content_type,
     )
     upload.file.name = pending.s3_key
-    upload.save()
-
-    pending.delete()
+    with transaction.atomic():
+        upload.save()
+        pending.delete()
 
     return JsonResponse({"markdown": _file_upload_markdown(upload)})
 

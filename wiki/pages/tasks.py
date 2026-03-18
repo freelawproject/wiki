@@ -3,6 +3,7 @@
 from datetime import timedelta
 
 from django.contrib.postgres.search import SearchVector
+from django.db import transaction
 from django.db.models import F, Sum
 from django.utils import timezone
 
@@ -19,13 +20,14 @@ def sync_page_view_counts():
     )
 
     count = 0
-    for entry in tallies:
-        Page.all_objects.filter(id=entry["page_id"]).update(
-            view_count=F("view_count") + entry["total"]
-        )
-        count += 1
+    with transaction.atomic():
+        for entry in tallies:
+            Page.all_objects.filter(id=entry["page_id"]).update(
+                view_count=F("view_count") + entry["total"]
+            )
+            count += 1
+        PageViewTally.objects.all().delete()
 
-    PageViewTally.objects.all().delete()
     return count
 
 
