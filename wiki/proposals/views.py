@@ -1,5 +1,6 @@
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
+from django.db import transaction
 from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
@@ -176,29 +177,25 @@ def proposal_accept(request, path, pk):
     page.content = new_content or proposal.proposed_content
     page.change_message = f"Accepted proposal: {proposal.change_message}"
     page.updated_by = request.user
-    page.save()
 
-    # Create revision
-    last_rev = page.revisions.order_by("-revision_number").first()
-    rev_num = (last_rev.revision_number + 1) if last_rev else 1
-    PageRevision.objects.create(
-        page=page,
-        title=page.title,
-        content=page.content,
-        change_message=page.change_message,
-        revision_number=rev_num,
-        created_by=request.user,
-    )
+    with transaction.atomic():
+        page.save()
+        last_rev = page.revisions.order_by("-revision_number").first()
+        rev_num = (last_rev.revision_number + 1) if last_rev else 1
+        PageRevision.objects.create(
+            page=page,
+            title=page.title,
+            content=page.content,
+            change_message=page.change_message,
+            revision_number=rev_num,
+            created_by=request.user,
+        )
+        proposal.status = ChangeProposal.Status.ACCEPTED
+        proposal.reviewed_by = request.user
+        proposal.reviewed_at = timezone.now()
+        proposal.save()
 
-    # Mark proposal as accepted
-    proposal.status = ChangeProposal.Status.ACCEPTED
-    proposal.reviewed_by = request.user
-    proposal.reviewed_at = timezone.now()
-    proposal.save()
-
-    # Notify proposer and subscribers
     notify_proposer_of_decision(proposal.id)
-
     notify_subscribers(
         page.id,
         request.user.id,

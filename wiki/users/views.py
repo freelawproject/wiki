@@ -5,6 +5,7 @@ from django.contrib.auth import SESSION_KEY, login, logout
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
 from django.contrib.sessions.models import Session
+from django.db import transaction
 from django.http import Http404, JsonResponse
 from django.shortcuts import redirect, render
 from django.utils import timezone
@@ -223,11 +224,14 @@ def admin_archive_toggle(request, pk):
 
     if target.is_active:
         # Archive: deactivate and delete all sessions
-        target.is_active = False
-        target.save(update_fields=["is_active"])
-        for session in Session.objects.filter(expire_date__gt=timezone.now()):
-            if session.get_decoded().get(SESSION_KEY) == str(target.pk):
-                session.delete()
+        with transaction.atomic():
+            target.is_active = False
+            target.save(update_fields=["is_active"])
+            for session in Session.objects.filter(
+                expire_date__gt=timezone.now()
+            ):
+                if session.get_decoded().get(SESSION_KEY) == str(target.pk):
+                    session.delete()
         messages.success(request, f"{target.email} has been archived.")
     else:
         # Unarchive: reactivate
