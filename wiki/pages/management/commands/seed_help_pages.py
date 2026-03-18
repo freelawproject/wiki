@@ -823,9 +823,11 @@ Click **Actions → Subscribe** on any directory to get email
 notifications whenever any page in that directory or its
 subdirectories is updated — including pages created in the future.
 
-You can fine-tune notifications by unsubscribing from individual
-pages or subdirectories. See #notifications-guide for full
-details on how subscriptions work.
+You can fine-tune notifications by overriding the subscription at
+any level — unsubscribe from a subdirectory or specific page
+without losing the broader directory subscription. See
+#notifications-guide for full details on how subscription
+inheritance works.
 
 ### Permissions
 
@@ -980,28 +982,41 @@ subdirectories — including pages created in the future.
 This is useful when you want to stay informed about everything in
 a topic area without subscribing to each page individually.
 
-#### Fine-tuning directory subscriptions
+### Subscription inheritance
 
-After subscribing to a directory, you can **unsubscribe from
-individual pages** or **subdirectories** without losing the
-broader directory subscription:
+Subscriptions use the same inheritance model as
+#permissions-guide and other directory settings: each level in
+the directory tree can **override** the subscription state
+inherited from above.
 
-- To stop notifications for a single page, visit that page and
-  click **Actions → Unsubscribe**
-- To stop notifications for an entire subdirectory, visit that
-  subdirectory and click **Actions → Unsubscribe**
-- Your directory subscription stays active for everything else
+By default, you're **not subscribed** to anything. When you
+subscribe to a directory, that subscription is inherited by all
+pages and subdirectories inside it. You can then override this
+at any level:
 
-If you later re-subscribe to a page or subdirectory you
-previously excluded, the exclusion is removed.
+- **Subscribe to a directory** → all its pages and
+  subdirectories inherit the subscription
+- **Unsubscribe from a subdirectory** → that subtree is excluded,
+  but everything else under the parent directory remains
+  subscribed
+- **Re-subscribe further down** → overrides the unsubscribe above
+  it, just for that subtree
 
-#### How page and directory subscriptions interact
+The **closest explicit setting wins** — the wiki walks up the
+directory tree from a page to the root and uses the first
+subscription record it finds. A page-level override always takes
+priority over directory-level settings.
 
-- If you subscribe to a page **and** its parent directory, then
-  unsubscribe from the directory, your **page subscription is
-  preserved** — you'll still get notifications for that page
-- A direct page subscription always takes priority over directory
-  exclusions
+#### Example
+
+1. You subscribe to **Engineering** → you get notifications for
+   all pages in Engineering and its subdirectories
+2. You unsubscribe from **Engineering/DevOps** → you stop getting
+   notifications for DevOps pages, but still get them for
+   everything else in Engineering
+3. You subscribe to **Engineering/DevOps/CI** → you get
+   notifications for CI pages again, even though DevOps is
+   unsubscribed
 
 ### Email notifications
 
@@ -1021,7 +1036,7 @@ entire directory.
 
 If you can no longer view the page (e.g., permissions changed),
 you won't receive notifications for it — regardless of your
-subscription type.
+subscription settings.
 
 ### Unsubscribing
 
