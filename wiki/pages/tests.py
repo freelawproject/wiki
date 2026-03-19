@@ -2375,3 +2375,276 @@ class TestRawMarkdown:
     def test_nonexistent_page_returns_404(self, client, db):
         r = client.get("/c/no-such-page.md")
         assert r.status_code == 404
+
+
+# ── Upload ↔ Page Linking ─────────────────────────────────
+
+
+class TestLinkUploadsToPage:
+    """Verify that saving a page links referenced FileUploads."""
+
+    def test_create_page_links_upload(self, client, user):
+        """Uploading a file and saving a new page sets FileUpload.page."""
+        client.force_login(user)
+        upload = FileUpload.objects.create(
+            uploaded_by=user,
+            file=SimpleUploadedFile("pic.png", b"img"),
+            original_filename="pic.png",
+            content_type="image/png",
+        )
+        assert upload.page is None
+
+        r = client.post(
+            "/c/new/",
+            {
+                "title": "Page With Image",
+                "content": f"![pic](/files/{upload.pk}/pic.png)",
+                "visibility": "public",
+                "change_message": "Add image",
+            },
+        )
+        assert r.status_code == 302
+        upload.refresh_from_db()
+        page = Page.objects.get(slug="page-with-image")
+        assert upload.page == page
+
+    def test_edit_page_links_new_upload(self, client, user, page):
+        """Adding a file reference during edit links the upload."""
+        client.force_login(user)
+        upload = FileUpload.objects.create(
+            uploaded_by=user,
+            file=SimpleUploadedFile("doc.pdf", b"pdf"),
+            original_filename="doc.pdf",
+            content_type="application/pdf",
+        )
+        r = client.post(
+            f"/c/{page.slug}/edit/",
+            {
+                "title": page.title,
+                "content": f"See [doc](/files/{upload.pk}/doc.pdf)",
+                "visibility": "public",
+                "change_message": "Add doc",
+            },
+        )
+        assert r.status_code == 302
+        upload.refresh_from_db()
+        assert upload.page == page
+
+    def test_edit_page_unlinks_removed_upload(self, client, user, page):
+        """Upload removed from content AND all revisions gets unlinked."""
+        client.force_login(user)
+        upload = FileUpload.objects.create(
+            uploaded_by=user,
+            page=page,
+            file=SimpleUploadedFile("old.png", b"img"),
+            original_filename="old.png",
+        )
+        # No revision references the upload, so removing from content
+        # should unlink it.
+        r = client.post(
+            f"/c/{page.slug}/edit/",
+            {
+                "title": page.title,
+                "content": "No images here.",
+                "visibility": "public",
+                "change_message": "Remove image",
+            },
+        )
+        assert r.status_code == 302
+        upload.refresh_from_db()
+        assert upload.page is None
+
+    def test_edit_preserves_upload_referenced_by_revision(
+        self, client, user, page
+    ):
+        """Upload stays linked if a past revision still references it."""
+        client.force_login(user)
+        upload = FileUpload.objects.create(
+            uploaded_by=user,
+            page=page,
+            file=SimpleUploadedFile("rev-ref.png", b"img"),
+            original_filename="rev-ref.png",
+        )
+        # Create a revision that references the upload
+        page.content = f"![img](/files/{upload.pk}/rev-ref.png)"
+        page.save()
+        page.create_revision(user, "added image")
+
+        # Edit page to remove the reference from current content
+        r = client.post(
+            f"/c/{page.slug}/edit/",
+            {
+                "title": page.title,
+                "content": "Image removed from current content.",
+                "visibility": "public",
+                "change_message": "Remove image",
+            },
+        )
+        assert r.status_code == 302
+        upload.refresh_from_db()
+        # Upload should stay linked because a revision still references it
+        assert upload.page == page
+
+    def test_revert_links_uploads(self, client, user, page):
+        """Reverting to a revision that references files links them."""
+        client.force_login(user)
+        upload = FileUpload.objects.create(
+            uploaded_by=user,
+            file=SimpleUploadedFile("rev.png", b"img"),
+            original_filename="rev.png",
+            content_type="image/png",
+        )
+        # Edit page via view to add the file reference (links the upload)
+        client.post(
+            f"/c/{page.slug}/edit/",
+            {
+                "title": page.title,
+                "content": f"![img](/files/{upload.pk}/rev.png)",
+                "visibility": "public",
+                "change_message": "Add image",
+            },
+        )
+        upload.refresh_from_db()
+        assert upload.page == page
+        page.refresh_from_db()
+        rev_with_image = page.revisions.order_by("revision_number").last()
+
+        # Edit page to remove the reference — upload stays linked
+        # because the previous revision still references it.
+        client.post(
+            f"/c/{page.slug}/edit/",
+            {
+                "title": page.title,
+                "content": "No image.",
+                "visibility": "public",
+                "change_message": "Remove image",
+            },
+        )
+        upload.refresh_from_db()
+        assert upload.page == page
+
+        # Revert to the revision that had the image
+        r = client.post(
+            f"/c/{page.slug}/revert/{rev_with_image.revision_number}/"
+        )
+        assert r.status_code == 302
+        upload.refresh_from_db()
+        assert upload.page == page
+
+    def test_cannot_claim_another_users_upload(self, client, user, page):
+        """Embedding another user's orphaned upload ID does not link it."""
+        from django.contrib.auth.models import User
+
+        other = User.objects.create_user("other", password="test")
+        foreign_upload = FileUpload.objects.create(
+            uploaded_by=other,
+            file=SimpleUploadedFile("secret.png", b"secret"),
+            original_filename="secret.png",
+        )
+        client.force_login(user)
+        r = client.post(
+            f"/c/{page.slug}/edit/",
+            {
+                "title": page.title,
+                "content": f"![stolen](/files/{foreign_upload.pk}/secret.png)",
+                "visibility": "public",
+                "change_message": "Try to steal",
+            },
+        )
+        assert r.status_code == 302
+        foreign_upload.refresh_from_db()
+        # Upload must remain unlinked — not claimed by another user
+        assert foreign_upload.page is None
+
+    def test_cannot_claim_upload_linked_to_another_page(
+        self, client, user, page
+    ):
+        """Referencing a file already linked to another page leaves it."""
+        other_page = Page.objects.create(
+            title="Other",
+            content="x",
+            owner=user,
+            created_by=user,
+            updated_by=user,
+            visibility="private",
+        )
+        upload = FileUpload.objects.create(
+            uploaded_by=user,
+            page=other_page,
+            file=SimpleUploadedFile("attached.png", b"img"),
+            original_filename="attached.png",
+        )
+        client.force_login(user)
+        r = client.post(
+            f"/c/{page.slug}/edit/",
+            {
+                "title": page.title,
+                "content": f"![img](/files/{upload.pk}/attached.png)",
+                "visibility": "public",
+                "change_message": "Try to steal from other page",
+            },
+        )
+        assert r.status_code == 302
+        upload.refresh_from_db()
+        # Upload must stay on its original page
+        assert upload.page == other_page
+
+    def test_cleanup_preserves_linked_upload(self, user, page):
+        """Uploads linked via page save survive the orphan cleanup."""
+        upload = FileUpload.objects.create(
+            uploaded_by=user,
+            page=page,
+            file=SimpleUploadedFile("safe.png", b"img"),
+            original_filename="safe.png",
+        )
+        FileUpload.objects.filter(pk=upload.pk).update(
+            created_at=timezone.now() - timedelta(hours=25)
+        )
+        call_command("cleanup")
+        assert FileUpload.objects.filter(pk=upload.pk).exists()
+
+
+# ── Search Content Command ────────────────────────────────
+
+
+class TestSearchContentCommand:
+    def test_broken_files_detects_missing_upload(self, page, capsys):
+        """--broken-files reports file IDs not in FileUpload table."""
+        page.content = "![gone](/files/99999/gone.png)"
+        page.save()
+
+        call_command("search_content", broken_files=True)
+        captured = capsys.readouterr()
+        assert "99999" in captured.out
+        assert "broken" in captured.out.lower()
+
+    def test_broken_files_passes_when_all_valid(self, user, page, capsys):
+        upload = FileUpload.objects.create(
+            uploaded_by=user,
+            page=page,
+            file=SimpleUploadedFile("ok.png", b"img"),
+            original_filename="ok.png",
+        )
+        page.content = f"![ok](/files/{upload.pk}/ok.png)"
+        page.save()
+
+        call_command("search_content", broken_files=True)
+        captured = capsys.readouterr()
+        assert "valid" in captured.out.lower()
+        assert "broken" not in captured.out.lower()
+
+    def test_pattern_search_finds_match(self, page, capsys):
+        page.content = "The quick brown fox jumps over the lazy dog."
+        page.save()
+
+        call_command("search_content", "quick brown")
+        captured = capsys.readouterr()
+        assert page.title in captured.out
+
+    def test_pattern_search_no_match(self, page, capsys):
+        page.content = "Nothing special here."
+        page.save()
+
+        call_command("search_content", "xyzzyplugh")
+        captured = capsys.readouterr()
+        assert "0 page(s)" in captured.out

@@ -63,6 +63,40 @@ from .models import (
     SlugRedirect,
 )
 
+FILE_REF_RE = re.compile(r"/files/(\d+)/")
+
+
+def _link_uploads_to_page(page, user):
+    """Link FileUpload records referenced in page content to this page.
+
+    Parses /files/<id>/ references from the page's markdown content and
+    sets FileUpload.page for any unlinked uploads that the editing user
+    owns.  Also unlinks uploads previously attached to this page that are
+    no longer referenced by the current content *or* any past revision
+    (so that revisions remain restorable).
+
+    Security: only orphaned uploads belonging to ``user`` are linked,
+    preventing a user from claiming another user's upload by guessing
+    its ID and embedding it in their page.
+    """
+    referenced_ids = set(int(m) for m in FILE_REF_RE.findall(page.content))
+
+    if referenced_ids:
+        FileUpload.objects.filter(
+            id__in=referenced_ids, page__isnull=True, uploaded_by=user
+        ).update(page=page)
+
+    # Collect file IDs referenced by any revision of this page.
+    revision_ids = set()
+    for content in page.revisions.values_list("content", flat=True):
+        revision_ids.update(int(m) for m in FILE_REF_RE.findall(content))
+
+    # Only unlink uploads not referenced by current content OR any
+    # past revision, so that older revisions can still be restored.
+    keep_ids = referenced_ids | revision_ids
+    stale = FileUpload.objects.filter(page=page).exclude(id__in=keep_ids)
+    stale.update(page=None)
+
 
 def _parse_page_path(path: str) -> str:
     """Return the page slug from a URL path."""
@@ -480,6 +514,7 @@ def page_create(request, path=""):
         page.updated_by = request.user
         with transaction.atomic():
             page.save()
+            _link_uploads_to_page(page, request.user)
             page.create_revision(
                 request.user, page.change_message or "Initial creation"
             )
@@ -569,6 +604,7 @@ def page_edit(request, path):
 
         with transaction.atomic():
             page.save()
+            _link_uploads_to_page(page, request.user)
             if page.slug != old_slug:
                 SlugRedirect.objects.update_or_create(
                     old_slug=old_slug,
@@ -911,6 +947,7 @@ def page_revert(request, path, rev_num):
         page.updated_by = request.user
         with transaction.atomic():
             page.save()
+            _link_uploads_to_page(page, request.user)
             rev = page.create_revision(request.user)
 
         notify_subscribers(
