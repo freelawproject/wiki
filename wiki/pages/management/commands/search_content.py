@@ -117,9 +117,7 @@ class Command(BaseCommand):
         # Optionally also scan revisions
         rev_refs = {}  # file_id -> [(rev, filename)]
         if options["revisions"]:
-            for rev in (
-                PageRevision.objects.select_related("page").iterator()
-            ):
+            for rev in PageRevision.objects.select_related("page").iterator():
                 for m in FILE_REF_RE.finditer(rev.content):
                     file_id = int(m.group(1))
                     filename = m.group(2)
