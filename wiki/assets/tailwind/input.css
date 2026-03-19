@@ -359,6 +359,9 @@
   .EasyMDEContainer {
     @apply max-w-full;
   }
+  .EasyMDEContainer .editor-toolbar {
+    @apply sticky top-0 z-10 bg-white dark:bg-gray-800;
+  }
   .EasyMDEContainer .CodeMirror {
     max-width: 100%;
   }
