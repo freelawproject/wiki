@@ -296,6 +296,32 @@ var initMarkdownEditor = (function() {
         }
       });
 
+      // Helpers for #wiki-link dropdown keyboard navigation
+      window._slugDdIndex = -1;
+
+      function highlightSlugItem(dd, index) {
+        var items = dd.querySelectorAll('[data-slug]');
+        items.forEach(function(el, i) {
+          if (i === index) {
+            el.classList.add('bg-gray-100', 'dark:bg-gray-700');
+          } else {
+            el.classList.remove('bg-gray-100', 'dark:bg-gray-700');
+          }
+        });
+        if (items[index]) {
+          items[index].scrollIntoView({ block: 'nearest' });
+        }
+      }
+
+      function selectSlugItem(cm, dd, slug) {
+        var cur = cm.getCursor();
+        var ln = cm.getLine(cur.line);
+        var hp = ln.slice(0, cur.ch).lastIndexOf('#');
+        cm.replaceRange('#' + slug, { line: cur.line, ch: hp }, cur);
+        dd.classList.add('hidden');
+        window._slugDdIndex = -1;
+      }
+
       editor.codemirror.on('inputRead', function(cm, change) {
         var cursor = cm.getCursor();
         var line = cm.getLine(cursor.line);
@@ -321,6 +347,7 @@ var initMarkdownEditor = (function() {
         var hashMatch = before.match(/#([a-z0-9-]*)$/);
         if (!hashMatch || hashMatch[1].length < 2) {
           slugDd.classList.add('hidden');
+          window._slugDdIndex = -1;
           return;
         }
         clearTimeout(window._wikiTimer);
@@ -329,17 +356,24 @@ var initMarkdownEditor = (function() {
           if (pageSlug) searchUrl += '&exclude=' + encodeURIComponent(pageSlug);
           fetch(searchUrl)
             .then(function(r) { return r.text(); }).then(function(html) {
-              if (!html.trim()) { slugDd.classList.add('hidden'); return; }
+              if (!html.trim()) { slugDd.classList.add('hidden'); window._slugDdIndex = -1; return; }
               slugDd.innerHTML = html; slugDd.classList.remove('hidden');
+              window._slugDdIndex = 0;
               var coords = cm.cursorCoords(true, 'page');
               slugDd.style.left = coords.left + 'px'; slugDd.style.top = (coords.bottom + 4) + 'px';
-              slugDd.querySelectorAll('[data-slug]').forEach(function(el) {
+              var items = slugDd.querySelectorAll('[data-slug]');
+              highlightSlugItem(slugDd, 0);
+              items.forEach(function(el) {
                 el.addEventListener('mousedown', function(e) {
                   e.preventDefault();
-                  var cur = cm.getCursor(); var ln = cm.getLine(cur.line);
-                  var hp = ln.slice(0, cur.ch).lastIndexOf('#');
-                  cm.replaceRange('#' + el.dataset.slug, { line: cur.line, ch: hp }, cur);
-                  slugDd.classList.add('hidden');
+                  selectSlugItem(cm, slugDd, el.dataset.slug);
+                });
+                el.addEventListener('mouseenter', function() {
+                  var allItems = slugDd.querySelectorAll('[data-slug]');
+                  for (var j = 0; j < allItems.length; j++) {
+                    if (allItems[j] === el) { window._slugDdIndex = j; break; }
+                  }
+                  highlightSlugItem(slugDd, window._slugDdIndex);
                 });
               });
             });
@@ -347,14 +381,37 @@ var initMarkdownEditor = (function() {
       });
 
       editor.codemirror.on('keydown', function(cm, e) {
+        var slugDd = document.getElementById('slug-dropdown');
+        var slugDdVisible = slugDd && !slugDd.classList.contains('hidden');
+
         if (e.key === 'Escape') {
           mentionDrop.classList.add('hidden');
-          var slugDd = document.getElementById('slug-dropdown');
-          if (slugDd) slugDd.classList.add('hidden');
+          if (slugDd) { slugDd.classList.add('hidden'); window._slugDdIndex = -1; }
         }
         if (e.key === 'Tab' && !mentionDrop.classList.contains('hidden') && activeCmMatch) {
           e.preventDefault();
           cmMention.selectFirst(activeCmMatch);
+        }
+
+        // Arrow key navigation and Enter/Tab selection for #wiki-link dropdown
+        if (slugDdVisible) {
+          var items = slugDd.querySelectorAll('[data-slug]');
+          if (!items.length) return;
+          if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            window._slugDdIndex = Math.min((window._slugDdIndex || 0) + 1, items.length - 1);
+            highlightSlugItem(slugDd, window._slugDdIndex);
+          } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            window._slugDdIndex = Math.max((window._slugDdIndex || 0) - 1, 0);
+            highlightSlugItem(slugDd, window._slugDdIndex);
+          } else if (e.key === 'Enter' || (e.key === 'Tab' && !e.shiftKey)) {
+            e.preventDefault();
+            var idx = window._slugDdIndex || 0;
+            if (items[idx]) {
+              selectSlugItem(cm, slugDd, items[idx].dataset.slug);
+            }
+          }
         }
       });
 
