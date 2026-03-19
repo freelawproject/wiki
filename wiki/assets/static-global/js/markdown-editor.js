@@ -197,7 +197,14 @@ var initMarkdownEditor = (function() {
         },
         className: 'fa fa-upload',
         title: 'Upload File',
-      }, 'table', '|', 'guide'],
+      }, 'table', '|', {
+        name: 'guide',
+        action: function() {
+          window.open('/c/help/markdown-syntax', '_blank');
+        },
+        className: 'fa fa-question-circle',
+        title: 'Markdown Guide',
+      }],
     });
 
     // ── Write / Preview tabs ──────────────────────────────────
