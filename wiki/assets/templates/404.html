@@ -9,6 +9,13 @@
   <p class="mt-2 text-gray-500 dark:text-gray-400 max-w-md mx-auto">
     The page you're looking for doesn't exist or has been moved.
   </p>
+  {% if not user.is_authenticated %}
+  <p class="mt-4 text-gray-500 dark:text-gray-400 max-w-md mx-auto">
+    If you believe this page exists, you may need to
+    <a href="{% url 'login' %}?next={{ request.path }}" class="text-primary-600 dark:text-primary-400 underline">sign in</a>
+    to view it.
+  </p>
+  {% endif %}
   <a href="{% url 'root' %}" class="btn-primary mt-8 inline-flex">Go Home</a>
 </div>
 {% endblock %}
