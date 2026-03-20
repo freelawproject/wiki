@@ -47,11 +47,18 @@ urlpatterns = [
 ]
 
 if settings.DEVELOPMENT:
+    from django.views.defaults import page_not_found
+
     urlpatterns += [
         path("__debug__/", include("debug_toolbar.urls")),
         path(
             "__reload__/",
             include("django_browser_reload.urls"),
+        ),
+        path(
+            "__404__/",
+            page_not_found,
+            kwargs={"exception": Exception("Preview")},
         ),
     ]
 

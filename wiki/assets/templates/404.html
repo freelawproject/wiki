@@ -4,28 +4,31 @@
 
 {% block content %}
 <div class="text-center py-20">
-  <p class="text-8xl font-serif font-bold text-gray-200 dark:text-gray-700 leading-none">404</p>
   {% if user.is_authenticated %}
+  <p class="text-8xl font-serif font-bold text-gray-200 dark:text-gray-700 leading-none">404</p>
   <h1 class="mt-4 text-2xl">Page Not Found</h1>
   <p class="mt-2 text-gray-500 dark:text-gray-400 max-w-md mx-auto">
     The page you're looking for doesn't exist or has been moved.
   </p>
   <a href="{% url 'root' %}" class="btn-primary mt-8 inline-flex">Go Home</a>
   {% else %}
-  <h1 class="mt-4 text-2xl">Page Not Found <span class="text-lg text-gray-400 dark:text-gray-500">(or is it?)</span></h1>
-  <p class="mt-2 text-gray-500 dark:text-gray-400 max-w-md mx-auto">
+  <p class="text-8xl font-serif font-bold text-gray-200 dark:text-gray-700 leading-none">404?</p>
+  <h1 class="mt-4 text-2xl">Page Not Found</h1>
+  <p class="mt-3 text-gray-500 dark:text-gray-400 max-w-md mx-auto">
     You're not signed in, so some of the wiki is invisible to you right now.
     There's a good chance this page exists and is just waiting behind the login screen.
   </p>
-  <p class="mt-4 text-gray-500 dark:text-gray-400 max-w-md mx-auto">
+  <p class="mt-3 text-sm text-gray-400 dark:text-gray-500 max-w-md mx-auto">
     If you're FLP staff, sign in with your email &mdash; no password needed.
   </p>
-  <a href="{% url 'login' %}?next={{ request.path }}" class="btn-primary mt-6 inline-flex text-lg px-8 py-3">
-    Sign In to Find Out
-  </a>
-  <a href="{% url 'root' %}" class="mt-4 inline-block text-sm text-gray-400 dark:text-gray-500 underline">
-    or go home
-  </a>
+  <div class="mt-6 flex flex-col items-center gap-3">
+    <a href="{% url 'login' %}?next={{ request.path }}" class="btn-primary inline-flex text-lg px-8 py-3">
+      Sign In to Find Out
+    </a>
+    <a href="{% url 'root' %}" class="text-sm text-gray-400 dark:text-gray-500 underline">
+      or go home
+    </a>
+  </div>
   {% endif %}
 </div>
 {% endblock %}
