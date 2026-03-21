@@ -317,7 +317,8 @@ class TestPageDelete:
 
 
 class TestPageHistory:
-    def test_history_page_loads(self, client, page):
+    def test_history_page_loads(self, client, user, page):
+        client.force_login(user)
         r = client.get("/c/getting-started/history/")
         assert r.status_code == 200
         assert b"v1" in r.content
@@ -331,6 +332,7 @@ class TestPageHistory:
             revision_number=2,
             created_by=user,
         )
+        client.force_login(user)
         r = client.get("/c/getting-started/history/")
         assert b"v1" in r.content
         assert b"v2" in r.content
@@ -338,7 +340,8 @@ class TestPageHistory:
 
 class TestPageDiff:
     @pytest.fixture
-    def two_revisions(self, user, page):
+    def two_revisions(self, client, user, page):
+        client.force_login(user)
         PageRevision.objects.create(
             page=page,
             title=page.title,
@@ -383,6 +386,58 @@ class TestPageRevert:
         edited_page.refresh_from_db()
         assert edited_page.content == "## Welcome\n\nHello world."
         assert edited_page.revisions.count() == 3
+
+
+# ── History Requires Authentication ───────────────────────
+
+
+class TestHistoryRequiresAuth:
+    """Revision history, diff, and revert are staff-only (login required)."""
+
+    def test_history_redirects_anonymous(self, client, page):
+        r = client.get("/c/getting-started/history/")
+        assert r.status_code == 302
+        assert "/u/login/" in r.url
+
+    def test_history_visible_to_authenticated(self, client, user, page):
+        client.force_login(user)
+        r = client.get("/c/getting-started/history/")
+        assert r.status_code == 200
+
+    def test_diff_redirects_anonymous(self, client, user, page):
+        PageRevision.objects.create(
+            page=page,
+            title=page.title,
+            content="v2",
+            change_message="edit",
+            revision_number=2,
+            created_by=user,
+        )
+        r = client.get("/c/getting-started/diff/1/2/")
+        assert r.status_code == 302
+        assert "/u/login/" in r.url
+
+    def test_diff_visible_to_authenticated(self, client, user, page):
+        PageRevision.objects.create(
+            page=page,
+            title=page.title,
+            content="v2",
+            change_message="edit",
+            revision_number=2,
+            created_by=user,
+        )
+        client.force_login(user)
+        r = client.get("/c/getting-started/diff/1/2/")
+        assert r.status_code == 200
+
+    def test_history_link_hidden_for_anonymous(self, client, page):
+        r = client.get("/c/getting-started")
+        assert b"History" not in r.content
+
+    def test_history_link_shown_for_authenticated(self, client, user, page):
+        client.force_login(user)
+        r = client.get("/c/getting-started")
+        assert b"History" in r.content
 
 
 # ── Slug Redirects & URL Resolution ───────────────────────
