@@ -883,6 +883,7 @@ def page_backlinks(request, path):
     )
 
 
+@login_required
 def page_history(request, path):
     """Show revision history for a page."""
     slug = _parse_page_path(path)
@@ -900,6 +901,7 @@ def page_history(request, path):
     )
 
 
+@login_required
 def page_diff(request, path, v1, v2):
     """Show diff between two versions."""
     slug = _parse_page_path(path)
