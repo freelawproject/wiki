@@ -27,6 +27,9 @@
   pre code {
     @apply block p-4 overflow-x-auto bg-gray-50 border-gray-200 text-gray-800 rounded-lg dark:bg-gray-800 dark:border-gray-700 dark:text-gray-200;
   }
+  kbd {
+    @apply font-mono text-xs bg-gray-100 text-gray-800 border border-gray-300 rounded px-1.5 py-0.5 shadow-[0_1px_0_1px_rgba(0,0,0,0.08)] dark:bg-gray-700 dark:text-gray-200 dark:border-gray-600 dark:shadow-[0_1px_0_1px_rgba(0,0,0,0.3)];
+  }
   /* Ensure all form elements respect dark mode */
   input, textarea, select {
     color-scheme: light dark;
