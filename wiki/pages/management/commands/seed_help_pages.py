@@ -1512,11 +1512,13 @@ Use [[ total_cases ]] to show the count.
 ### Caching and stale data
 
 The wiki caches each data source response in memory for the
-configured TTL. If the API is slow or unavailable when the cache
-expires, the wiki serves **stale cached data** for up to three
-times the TTL before giving up. This means a page with a
-5-minute TTL can tolerate up to 15 minutes of API downtime
-without showing missing data.
+configured TTL. The cache is **shared across pages** — if
+multiple pages use the same URL, only one fetch is made and all
+pages serve the same cached result. If the API is slow or
+unavailable when the cache expires, the wiki serves **stale
+cached data** for up to three times the TTL before giving up.
+This means a page with a 5-minute TTL can tolerate up to
+15 minutes of API downtime without showing missing data.
 
 If the very first fetch fails (no cached data exists), the
 placeholders are left as-is.
