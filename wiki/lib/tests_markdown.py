@@ -387,6 +387,19 @@ class TestConvertButtonLinks:
         assert ">Click</a>" in result
 
 
+class TestKbdElement:
+    """Test that <kbd> tags survive sanitization."""
+
+    def test_kbd_passes_through(self):
+        html = render_markdown("Press <kbd>Ctrl</kbd>+<kbd>S</kbd> to save.")
+        assert "<kbd>Ctrl</kbd>" in html
+        assert "<kbd>S</kbd>" in html
+
+    def test_nested_kbd(self):
+        html = render_markdown("<kbd><kbd>Ctrl</kbd>+<kbd>C</kbd></kbd>")
+        assert "<kbd><kbd>Ctrl</kbd>+<kbd>C</kbd></kbd>" in html
+
+
 class TestAlertEndToEnd:
     """Test alert rendering through the full render_markdown pipeline."""
 
