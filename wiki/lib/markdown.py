@@ -153,6 +153,7 @@ ALLOWED_TAGS = {
     "dl",
     "dt",
     "dd",
+    "kbd",
 }
 
 ALLOWED_ATTRIBUTES = {
