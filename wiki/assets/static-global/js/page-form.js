@@ -32,7 +32,7 @@
 
   function fetchInheritMeta(dirPath) {
     if (!dirPath) return;
-    fetch('/api/dir-inherit/?path=' + encodeURIComponent(dirPath))
+    fetch(config.urls.dirInherit + '?path=' + encodeURIComponent(dirPath))
       .then(function(r) { return r.ok ? r.json() : null; })
       .then(function(meta) {
         if (!meta) return;
@@ -218,7 +218,7 @@
 
   function fetchSuggestions(query) {
     var parent = currentParentPath();
-    var url = '/api/dir-search/?parent=' + encodeURIComponent(parent);
+    var url = config.urls.dirSearch + '?parent=' + encodeURIComponent(parent);
     if (query) url += '&q=' + encodeURIComponent(query);
     fetch(url).then(function(r) { return r.ok ? r.json() : Promise.resolve([]); }).then(function(dirs) {
       if (!dirs.length && !query) { dirDropdown.classList.add('hidden'); return; }
@@ -306,7 +306,7 @@
       if (!m) return null;
       return { query: m[1], start: pos - m[0].length, end: pos };
     },
-    fetchUrl: '/api/user-search/?q=',
+    fetchUrl: config.urls.userSearch + '?q=',
     onSelect: function(username, match) {
       var val = cmInput.value;
       cmInput.value = val.slice(0, match.start) + '@' + username + val.slice(match.end);
@@ -375,7 +375,7 @@
     if (!refs.mentions.length && !refs.linked_slugs.length) return;
 
     e.preventDefault();
-    fetch('/api/check-page-perms/', {
+    fetch(config.urls.checkPagePerms, {
       method: 'POST',
       headers: { 'X-CSRFToken': csrfToken, 'Content-Type': 'application/json' },
       body: JSON.stringify({ page_slug: pageSlug, usernames: refs.mentions, linked_slugs: refs.linked_slugs }),

@@ -27,5 +27,8 @@
 {% endblock %}
 
 {% block footer_scripts %}
+<script type="application/json" id="username-autocomplete-config">
+{"userSearchUrl": "{% url 'user_search' %}"}
+</script>
 <script src="{% static 'js/username-autocomplete.js' %}"></script>
 {% endblock %}

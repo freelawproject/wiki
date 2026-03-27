@@ -105,7 +105,16 @@
 <script type="application/json" id="editor-config">
 {
   "csrfToken": "{{ csrf_token }}",
-  "directUpload": {% if not DEBUG %}true{% else %}false{% endif %}
+  "directUpload": {% if not DEBUG %}true{% else %}false{% endif %},
+  "urls": {
+    "presignUpload": "{% url 'presign_upload' %}",
+    "confirmUpload": "{% url 'confirm_upload' %}",
+    "fileUpload": "{% url 'file_upload' %}",
+    "markdownGuide": "{% url 'resolve_path' path='help/markdown-syntax' %}",
+    "preview": "{% url 'page_preview' %}",
+    "userSearch": "{% url 'user_search' %}",
+    "pageSearch": "{% url 'page_search' %}"
+  }
 }
 </script>
 <script src="{% static 'js/mention-dropdown.js' %}"></script>
