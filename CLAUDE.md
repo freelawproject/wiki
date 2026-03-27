@@ -42,6 +42,8 @@ wiki/
 2. **Pre-commit**: MUST run `pre-commit run --all-files` and ensure it passes before committing. The project uses ruff for linting and formatting.
 
 3. **URLs**: MUST use Django's `reverse()` function in backend code. NEVER hardcode URL paths.
+   In JavaScript, MUST pass URLs from templates via `<script type="application/json">` config
+   blocks using `{% url %}` tags. NEVER hardcode URL paths in `.js` files.
    ```python
    # Good
    from django.urls import reverse
@@ -49,6 +51,19 @@ wiki/
 
    # Bad
    url = f"/c/{page.slug}/edit/"
+   ```
+   ```html
+   <!-- Good: template passes URL to JS via config block -->
+   <script type="application/json" id="editor-config">
+   { "urls": { "preview": "{% url 'page_preview' %}" } }
+   </script>
+   ```
+   ```javascript
+   // Good: JS reads URL from config
+   fetch(config.urls.preview, { ... })
+
+   // Bad: hardcoded path in JS
+   fetch('/api/preview/', { ... })
    ```
 
 4. **Early exits**: Prefer early returns to prevent deep nesting.
