@@ -3,7 +3,8 @@
  * @-mention + #wiki-link autocomplete).
  *
  * Reads config from a <script type="application/json" id="editor-config">
- * block with: { csrfToken, pageSlug? }
+ * block with: { csrfToken, pageSlug?, urls: { presignUpload, confirmUpload,
+ *   fileUpload, markdownGuide, preview, userSearch, pageSearch } }
  *
  * Expects these DOM elements (optional ones are gracefully skipped):
  *   #markdown-editor  — textarea (required)
@@ -72,7 +73,7 @@ var initMarkdownEditor = (function() {
       var ph = insertPlaceholder(cm, file.name);
 
       // Step 1: Get presigned POST from Django
-      fetch('/api/upload/presign/', {
+      fetch(config.urls.presignUpload, {
         method: 'POST',
         headers: { 'X-CSRFToken': csrfToken, 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -105,7 +106,7 @@ var initMarkdownEditor = (function() {
           }
 
           // Step 3: Confirm with Django
-          fetch('/api/upload/confirm/', {
+          fetch(config.urls.confirmUpload, {
             method: 'POST',
             headers: { 'X-CSRFToken': csrfToken, 'Content-Type': 'application/json' },
             body: JSON.stringify({ pending_id: data.pending_id })
@@ -136,7 +137,7 @@ var initMarkdownEditor = (function() {
       var ph = insertPlaceholder(cm, file.name);
 
       var xhr = new XMLHttpRequest();
-      xhr.open('POST', '/api/upload/');
+      xhr.open('POST', config.urls.fileUpload);
       xhr.setRequestHeader('X-CSRFToken', csrfToken);
 
       xhr.upload.addEventListener('progress', function(e) {
@@ -200,7 +201,7 @@ var initMarkdownEditor = (function() {
       }, 'table', '|', {
         name: 'guide',
         action: function() {
-          window.open('/c/help/markdown-syntax', '_blank');
+          window.open(config.urls.markdownGuide, '_blank');
         },
         className: 'fa fa-question-circle',
         title: 'Markdown Guide',
@@ -253,7 +254,7 @@ var initMarkdownEditor = (function() {
         editorWrapper.style.display = 'none';
         previewPane.classList.remove('hidden');
         previewPane.innerHTML = '<p class="text-gray-400">Loading preview...</p>';
-        fetch('/api/preview/', {
+        fetch(config.urls.preview, {
           method: 'POST',
           headers: { 'X-CSRFToken': csrfToken, 'Content-Type': 'application/x-www-form-urlencoded' },
           body: 'content=' + encodeURIComponent(editor.value()),
@@ -290,7 +291,7 @@ var initMarkdownEditor = (function() {
           if (!m) return null;
           return { query: m[1], start: pos - m[0].length, end: pos };
         },
-        fetchUrl: '/api/user-search/?q=',
+        fetchUrl: config.urls.userSearch + '?q=',
         onSelect: function(username, match) {
           var cm = editor.codemirror;
           var cursor = cm.getCursor();
@@ -357,7 +358,7 @@ var initMarkdownEditor = (function() {
         }
         clearTimeout(window._wikiTimer);
         window._wikiTimer = setTimeout(function() {
-          var searchUrl = '/api/page-search/?q=' + encodeURIComponent(hashMatch[1]);
+          var searchUrl = config.urls.pageSearch + '?q=' + encodeURIComponent(hashMatch[1]);
           if (pageSlug) searchUrl += '&exclude=' + encodeURIComponent(pageSlug);
           fetch(searchUrl)
             .then(function(r) { return r.text(); }).then(function(html) {

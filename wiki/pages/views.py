@@ -900,7 +900,10 @@ def page_history(request, path):
         raise Http404
 
     revisions = page.revisions.select_related("created_by").all()
-    diff_base = page.get_absolute_url() + "/diff/"
+    diff_base = reverse(
+        "page_diff",
+        kwargs={"path": page.content_path, "v1": 0, "v2": 0},
+    ).rsplit("0/0/", 1)[0]
     return render(
         request,
         "pages/history.html",

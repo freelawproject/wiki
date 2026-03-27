@@ -10,13 +10,15 @@
   var dropdown = document.getElementById('username-dropdown');
   if (!input || !dropdown) return;
 
+  var userSearchUrl = JSON.parse(document.getElementById('username-autocomplete-config').textContent).userSearchUrl;
+
   var timer = null;
 
   function search(query) {
     if (query.length < 1) { dropdown.classList.add('hidden'); return; }
     clearTimeout(timer);
     timer = setTimeout(function() {
-      fetch('/api/user-search/?q=' + encodeURIComponent(query))
+      fetch(userSearchUrl + '?q=' + encodeURIComponent(query))
         .then(function(r) { return r.json(); })
         .then(function(results) {
           if (!results.length) { dropdown.classList.add('hidden'); return; }
