@@ -48,11 +48,12 @@ class TestFeedbackPage:
         assert r.status_code == 200
         assert b"Feedback" in r.content
 
-    def test_feedback_gives_editor_404(self, client, user, page):
-        """An editor/owner gets 404 on the feedback page."""
+    def test_feedback_accessible_to_editor(self, client, user, page):
+        """An editor/owner can access the feedback page to propose
+        changes (e.g. for review before editing directly)."""
         client.force_login(user)
         r = client.get(f"/c/{page.slug}/feedback/")
-        assert r.status_code == 404
+        assert r.status_code == 200
 
     def test_propose_form_prefilled(self, client, other_user, page):
         """The propose form is pre-filled with the current page content."""
@@ -400,13 +401,13 @@ class TestPageDetailFeedbackButtons:
         r = client.get(f"/c/{page.slug}")
         assert b"Feedback" in r.content
 
-    def test_editor_does_not_see_feedback_button(self, client, user, page):
-        """The page owner sees Edit, not Feedback."""
+    def test_editor_sees_edit_and_propose(self, client, user, page):
+        """The page owner sees both Edit and Propose Change."""
         client.force_login(user)
         r = client.get(f"/c/{page.slug}")
         content = r.content.decode()
         assert ">Edit<" in content
-        assert "page_feedback" not in content
+        assert "Propose Change" in content
 
     def test_editor_sees_feedback_count(self, client, user, other_user, page):
         """The owner sees 'Feedback (1)' when pending proposals exist."""
@@ -432,11 +433,11 @@ class TestPageDetailFeedbackButtons:
 
 
 class TestFLPEditableFeedback:
-    def test_flp_editable_user_gets_404_on_feedback(
+    def test_flp_editable_user_can_access_feedback(
         self, client, other_user, editable_page
     ):
-        """A logged-in user on an FLP-editable page gets 404
-        on feedback (since they can edit directly)."""
+        """A logged-in user on an FLP-editable page can access the
+        feedback page to propose changes."""
         client.force_login(other_user)
         r = client.get(f"/c/{editable_page.slug}/feedback/")
-        assert r.status_code == 404
+        assert r.status_code == 200
