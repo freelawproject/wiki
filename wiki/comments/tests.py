@@ -67,17 +67,17 @@ class TestSubmitComment:
         r = client.get(f"/c/{private_page.slug}/feedback/")
         assert r.status_code == 404
 
-    def test_editor_cannot_submit_comment(self, client, user, page):
-        """Editors/owners get 404 when trying to leave feedback."""
+    def test_editor_can_submit_comment(self, client, user, page):
+        """Editors/owners can leave feedback via the propose workflow."""
         client.force_login(user)
         r = client.post(
             f"/c/{page.slug}/feedback/",
             {
                 "submit_comment": "1",
-                "message": "Owner trying to comment.",
+                "message": "Owner leaving a comment.",
             },
         )
-        assert r.status_code == 404
+        assert r.status_code == 302
 
 
 # ── Comment Detail ────────────────────────────────────────
