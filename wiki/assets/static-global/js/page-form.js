@@ -26,6 +26,10 @@
   var segments = config.dirSegments;
   var searchTimeout = null;
 
+  function escapeHtml(s) {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
   function fetchInheritMeta(dirPath) {
     if (!dirPath) return;
     fetch('/api/dir-inherit/?path=' + encodeURIComponent(dirPath))
@@ -34,7 +38,8 @@
         if (!meta) return;
         _upgradeSelectsToInherit(meta);
         document.dispatchEvent(new CustomEvent('dir-inherit-update', { detail: meta }));
-      });
+      })
+      .catch(function() {});
   }
 
   // Replace plain <select> widgets with inherit-select Alpine components
@@ -102,9 +107,15 @@
       inheritOpt.setAttribute('data-value', 'inherit');
       inheritOpt.setAttribute('tabindex', '-1');
       inheritOpt.className = 'px-3 py-2 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700 focus:bg-gray-100 dark:focus:bg-gray-700 outline-none';
-      inheritOpt.innerHTML =
-        '<div class="text-sm font-medium">' + fieldMeta.display + '</div>' +
-        '<div class="text-xs text-gray-400 dark:text-gray-500" aria-hidden="true">Provided by ' + fieldMeta.source + '</div>';
+      var titleEl = document.createElement('div');
+      titleEl.className = 'text-sm font-medium';
+      titleEl.textContent = fieldMeta.display;
+      inheritOpt.appendChild(titleEl);
+      var sourceEl = document.createElement('div');
+      sourceEl.className = 'text-xs text-gray-400 dark:text-gray-500';
+      sourceEl.setAttribute('aria-hidden', 'true');
+      sourceEl.textContent = 'Provided by ' + fieldMeta.source;
+      inheritOpt.appendChild(sourceEl);
       listbox.appendChild(inheritOpt);
 
       // Explicit options (skip the one matching the inherited value)
@@ -213,10 +224,10 @@
       if (!dirs.length && !query) { dirDropdown.classList.add('hidden'); return; }
       var html = '';
       dirs.forEach(function(d) {
-        html += '<div class="px-3 py-2 cursor-pointer text-sm" data-path="' + d.path + '" data-title="' + d.title + '">' + d.title + '</div>';
+        html += '<div class="px-3 py-2 cursor-pointer text-sm" data-path="' + escapeHtml(d.path) + '" data-title="' + escapeHtml(d.title) + '">' + escapeHtml(d.title) + '</div>';
       });
       if (query && !dirs.some(function(d) { return d.title.toLowerCase() === query.toLowerCase(); })) {
-        html += '<div class="px-3 py-2 cursor-pointer text-sm text-primary-600 dark:text-primary-400" data-new="true" data-title="' + query + '">Create "' + query + '"</div>';
+        html += '<div class="px-3 py-2 cursor-pointer text-sm text-primary-600 dark:text-primary-400" data-new="true" data-title="' + escapeHtml(query) + '">Create "' + escapeHtml(query) + '"</div>';
       }
       dirDropdown.innerHTML = html;
       dirDropdown.classList.remove('hidden');

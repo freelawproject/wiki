@@ -422,8 +422,6 @@ document.addEventListener('alpine:init', () => {
       }
       this.labelMap = map
 
-      var fieldName = this.$el.getAttribute('data-field')
-
       // Update inherit metadata when the directory changes
       var self = this
       var fieldName = this.$el.getAttribute('data-field')
