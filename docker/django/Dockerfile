@@ -36,7 +36,13 @@ ENV \
     UV_PROJECT_ENVIRONMENT=/opt/venv \
     PATH="/opt/venv/bin:$PATH"
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --all-extras
+    uv sync \
+    $(test "$BUILD_ENV" != "dev" && echo "--no-dev")
+
+# Install Playwright browsers for dev/CI browser tests
+RUN if [ "$BUILD_ENV" = "dev" ]; then \
+      playwright install --with-deps chromium; \
+    fi
 
 # npm install dependencies
 COPY package.json ./

@@ -40,7 +40,7 @@ dependencies = [
   "uvicorn[standard]",
 ]
 
-[project.optional-dependencies]
+[dependency-groups]
 dev = [
   "django-debug-toolbar",
   "django-extensions",
@@ -50,6 +50,7 @@ dev = [
   "pre-commit",
   "pytest",
   "pytest-django",
+  "pytest-playwright",
 ]
 
 [tool.setuptools.packages.find]
