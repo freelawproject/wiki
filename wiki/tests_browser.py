@@ -292,12 +292,14 @@ class TestInheritSelectDropdown:
             "text=Docs"
         )
         docs_option.wait_for(state="visible")
-        docs_option.click()
+        with browser_page.expect_response("**/api/dir-inherit/**"):
+            docs_option.click()
 
-        # Open visibility dropdown
+        # Wait for the inherit-select to update before opening
         vis_button = browser_page.locator(
             "[data-field='visibility'] button[role='combobox']"
         )
+        expect(vis_button).to_contain_text("Public")
         vis_button.click()
 
         listbox = browser_page.locator("#listbox_visibility")
