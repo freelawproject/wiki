@@ -119,7 +119,7 @@ def _llms_txt_entry(page, base_url):
     desc = page.seo_description or extract_description(
         page.content, max_length=100
     )
-    md_url = f"{base_url}{page.get_absolute_url()}.md"
+    md_url = f"{base_url}{reverse('page_raw_markdown', kwargs={'path': page.content_path})}"
     entry = f"- [{page.title}]({md_url})"
     if desc:
         entry += f": {desc}"

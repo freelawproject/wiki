@@ -27,12 +27,18 @@ def notify_subscribers(
 
     signer = Signer()
     base = settings.BASE_URL
-    page_url = f"{base}{page.get_absolute_url()}"
+    page_url = (
+        f"{base}{reverse('resolve_path', kwargs={'path': page.content_path})}"
+    )
 
     # Build diff line if we have both revision numbers
     diff_line = ""
     if prev_rev is not None and new_rev is not None and prev_rev >= 1:
-        diff_url = f"{base}{page.get_absolute_url()}diff/{prev_rev}/{new_rev}/"
+        diff_path = reverse(
+            "page_diff",
+            kwargs={"path": page.content_path, "v1": prev_rev, "v2": new_rev},
+        )
+        diff_url = f"{base}{diff_path}"
         diff_line = f"Diff: {diff_url}\n\n"
 
     all_user_ids = page_sub_user_ids | set(dir_sub_mapping.keys())
@@ -151,7 +157,9 @@ def process_mentions(
     page = Page.objects.get(id=page_id)
     editor = User.objects.get(id=editor_id)
     base = settings.BASE_URL
-    page_url = f"{base}{page.get_absolute_url()}"
+    page_url = (
+        f"{base}{reverse('resolve_path', kwargs={'path': page.content_path})}"
+    )
     grant_map = grant_access_to or {}
 
     for uname in mentioned_usernames:
