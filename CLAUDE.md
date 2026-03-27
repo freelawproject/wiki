@@ -134,6 +134,23 @@ This works because each terminal has a stable, unique shell PID. Without `TEST_D
 - Use `client.force_login(user)` for authenticated requests
 - Use `factory-boy` for complex test data
 
+### Browser Tests (Playwright)
+
+For JS-dependent UI behavior that can't be verified with the Django test client,
+use Playwright browser tests in `wiki/tests_browser.py`.
+
+```bash
+# Run browser tests
+docker compose exec wiki-django python -m pytest wiki/tests_browser.py -v
+```
+
+Key patterns:
+- Use the `browser_page` fixture (not `page`, which collides with conftest)
+- Use `live_server` fixture with `@pytest.mark.django_db(transaction=True)`
+- Log in via `_force_login(browser_page, live_server, user)` (sets session cookie)
+- Wait for API responses with `browser_page.expect_response("**/api/endpoint/**")`
+- Playwright + Chromium are installed only in dev builds (`BUILD_ENV=dev`)
+
 
 ## Docker
 
