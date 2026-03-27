@@ -231,6 +231,21 @@ class TestPageEdit:
         assert page.content == "Updated content"
         assert page.revisions.count() == 2
 
+    def test_edit_auto_subscribes_editor(self, client, user, page):
+        client.force_login(user)
+        # Ensure no subscription exists before editing
+        PageSubscription.objects.filter(user=user, page=page).delete()
+        client.post(
+            "/c/getting-started/edit/",
+            {
+                "title": "Getting Started",
+                "content": "Updated content",
+                "visibility": "public",
+                "change_message": "Updated body",
+            },
+        )
+        assert PageSubscription.objects.filter(user=user, page=page).exists()
+
     def test_edit_creates_slug_redirect(self, client, user, page):
         client.force_login(user)
         client.post(
