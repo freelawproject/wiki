@@ -197,7 +197,9 @@ class TestInheritSelectDropdown:
 
         # Should NOT have a plain <select> for visibility
         plain_select = browser_page.locator("select[name='visibility']")
-        assert plain_select.count() == 0, "Expected inherit-select, got plain <select>"
+        assert plain_select.count() == 0, (
+            "Expected inherit-select, got plain <select>"
+        )
 
         # Should have the inherit-select Alpine component
         vis_button = browser_page.locator(
@@ -223,9 +225,7 @@ class TestInheritSelectDropdown:
         location_input = browser_page.locator("#location-input")
         location_input.click()
         with browser_page.expect_response("**/api/dir-inherit/**"):
-            browser_page.locator("#dir-dropdown").locator(
-                "text=Staff"
-            ).click()
+            browser_page.locator("#dir-dropdown").locator("text=Staff").click()
 
         # Plain select should be gone, replaced by inherit-select
         assert plain_select.count() == 0
@@ -360,9 +360,11 @@ class TestLocationPickerKeyboard:
         dropdown.locator("[data-path]").first.wait_for(state="visible")
 
         # Get the first item's title before selecting
-        first_title = dropdown.locator(
-            "[data-path], [data-new]"
-        ).first.text_content().strip()
+        first_title = (
+            dropdown.locator("[data-path], [data-new]")
+            .first.text_content()
+            .strip()
+        )
 
         # Press Enter to select the first (default highlighted) item
         location_input.press("Enter")
