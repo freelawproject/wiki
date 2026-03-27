@@ -46,7 +46,7 @@
       <div class="text-xs text-gray-400 dark:text-gray-500" aria-hidden="true">Provided by {{ meta.source }}</div>
       <span class="sr-only">(inherited from {{ meta.source }})</span>
     </div>
-    {# Explicit options — rendered server-side, duplicate hidden #}
+    {# Explicit options — duplicate of inherited value filtered server-side #}
     {% for value, label in field.field.choices %}{% if value != "inherit" and value != meta.value %}
     <div @click="pick"
          role="option"

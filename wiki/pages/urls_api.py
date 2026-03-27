@@ -17,6 +17,11 @@ urlpatterns = [
         name="dir_search",
     ),
     path(
+        "dir-inherit/",
+        dir_views.directory_inherit_meta,
+        name="dir_inherit_meta",
+    ),
+    path(
         "user-search/",
         user_views.user_search_htmx,
         name="user_search",
