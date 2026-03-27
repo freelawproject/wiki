@@ -6,6 +6,7 @@
 {% block head %}
 <link rel="stylesheet" href="{% static 'css/font-awesome.min.css' %}">
 <link rel="stylesheet" href="{% static 'css/easymde.min.css' %}">
+<link rel="stylesheet" href="{% static 'css/highlight.css' %}">
 {% endblock %}
 
 {% block content %}
@@ -185,6 +186,7 @@
 
 {% block footer_scripts %}
 <script src="{% static 'js/easymde.min.js' %}"></script>
+<script src="{% static 'js/highlight.min.js' %}"></script>
 <script type="application/json" id="editor-config">
 {
   "csrfToken": "{{ csrf_token }}",
