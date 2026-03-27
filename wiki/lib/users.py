@@ -18,4 +18,4 @@ def display_name(user):
     email = getattr(user, "email", "")
     if email and "@" in email:
         return email.split("@")[0]
-    return getattr(user, "username", "Unknown").split("@")[0]
+    return "Unknown"

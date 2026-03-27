@@ -90,6 +90,7 @@
               {% endwith %}
             {% endif %}
             {% if user.is_authenticated %}
+            <a href="{% url 'page_feedback' path=page.content_path %}" class="dropdown-item">Propose Change</a>
             <a href="{% url 'page_history' path=page.content_path %}" class="dropdown-item">History</a>
             {% endif %}
             <a href="{% url 'page_backlinks' path=page.content_path %}" class="dropdown-item">What links here</a>
@@ -167,7 +168,7 @@
   {# TOC sidebar #}
   {% if toc %}
   <aside class="hidden lg:block w-64 flex-shrink-0">
-    <nav id="toc-nav" class="sticky top-4 text-sm">
+    <nav id="toc-nav" class="sticky top-4 max-h-[calc(100vh-2rem)] overflow-y-auto text-sm">
       <h3 class="text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500 mb-3">
         On this page
       </h3>

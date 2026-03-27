@@ -27,10 +27,6 @@ def page_feedback(request, path):
     if not can_view_page(request.user, page):
         raise Http404
 
-    # Editors/owners cannot submit feedback — they can edit directly
-    if can_edit_page(request.user, page):
-        raise Http404
-
     is_auth = request.user.is_authenticated
     comment_form = CommentForm(is_authenticated=is_auth)
     proposal_form = ProposalForm(

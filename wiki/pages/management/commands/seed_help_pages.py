@@ -81,6 +81,7 @@ The **Actions** dropdown on each page gives you access to:
 - **Permissions** — manage who can view and edit (editors only)
 - **Move** — move the page to a different directory
 - **Feedback** — see pending comments and proposals (editors only)
+- **Propose Change** — suggest edits through the review workflow
 - **History** — view all revisions
 - **What links here** — see which pages link to this one
 - **Copy page markdown** — copy the raw Markdown source
@@ -88,16 +89,16 @@ The **Actions** dropdown on each page gives you access to:
 
 ### Providing feedback
 
-Don't have edit access to a page? You can still contribute by
-clicking **Feedback** to leave a comment or propose content changes.
-The page owner will be notified and can review your submission.
-See #proposals-guide for details.
+Want to suggest changes without editing a page directly? Use
+**Propose Change** from the Actions menu to submit a comment or
+propose content changes. The page owner will be notified and can
+review your submission. See #proposals-guide for details.
 
 ### Subscribing to changes
 
 Click **Subscribe** on any page to get email notifications when
-it's updated. You're automatically subscribed to pages you create.
-You can also subscribe to an entire directory to get notifications
+it's updated. You're automatically subscribed to pages you create
+or edit. You can also subscribe to an entire directory to get notifications
 for all pages within it and its subdirectories.
 See #notifications-guide for more on subscriptions, @mentions, and
 email notifications.
@@ -966,7 +967,7 @@ talking about.
 Click the **Subscribe** button in the Actions menu on any page to
 receive email notifications whenever that page is updated.
 
-- You are **automatically subscribed** to pages you create
+- You are **automatically subscribed** to pages you create or edit
 - Click **Unsubscribe** to stop receiving notifications
 - The list of current watchers is shown on the page detail view
 
@@ -1057,10 +1058,10 @@ You can unsubscribe in several ways:
         "content": """\
 ## Feedback & Proposals
 
-The wiki has two ways for anyone to contribute to a page they
-can't edit: **comments** for quick feedback and **proposals** for
+The wiki has two ways to suggest changes without editing a page
+directly: **comments** for quick feedback and **proposals** for
 suggesting content changes. Both are accessed from the
-**Feedback** button on any page you don't have edit access to.
+**Propose Change** link in the Actions menu on any page.
 
 ### Leaving a comment
 
@@ -1068,7 +1069,7 @@ Comments are a lightweight way to ask a question, flag an issue,
 or suggest an improvement without editing the page yourself.
 
 1. Navigate to the page
-2. Click **Feedback**
+2. Click **Propose Change** in the Actions menu
 3. Write your comment in the **Leave a Comment** tab
 4. Optionally provide your email address (if not signed in) so
    the editor can reply to you
@@ -1085,7 +1086,7 @@ content. The page owner sees a side-by-side diff of exactly what
 you changed.
 
 1. Navigate to the page
-2. Click **Feedback**
+2. Click **Propose Change** in the Actions menu
 3. Switch to the **Propose Changes** tab
 4. Edit the title and content in the Markdown editor
 5. Write a change message explaining your proposed changes
@@ -1139,13 +1140,15 @@ From the review queue or the page's **Feedback** link:
 
 ### Who can leave feedback?
 
-Anyone who can **view** a page but **cannot edit** it can leave
-comments and propose changes. This includes:
+Anyone who can **view** a page can leave comments and propose
+changes:
 
-- Signed-in users without edit permission
-- Anonymous visitors on public pages
+- **Signed-in users** — use **Propose Change** in the Actions menu
+- **Anonymous visitors** on public pages — use the **Feedback**
+  button
 
-Editors and owners don't see the Feedback button — they can edit
+Even editors and owners can propose changes when they want their
+edits to go through the review workflow rather than editing
 directly.
 
 ### Tips

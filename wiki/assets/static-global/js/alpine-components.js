@@ -366,6 +366,13 @@ document.addEventListener('alpine:init', () => {
           self._checkVisibility()
         })
       }
+      document.addEventListener('dir-inherit-update', function(e) {
+        var visMeta = e.detail.visibility
+        if (visMeta) {
+          self._inheritedVisibility = visMeta.value
+          self._checkVisibility()
+        }
+      })
       this._checkVisibility()
     },
 
@@ -408,7 +415,58 @@ document.addEventListener('alpine:init', () => {
       this.$el.querySelectorAll('[data-option-value]').forEach(function(el) {
         map[el.getAttribute('data-option-value')] = el.textContent.trim()
       })
+      // Include the inherited value (filtered from DOM to avoid duplication)
+      var inheritVal = this.$el.getAttribute('data-inherit-value') || ''
+      if (inheritVal && !map[inheritVal]) {
+        map[inheritVal] = this.inheritDisplay
+      }
       this.labelMap = map
+
+      // Update inherit metadata when the directory changes
+      var self = this
+      var fieldName = this.$el.getAttribute('data-field')
+      if (fieldName) {
+        document.addEventListener('dir-inherit-update', function(e) {
+          var meta = e.detail[fieldName]
+          if (!meta) return
+          self.inheritDisplay = meta.display
+          self.inheritSource = meta.source
+          self._rebuildOptions(meta.value)
+        })
+      }
+    },
+
+    _rebuildOptions(newInheritValue) {
+      // Update the inherit option text
+      var inheritOpt = this.$el.querySelector('[data-value="inherit"]')
+      if (inheritOpt) {
+        var titleEl = inheritOpt.querySelector('.text-sm.font-medium')
+        var sourceEl = inheritOpt.querySelector('.text-xs')
+        if (titleEl) titleEl.textContent = this.inheritDisplay
+        if (sourceEl) sourceEl.textContent = 'Provided by ' + this.inheritSource
+      }
+      // Rebuild explicit options: show all except the one matching the
+      // new inherited value (it's redundant with the inherit option).
+      var listbox = this.$el.querySelector('[role="listbox"]')
+      if (!listbox) return
+      // Remove old explicit options
+      listbox.querySelectorAll('[data-option-value]').forEach(function(el) {
+        el.remove()
+      })
+      // Re-add from labelMap, skipping the inherited value
+      var self = this
+      Object.keys(this.labelMap).forEach(function(val) {
+        if (val === newInheritValue) return
+        var div = document.createElement('div')
+        div.setAttribute('role', 'option')
+        div.setAttribute('data-value', val)
+        div.setAttribute('data-option-value', val)
+        div.setAttribute('tabindex', '-1')
+        div.className = 'px-3 py-2 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700 focus:bg-gray-100 dark:focus:bg-gray-700 outline-none text-sm'
+        div.textContent = self.labelMap[val]
+        div.addEventListener('click', function(e) { self.pick(e) })
+        listbox.appendChild(div)
+      })
     },
 
     toggle() {

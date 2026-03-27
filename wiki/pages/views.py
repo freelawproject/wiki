@@ -495,7 +495,11 @@ def page_create(request, path=""):
             breadcrumbs.append((directory.title, directory.get_absolute_url()))
     breadcrumbs.append(("New Page", ""))
 
-    form = PageForm(request.POST or None, directory=directory)
+    form = PageForm(
+        request.POST or None,
+        directory=directory,
+        initial={"change_message": "Add new page"},
+    )
     if request.method == "POST" and form.is_valid():
         page = form.save(commit=False)
 
@@ -611,6 +615,9 @@ def page_edit(request, path):
                     defaults={"page": page},
                 )
             rev = page.create_revision(request.user)
+            PageSubscription.objects.get_or_create(
+                user=request.user, page=page
+            )
 
         notify_subscribers(
             page.id,

@@ -26,6 +26,137 @@
   var segments = config.dirSegments;
   var searchTimeout = null;
 
+  function escapeHtml(s) {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  function fetchInheritMeta(dirPath) {
+    if (!dirPath) return;
+    fetch('/api/dir-inherit/?path=' + encodeURIComponent(dirPath))
+      .then(function(r) { return r.ok ? r.json() : null; })
+      .then(function(meta) {
+        if (!meta) return;
+        _upgradeSelectsToInherit(meta);
+        document.dispatchEvent(new CustomEvent('dir-inherit-update', { detail: meta }));
+      })
+      .catch(function() {});
+  }
+
+  // Replace plain <select> widgets with inherit-select Alpine components
+  // when a directory is first selected on the new-page form.
+  var FIELD_NAMES = ['visibility', 'editability', 'in_sitemap', 'in_llms_txt'];
+
+  function _upgradeSelectsToInherit(meta) {
+    FIELD_NAMES.forEach(function(fieldName) {
+      var fieldMeta = meta[fieldName];
+      if (!fieldMeta) return;
+      // Skip if already upgraded to inherit-select
+      if (document.querySelector('[data-field="' + fieldName + '"]')) return;
+      var sel = document.getElementById('id_' + fieldName);
+      if (!sel || sel.tagName !== 'SELECT') return;
+
+      // Collect explicit choices from the existing <select>
+      var choices = [];
+      for (var i = 0; i < sel.options.length; i++) {
+        var opt = sel.options[i];
+        if (opt.value !== 'inherit') {
+          choices.push({ value: opt.value, label: opt.textContent.trim() });
+        }
+      }
+
+      // Build the inherit-select component markup
+      var wrapper = document.createElement('div');
+      wrapper.setAttribute('data-field', fieldName);
+      wrapper.setAttribute('data-inherit-value', fieldMeta.value);
+      wrapper.setAttribute('data-inherit-display', fieldMeta.display);
+      wrapper.setAttribute('data-inherit-source', fieldMeta.source);
+      wrapper.className = 'relative';
+
+      var hidden = document.createElement('input');
+      hidden.type = 'hidden';
+      hidden.name = fieldName;
+      hidden.value = 'inherit';
+      wrapper.appendChild(hidden);
+
+      // Button
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.id = 'id_' + fieldName;
+      btn.setAttribute('role', 'combobox');
+      btn.className = 'input-text w-full text-left flex items-center justify-between gap-2';
+      btn.innerHTML =
+        '<div class="min-w-0">' +
+          '<span class="block"></span>' +
+          '<span class="block text-xs text-gray-400 dark:text-gray-500 truncate" aria-hidden="true"></span>' +
+        '</div>' +
+        '<svg class="w-4 h-4 text-gray-400 shrink-0" aria-hidden="true" fill="none" viewBox="0 0 24 24" stroke="currentColor">' +
+          '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>' +
+        '</svg>';
+      wrapper.appendChild(btn);
+
+      // Listbox
+      var listbox = document.createElement('div');
+      listbox.id = 'listbox_' + fieldName;
+      listbox.setAttribute('role', 'listbox');
+      listbox.style.display = 'none';
+      listbox.className = 'absolute z-50 mt-1 w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg overflow-hidden';
+
+      // Inherit option
+      var inheritOpt = document.createElement('div');
+      inheritOpt.setAttribute('role', 'option');
+      inheritOpt.setAttribute('data-value', 'inherit');
+      inheritOpt.setAttribute('tabindex', '-1');
+      inheritOpt.className = 'px-3 py-2 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700 focus:bg-gray-100 dark:focus:bg-gray-700 outline-none';
+      var titleEl = document.createElement('div');
+      titleEl.className = 'text-sm font-medium';
+      titleEl.textContent = fieldMeta.display;
+      inheritOpt.appendChild(titleEl);
+      var sourceEl = document.createElement('div');
+      sourceEl.className = 'text-xs text-gray-400 dark:text-gray-500';
+      sourceEl.setAttribute('aria-hidden', 'true');
+      sourceEl.textContent = 'Provided by ' + fieldMeta.source;
+      inheritOpt.appendChild(sourceEl);
+      listbox.appendChild(inheritOpt);
+
+      // Explicit options (skip the one matching the inherited value)
+      choices.forEach(function(c) {
+        if (c.value === fieldMeta.value) return;
+        var opt = document.createElement('div');
+        opt.setAttribute('role', 'option');
+        opt.setAttribute('data-value', c.value);
+        opt.setAttribute('data-option-value', c.value);
+        opt.setAttribute('tabindex', '-1');
+        opt.className = 'px-3 py-2 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700 focus:bg-gray-100 dark:focus:bg-gray-700 outline-none text-sm';
+        opt.textContent = c.label;
+        listbox.appendChild(opt);
+      });
+
+      wrapper.appendChild(listbox);
+
+      // Set Alpine directives (use x-on:/x-bind: syntax for setAttribute)
+      wrapper.setAttribute('x-data', 'inheritSelect');
+      wrapper.setAttribute('x-on:click.outside', 'close');
+      wrapper.setAttribute('x-on:keydown', 'onKeydown');
+      btn.setAttribute('x-on:click', 'toggle');
+      btn.setAttribute('x-bind:aria-expanded', 'open');
+      btn.setAttribute('aria-controls', 'listbox_' + fieldName);
+      btn.setAttribute('aria-haspopup', 'listbox');
+      var spans = btn.querySelectorAll('span');
+      spans[0].setAttribute('x-text', 'selectedLabel');
+      spans[1].setAttribute('x-show', 'showInheritSub');
+      spans[1].setAttribute('x-text', 'inheritSubLabel');
+      listbox.setAttribute('x-show', 'open');
+      inheritOpt.setAttribute('x-on:click', 'pick');
+      listbox.querySelectorAll('[data-option-value]').forEach(function(el) {
+        el.setAttribute('x-on:click', 'pick');
+      });
+
+      // Replace the <select> and let Alpine initialize the component
+      sel.parentNode.replaceChild(wrapper, sel);
+      Alpine.initTree(wrapper);
+    });
+  }
+
   function renderChips() {
     locationChips.innerHTML = '';
     var titles = {};
@@ -42,44 +173,75 @@
         titles[seg.path] = seg.title;
       }
     });
-    dirPathInput.value = segments.length > 0 ? segments[segments.length - 1].path : '';
+    var newPath = segments.length > 0 ? segments[segments.length - 1].path : '';
+    dirPathInput.value = newPath;
     dirTitlesInput.value = JSON.stringify(titles);
+    if (newPath) fetchInheritMeta(newPath);
   }
 
   function currentParentPath() {
     return segments.length > 0 ? segments[segments.length - 1].path : '';
   }
 
+  var dirDdIndex = -1;
+
+  function getDirItems() {
+    return dirDropdown.querySelectorAll('[data-path], [data-new]');
+  }
+
+  function highlightDirItem() {
+    var items = getDirItems();
+    items.forEach(function(el, i) {
+      if (i === dirDdIndex) {
+        el.classList.add('bg-gray-100', 'dark:bg-gray-700');
+      } else {
+        el.classList.remove('bg-gray-100', 'dark:bg-gray-700');
+      }
+    });
+    if (items[dirDdIndex]) {
+      items[dirDdIndex].scrollIntoView({ block: 'nearest' });
+    }
+  }
+
+  function selectDirItem(el) {
+    if (el.dataset.path) {
+      segments.push({path: el.dataset.path, title: el.dataset.title});
+      renderChips(); locationInput.value = ''; fetchSuggestions('');
+    } else if (el.dataset.new) {
+      var parentPath = currentParentPath();
+      var slug = el.dataset.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+      var newPath = parentPath ? parentPath + '/' + slug : slug;
+      segments.push({path: newPath, title: el.dataset.title, isNew: true});
+      renderChips(); locationInput.value = ''; dirDropdown.classList.add('hidden'); locationInput.focus();
+    }
+  }
+
   function fetchSuggestions(query) {
     var parent = currentParentPath();
     var url = '/api/dir-search/?parent=' + encodeURIComponent(parent);
     if (query) url += '&q=' + encodeURIComponent(query);
-    fetch(url).then(function(r) { return r.json(); }).then(function(dirs) {
+    fetch(url).then(function(r) { return r.ok ? r.json() : Promise.resolve([]); }).then(function(dirs) {
       if (!dirs.length && !query) { dirDropdown.classList.add('hidden'); return; }
       var html = '';
       dirs.forEach(function(d) {
-        html += '<div class="px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer text-sm" data-path="' + d.path + '" data-title="' + d.title + '">' + d.title + '</div>';
+        html += '<div class="px-3 py-2 cursor-pointer text-sm" data-path="' + escapeHtml(d.path) + '" data-title="' + escapeHtml(d.title) + '">' + escapeHtml(d.title) + '</div>';
       });
       if (query && !dirs.some(function(d) { return d.title.toLowerCase() === query.toLowerCase(); })) {
-        html += '<div class="px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer text-sm text-primary-600 dark:text-primary-400" data-new="true" data-title="' + query + '">Create "' + query + '"</div>';
+        html += '<div class="px-3 py-2 cursor-pointer text-sm text-primary-600 dark:text-primary-400" data-new="true" data-title="' + escapeHtml(query) + '">Create "' + escapeHtml(query) + '"</div>';
       }
       dirDropdown.innerHTML = html;
       dirDropdown.classList.remove('hidden');
-      dirDropdown.querySelectorAll('[data-path]').forEach(function(el) {
+      dirDdIndex = 0;
+      highlightDirItem();
+      var allItems = getDirItems();
+      allItems.forEach(function(el, i) {
         el.addEventListener('mousedown', function(e) {
           e.preventDefault();
-          segments.push({path: el.dataset.path, title: el.dataset.title});
-          renderChips(); locationInput.value = ''; dirDropdown.classList.add('hidden'); locationInput.focus();
+          selectDirItem(el);
         });
-      });
-      dirDropdown.querySelectorAll('[data-new]').forEach(function(el) {
-        el.addEventListener('mousedown', function(e) {
-          e.preventDefault();
-          var parentPath = currentParentPath();
-          var slug = el.dataset.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
-          var newPath = parentPath ? parentPath + '/' + slug : slug;
-          segments.push({path: newPath, title: el.dataset.title, isNew: true});
-          renderChips(); locationInput.value = ''; dirDropdown.classList.add('hidden'); locationInput.focus();
+        el.addEventListener('mouseenter', function() {
+          dirDdIndex = i;
+          highlightDirItem();
         });
       });
     });
@@ -91,11 +253,32 @@
   });
   locationInput.addEventListener('focus', function() { if (!locationInput.value.trim()) fetchSuggestions(''); });
   locationInput.addEventListener('keydown', function(e) {
-    if (e.key === 'Backspace' && locationInput.value === '' && segments.length > 0) { segments.pop(); renderChips(); fetchSuggestions(''); }
-    if (e.key === 'Escape') dirDropdown.classList.add('hidden');
-    if ((e.key === 'Tab' || e.key === '/') && !dirDropdown.classList.contains('hidden')) {
-      var first = dirDropdown.querySelector('[data-path], [data-new]');
-      if (first) { e.preventDefault(); first.dispatchEvent(new MouseEvent('mousedown', {bubbles: true})); }
+    if (e.key === 'Backspace' && locationInput.value === '' && segments.length > 0) { segments.pop(); renderChips(); fetchSuggestions(''); return; }
+    if (e.key === 'Escape') { dirDropdown.classList.add('hidden'); return; }
+
+    var isOpen = !dirDropdown.classList.contains('hidden');
+    if (!isOpen) return;
+    var items = getDirItems();
+    if (!items.length) return;
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      if (dirDdIndex < items.length - 1) dirDdIndex++;
+      highlightDirItem();
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (dirDdIndex > 0) dirDdIndex--;
+      highlightDirItem();
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (dirDdIndex >= 0 && dirDdIndex < items.length) {
+        selectDirItem(items[dirDdIndex]);
+      }
+    } else if (e.key === 'Tab' || e.key === '/') {
+      e.preventDefault();
+      if (dirDdIndex >= 0 && dirDdIndex < items.length) {
+        selectDirItem(items[dirDdIndex]);
+      }
     }
   });
   document.getElementById('location-picker').addEventListener('click', function() { locationInput.focus(); });
