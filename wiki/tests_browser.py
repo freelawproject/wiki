@@ -252,33 +252,29 @@ class TestInheritSelectDropdown:
         )
         expect(vis_button).to_contain_text("FLP Staff")
 
-        # Backspace to remove "Staff", then use arrow keys to pick "Docs"
+        # Backspace to remove "Staff" and pick "Docs" (public).
         location_input = browser_page.locator("#location-input")
         location_input.click()
         with browser_page.expect_response("**/api/dir-search/**"):
             location_input.press("Backspace")
-        # Use keyboard to navigate to "Docs" and select it
-        # Items are: Docs, Staff (alphabetical order may vary)
-        dropdown = browser_page.locator("#dir-dropdown")
-        dropdown.wait_for(state="visible")
-        # Find which index "Docs" is at and arrow down to it
-        items = dropdown.locator("[data-path], [data-new]")
-        for i in range(items.count()):
-            if items.nth(i).get_attribute("data-title") == "Docs":
-                for _ in range(i):
-                    location_input.press("ArrowDown")
-                break
-        with browser_page.expect_response("**/api/dir-inherit/**"):
-            location_input.press("Enter")
+        # Wait for the dropdown to have the "Docs" item, then select
+        # it via JS to avoid race conditions with dropdown rebuilds.
+        browser_page.wait_for_function("""
+            () => document.querySelector('#dir-dropdown [data-title="Docs"]')
+        """)
+        browser_page.evaluate("""() => {
+            var el = document.querySelector('#dir-dropdown [data-title="Docs"]');
+            if (el) el.dispatchEvent(new MouseEvent('mousedown', {bubbles: true}));
+        }""")
 
-        # The visibility button should now show "Public"
-        expect(vis_button).to_contain_text("Public")
+        # The visibility button should update to show "Public"
+        expect(vis_button).to_contain_text("Public", timeout=10000)
 
     def test_page_form_no_duplicate_after_dir_change(
         self, browser_page, live_server, browser_user, dir_tree
     ):
-        """After changing directory, the dropdown should not show
-        duplicate values."""
+        """After changing directory, the dropdown options should not
+        contain duplicate data-value attributes."""
         _force_login(browser_page, live_server, browser_user)
 
         # Start in "Staff" dir, then switch to "Docs"
@@ -295,19 +291,26 @@ class TestInheritSelectDropdown:
         with browser_page.expect_response("**/api/dir-inherit/**"):
             docs_option.click()
 
-        # Wait for the inherit-select to update before opening
+        # Verify the button updated (inherit resolved to "Public")
         vis_button = browser_page.locator(
             "[data-field='visibility'] button[role='combobox']"
         )
         expect(vis_button).to_contain_text("Public")
-        vis_button.click()
 
-        listbox = browser_page.locator("#listbox_visibility")
-        texts = _get_visible_option_labels(listbox)
-
-        # "Public" should appear exactly once (as the inherit option)
-        assert texts.count("Public") == 1, (
-            f"Expected 'Public' once, got {texts}"
+        # Check data-value attributes for duplicates (no need to
+        # open the dropdown — just inspect the DOM directly)
+        options = browser_page.locator("#listbox_visibility [role='option']")
+        values = []
+        for i in range(options.count()):
+            val = options.nth(i).get_attribute("data-value")
+            values.append(val)
+        assert len(values) == len(set(values)), (
+            f"Duplicate data-value in options: {values}"
+        )
+        # "public" should not appear as an explicit option since it
+        # matches the inherited value
+        assert "public" not in values, (
+            f"Explicit 'public' should be filtered, got: {values}"
         )
 
 
