@@ -124,6 +124,11 @@ def root_view(request):
     # Filter by view permission
     visible_pages = [p for p in pages if can_view_page(request.user, p)]
 
+    for subdir in subdirectories:
+        subdir.effective_visibility, _ = resolve_effective_value(
+            subdir, "visibility"
+        )
+
     sort = _get_sort_config(request)
     subdirectories = _sort_directories(subdirectories, sort)
     visible_pages = _sort_pages(visible_pages, sort)
@@ -157,6 +162,7 @@ def root_view(request):
         "directories/detail.html",
         {
             "directory": root,
+            "eff_visibility": root.visibility,
             "subdirectories": subdirectories,
             "pages": visible_pages,
             "breadcrumbs": breadcrumbs,
@@ -250,6 +256,11 @@ def directory_detail(request, path):
     pages = directory.pages.all()
     visible_pages = [p for p in pages if can_view_page(request.user, p)]
 
+    for subdir in subdirectories:
+        subdir.effective_visibility, _ = resolve_effective_value(
+            subdir, "visibility"
+        )
+
     sort = _get_sort_config(request)
     subdirectories = _sort_directories(subdirectories, sort)
     visible_pages = _sort_pages(visible_pages, sort)
@@ -284,6 +295,7 @@ def directory_detail(request, path):
         "directories/detail.html",
         {
             "directory": directory,
+            "eff_visibility": eff_visibility,
             "subdirectories": subdirectories,
             "pages": visible_pages,
             "breadcrumbs": breadcrumbs,
@@ -713,6 +725,41 @@ def directory_search_htmx(request):
             break
 
     return JsonResponse(results, safe=False)
+
+
+@login_required
+def directory_inherit_meta(request):
+    """Return resolved inheritance metadata for a directory.
+
+    Query params:
+      path: directory path
+
+    Returns JSON with {field_name: {value, display, source}} for each
+    inheritable field, used by the location picker to update inherit
+    dropdowns when the user selects a different directory.
+    """
+    dir_path = request.GET.get("path", "").strip()
+    directory = Directory.objects.filter(path=dir_path).first()
+    if not directory:
+        return JsonResponse({}, status=404)
+
+    field_display_maps = {
+        "visibility": dict(Page.Visibility.choices),
+        "editability": dict(Page.Editability.choices),
+        "in_sitemap": dict(Page.SitemapStatus.choices),
+        "in_llms_txt": dict(Page.LlmsTxtStatus.choices),
+    }
+
+    result = {}
+    for field_name in INHERITABLE_FIELDS:
+        eff_value, source = resolve_effective_value(directory, field_name)
+        display_map = field_display_maps[field_name]
+        result[field_name] = {
+            "value": eff_value,
+            "display": display_map.get(eff_value, eff_value),
+            "source": source.title,
+        }
+    return JsonResponse(result)
 
 
 def _directory_apply_permissions_inner(request, directory):
