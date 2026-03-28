@@ -109,6 +109,84 @@ class TestPageCreate:
         page = Page.objects.get(slug="deploy-guide")
         assert page.directory == sub_directory
 
+    def test_create_from_root_with_directory_picker(
+        self, client, user, sub_directory
+    ):
+        """POST to /c/new/ with directory_path should accept 'inherit'
+        values and place the page in the chosen directory."""
+        client.force_login(user)
+        r = client.post(
+            "/c/new/",
+            {
+                "title": "Picker Test",
+                "content": "Some content",
+                "visibility": "inherit",
+                "editability": "inherit",
+                "in_sitemap": "inherit",
+                "in_llms_txt": "inherit",
+                "change_message": "Test creation",
+                "directory_path": sub_directory.path,
+                "directory_titles": "{}",
+            },
+        )
+        assert r.status_code == 302
+        page = Page.objects.get(slug="picker-test")
+        assert page.directory == sub_directory
+        assert page.visibility == "inherit"
+        assert page.in_sitemap == "inherit"
+        assert page.in_llms_txt == "inherit"
+
+    def test_create_with_new_directory_via_picker(
+        self, client, user, sub_directory
+    ):
+        """POST to /c/new/ with a non-existent subdirectory should
+        create the directory and place the page in it."""
+        client.force_login(user)
+        r = client.post(
+            "/c/new/",
+            {
+                "title": "New Dir Page",
+                "content": "Content here",
+                "visibility": "inherit",
+                "editability": "inherit",
+                "in_sitemap": "inherit",
+                "in_llms_txt": "inherit",
+                "change_message": "Test creation",
+                "directory_path": "engineering/new-team",
+                "directory_titles": json.dumps(
+                    {"engineering/new-team": "New Team"}
+                ),
+            },
+        )
+        assert r.status_code == 302
+        page = Page.objects.get(slug="new-dir-page")
+        assert page.directory.path == "engineering/new-team"
+        assert page.directory.title == "New Team"
+
+    def test_create_from_root_validation_error_preserves_location(
+        self, client, user, sub_directory
+    ):
+        """When form validation fails, the location picker segments
+        should be preserved from POST data, not reset to empty."""
+        client.force_login(user)
+        r = client.post(
+            "/c/new/",
+            {
+                "title": "",  # Missing title triggers validation error
+                "content": "Some content",
+                "visibility": "inherit",
+                "editability": "inherit",
+                "in_sitemap": "inherit",
+                "in_llms_txt": "inherit",
+                "change_message": "Test creation",
+                "directory_path": sub_directory.path,
+                "directory_titles": "{}",
+            },
+        )
+        assert r.status_code == 200  # Re-rendered form
+        content = r.content.decode()
+        assert sub_directory.title in content
+
 
 class TestPageDetail:
     def test_public_page_visible_to_anon(self, client, page):
