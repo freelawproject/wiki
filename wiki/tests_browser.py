@@ -284,12 +284,16 @@ class TestInheritSelectDropdown:
         location_input.click()
         with browser_page.expect_response("**/api/dir-search/**"):
             location_input.press("Backspace")
-        docs_option = browser_page.locator("#dir-dropdown").locator(
-            "text=Docs"
-        )
-        docs_option.wait_for(state="visible")
+        # Use JS dispatch to avoid race conditions with dropdown rebuilds
+        # (same pattern as test_page_form_inherit_select_updates_on_dir_change)
+        browser_page.wait_for_function("""
+            () => document.querySelector('#dir-dropdown [data-title="Docs"]')
+        """)
         with browser_page.expect_response("**/api/dir-inherit/**"):
-            docs_option.click()
+            browser_page.evaluate("""() => {
+                var el = document.querySelector('#dir-dropdown [data-title="Docs"]');
+                if (el) el.dispatchEvent(new MouseEvent('mousedown', {bubbles: true}));
+            }""")
 
         # Verify the button updated (inherit resolved to "Public")
         vis_button = browser_page.locator(
@@ -377,3 +381,113 @@ class TestLocationPickerKeyboard:
         # The location chips should now contain the selected directory
         chips = browser_page.locator("#location-chips")
         expect(chips).to_contain_text(first_title)
+
+
+@pytest.mark.django_db(transaction=True)
+class TestPageCreateFromRoot:
+    """Test page creation from /c/new/ using the location picker.
+
+    Regression tests for a bug where selecting a directory via the
+    location picker caused silent form validation failure because
+    'inherit' was not a valid choice when starting from root level.
+    """
+
+    def test_create_page_in_new_subdirectory(
+        self, browser_page, live_server, browser_user, dir_tree
+    ):
+        """From /c/new/, pick an existing dir, create a new subdir,
+        fill the form, and verify the page is created."""
+        _force_login(browser_page, live_server, browser_user)
+        browser_page.goto(f"{live_server.url}/c/new/")
+
+        location_input = browser_page.locator("#location-input")
+        dropdown = browser_page.locator("#dir-dropdown")
+
+        # Step 1: Select existing "Docs" directory
+        location_input.click()
+        dropdown.locator("[data-path]").first.wait_for(state="visible")
+        with browser_page.expect_response("**/api/dir-inherit/**"):
+            dropdown.locator("text=Docs").click()
+
+        # Step 2: Type a new directory name and press Tab to create it
+        location_input.fill("Operations")
+        dropdown.locator("[data-new]").wait_for(state="visible")
+        location_input.press("Tab")
+
+        # Verify both segments appear as chips
+        chips = browser_page.locator("#location-chips")
+        expect(chips).to_contain_text("Docs")
+        expect(chips).to_contain_text("Operations")
+
+        # Step 3: Fill in the form
+        browser_page.locator("#id_title").fill("Ops Runbook")
+        browser_page.locator("#id_change_message").clear()
+        browser_page.locator("#id_change_message").fill("Add ops runbook")
+
+        # Step 4: Submit
+        browser_page.get_by_role("button", name="Create Page").click()
+
+        # Should redirect to the new page
+        browser_page.wait_for_url("**/c/docs/operations/ops-runbook")
+        expect(browser_page.locator("h1")).to_contain_text("Ops Runbook")
+
+        # Verify directory was created
+        assert Directory.objects.filter(path="docs/operations").exists()
+
+    def test_create_page_selecting_existing_directory(
+        self, browser_page, live_server, browser_user, dir_tree
+    ):
+        """From /c/new/, pick an existing directory and submit.
+        Inherit fields (in_sitemap, in_llms_txt) should be accepted."""
+        _force_login(browser_page, live_server, browser_user)
+        browser_page.goto(f"{live_server.url}/c/new/")
+
+        location_input = browser_page.locator("#location-input")
+        dropdown = browser_page.locator("#dir-dropdown")
+
+        # Select existing "Docs" directory
+        location_input.click()
+        dropdown.locator("[data-path]").first.wait_for(state="visible")
+        with browser_page.expect_response("**/api/dir-inherit/**"):
+            dropdown.locator("text=Docs").click()
+
+        # Fill in the form
+        browser_page.locator("#id_title").fill("Quick Start")
+        browser_page.locator("#id_change_message").clear()
+        browser_page.locator("#id_change_message").fill("Add guide")
+
+        # Submit — in_sitemap and in_llms_txt stay "inherit"
+        browser_page.get_by_role("button", name="Create Page").click()
+
+        # Should redirect to the new page
+        browser_page.wait_for_url("**/c/docs/quick-start")
+        expect(browser_page.locator("h1")).to_contain_text("Quick Start")
+
+    def test_validation_error_preserves_location_picker(
+        self, browser_page, live_server, browser_user, dir_tree
+    ):
+        """When form validation fails, the location picker should
+        preserve the selected directory."""
+        _force_login(browser_page, live_server, browser_user)
+        browser_page.goto(f"{live_server.url}/c/new/")
+
+        location_input = browser_page.locator("#location-input")
+        dropdown = browser_page.locator("#dir-dropdown")
+
+        # Select "Staff" directory
+        location_input.click()
+        dropdown.locator("[data-path]").first.wait_for(state="visible")
+        with browser_page.expect_response("**/api/dir-inherit/**"):
+            dropdown.locator("text=Staff").click()
+
+        # Leave title empty (triggers validation error)
+        browser_page.locator("#id_change_message").clear()
+        browser_page.locator("#id_change_message").fill("Test")
+
+        # Submit — should fail
+        browser_page.get_by_role("button", name="Create Page").click()
+        browser_page.wait_for_load_state("networkidle")
+
+        # Location picker should still show "Staff"
+        chips = browser_page.locator("#location-chips")
+        expect(chips).to_contain_text("Staff")
