@@ -4,10 +4,10 @@
       {% csrf_token %}
       <div class="flex gap-4 text-sm">
         <label class="flex items-center gap-1.5 cursor-pointer">
-          <input type="radio" name="target_type" value="user" :checked="isUser" @change="setTarget('user')" class="accent-primary-600"> User
+          <input type="radio" name="target_type" value="user" :checked="isUser" @change="setUser" class="accent-primary-600"> User
         </label>
         <label class="flex items-center gap-1.5 cursor-pointer">
-          <input type="radio" name="target_type" value="group" :checked="isGroup" @change="setTarget('group')" class="accent-primary-600"> Group
+          <input type="radio" name="target_type" value="group" :checked="isGroup" @change="setGroup" class="accent-primary-600"> Group
         </label>
       </div>
       <div x-show="isUser" class="relative">
