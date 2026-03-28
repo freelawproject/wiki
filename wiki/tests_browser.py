@@ -284,12 +284,16 @@ class TestInheritSelectDropdown:
         location_input.click()
         with browser_page.expect_response("**/api/dir-search/**"):
             location_input.press("Backspace")
-        docs_option = browser_page.locator("#dir-dropdown").locator(
-            "text=Docs"
-        )
-        docs_option.wait_for(state="visible")
+        # Use JS dispatch to avoid race conditions with dropdown rebuilds
+        # (same pattern as test_page_form_inherit_select_updates_on_dir_change)
+        browser_page.wait_for_function("""
+            () => document.querySelector('#dir-dropdown [data-title="Docs"]')
+        """)
         with browser_page.expect_response("**/api/dir-inherit/**"):
-            docs_option.click()
+            browser_page.evaluate("""() => {
+                var el = document.querySelector('#dir-dropdown [data-title="Docs"]');
+                if (el) el.dispatchEvent(new MouseEvent('mousedown', {bubbles: true}));
+            }""")
 
         # Verify the button updated (inherit resolved to "Public")
         vis_button = browser_page.locator(
