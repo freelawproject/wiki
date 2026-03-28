@@ -113,6 +113,55 @@ def _build_dir_segments(directory):
     return segments
 
 
+def _resolve_directory_from_post(post_data):
+    """Find the closest existing Directory for a posted directory_path.
+
+    If the exact path exists, return that directory.  Otherwise walk up
+    the path to find the deepest existing ancestor (needed when the user
+    created a new directory segment in the location picker that hasn't
+    been persisted yet).  Returns ``None`` only when no ancestor exists.
+    """
+    dir_path = post_data.get("directory_path", "").strip()
+    if not dir_path:
+        return None
+    directory = Directory.objects.filter(path=dir_path).first()
+    if directory:
+        return directory
+    segments = dir_path.strip("/").split("/")
+    for i in range(len(segments) - 1, 0, -1):
+        ancestor_path = "/".join(segments[:i])
+        ancestor = Directory.objects.filter(path=ancestor_path).first()
+        if ancestor:
+            return ancestor
+    return Directory.objects.filter(path="").first()
+
+
+def _build_dir_segments_from_post(post_data):
+    """Reconstruct location picker segments from POST data.
+
+    Used when re-rendering the form after validation failure so the
+    location picker preserves the user's directory selection.
+    """
+    dir_path = post_data.get("directory_path", "").strip()
+    if not dir_path:
+        return []
+    title_overrides = _parse_directory_titles(post_data)
+    slugs = dir_path.strip("/").split("/")
+    segments = []
+    current_path = ""
+    for slug in slugs:
+        current_path = f"{current_path}/{slug}" if current_path else slug
+        directory = Directory.objects.filter(path=current_path).first()
+        if directory:
+            title = directory.title
+        elif current_path in title_overrides:
+            title = title_overrides[current_path]
+        else:
+            title = slug.replace("-", " ").title()
+        segments.append({"path": current_path, "title": title})
+    return segments
+
+
 # Matches @username (word chars only, not followed by @)
 _MENTION_RE = re.compile(r"@([a-zA-Z][a-zA-Z0-9._-]*)")
 
@@ -495,9 +544,18 @@ def page_create(request, path=""):
             breadcrumbs.append((directory.title, directory.get_absolute_url()))
     breadcrumbs.append(("New Page", ""))
 
+    # On POST, resolve the directory from the location picker so that
+    # "inherit" is a valid choice when the user selected a directory.
+    if request.method == "POST":
+        form_directory = (
+            _resolve_directory_from_post(request.POST) or directory
+        )
+    else:
+        form_directory = directory
+
     form = PageForm(
         request.POST or None,
-        directory=directory,
+        directory=form_directory,
         initial={"change_message": "Add new page"},
     )
     if request.method == "POST" and form.is_valid():
@@ -539,7 +597,11 @@ def page_create(request, path=""):
             "directory": directory,
             "editing": False,
             "breadcrumbs": breadcrumbs,
-            "dir_segments_json": json.dumps(_build_dir_segments(directory)),
+            "dir_segments_json": json.dumps(
+                _build_dir_segments_from_post(request.POST)
+                if request.method == "POST"
+                else _build_dir_segments(directory)
+            ),
             "inherit_meta": getattr(form, "inherit_meta", {}),
         },
     )
@@ -584,11 +646,21 @@ def page_edit(request, path):
         acquire_lock_for_page(page, request.user)
 
     old_slug = page.slug
+
+    # On POST, resolve the directory from the location picker so that
+    # "inherit" is a valid choice when the user changed directories.
+    if request.method == "POST":
+        form_directory = (
+            _resolve_directory_from_post(request.POST) or page.directory
+        )
+    else:
+        form_directory = page.directory
+
     form = PageForm(
         request.POST or None,
         instance=page,
         editing=True,
-        directory=page.directory,
+        directory=form_directory,
     )
     if request.method != "POST":
         form.initial["change_message"] = ""
@@ -643,7 +715,9 @@ def page_edit(request, path):
             "editing": True,
             "breadcrumbs": breadcrumbs,
             "dir_segments_json": json.dumps(
-                _build_dir_segments(page.directory)
+                _build_dir_segments_from_post(request.POST)
+                if request.method == "POST"
+                else _build_dir_segments(page.directory)
             ),
             "inherit_meta": getattr(form, "inherit_meta", {}),
         },
