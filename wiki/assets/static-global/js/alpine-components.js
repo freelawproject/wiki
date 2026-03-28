@@ -11,7 +11,8 @@ document.addEventListener('alpine:init', () => {
     target: 'user',
     get isUser() { return this.target === 'user' },
     get isGroup() { return this.target === 'group' },
-    setTarget(value) { this.target = value },
+    setUser() { this.target = 'user' },
+    setGroup() { this.target = 'group' },
   }))
 
   // Copy page markdown to clipboard

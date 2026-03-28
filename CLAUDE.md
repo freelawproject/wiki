@@ -106,6 +106,8 @@ wiki/
    - Register all components in `wiki/assets/static-global/js/alpine-components.js` using `Alpine.data()`
    - Use `x-data="componentName"` (not inline objects like `x-data="{ open: false }"`)
    - Use methods for actions: `@click="toggle"` (not `@click="open = !open"`)
+   - NEVER pass arguments in event handlers: `@click="doThing"` works, `@click="doThing('arg')"` does NOT.
+     If you need to vary behavior, create separate methods (e.g., `setUser` / `setGroup` instead of `setTarget('user')`).
    - Use getters for computed values: `x-text="label"` (not `x-text="open ? 'Yes' : 'No'"`)
    - Simple property access works: `x-show="open"`, `x-if="visible"`
    - Do NOT use `x-model` — use `:checked`/`:value` + `@change`/`@input` instead
