@@ -11,6 +11,7 @@ from django.core import mail
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.management import call_command
 from django.test import Client
+from django.urls import reverse
 from django.utils import timezone
 
 from wiki.directories.models import Directory
@@ -116,7 +117,7 @@ class TestPageCreate:
         values and place the page in the chosen directory."""
         client.force_login(user)
         r = client.post(
-            "/c/new/",
+            reverse("page_create"),
             {
                 "title": "Picker Test",
                 "content": "Some content",
@@ -143,7 +144,7 @@ class TestPageCreate:
         create the directory and place the page in it."""
         client.force_login(user)
         r = client.post(
-            "/c/new/",
+            reverse("page_create"),
             {
                 "title": "New Dir Page",
                 "content": "Content here",
@@ -170,7 +171,7 @@ class TestPageCreate:
         should be preserved from POST data, not reset to empty."""
         client.force_login(user)
         r = client.post(
-            "/c/new/",
+            reverse("page_create"),
             {
                 "title": "",  # Missing title triggers validation error
                 "content": "Some content",

@@ -141,6 +141,11 @@ def _build_dir_segments_from_post(post_data):
 
     Used when re-rendering the form after validation failure so the
     location picker preserves the user's directory selection.
+
+    The result is serialised with ``json.dumps()`` and rendered via
+    ``|safe`` inside a ``<script>`` block, so every user-supplied
+    string is passed through ``escape()`` to neutralise any embedded
+    ``</script>`` sequences that would break out of the JSON island.
     """
     dir_path = post_data.get("directory_path", "").strip()
     if not dir_path:
@@ -158,7 +163,7 @@ def _build_dir_segments_from_post(post_data):
             title = title_overrides[current_path]
         else:
             title = slug.replace("-", " ").title()
-        segments.append({"path": current_path, "title": title})
+        segments.append({"path": escape(current_path), "title": escape(title)})
     return segments
 
 
