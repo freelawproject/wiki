@@ -9,6 +9,7 @@ from django.contrib.auth.models import User
 from django.contrib.sessions.models import Session
 from django.core import mail
 from django.test import Client, RequestFactory
+from django.urls import reverse
 
 from wiki.lib.views import ratelimited
 from wiki.users.models import SystemConfig, UserProfile
@@ -21,40 +22,40 @@ def client():
 
 class TestLoginForm:
     def test_login_page_loads(self, client, db):
-        r = client.get("/u/login/")
+        r = client.get(reverse("login"))
         assert r.status_code == 200
         assert b"@free.law" in r.content
 
     def test_rejects_non_free_law_email(self, client, db):
-        r = client.post("/u/login/", {"email": "test@gmail.com"})
+        r = client.post(reverse("login"), {"email": "test@gmail.com"})
         assert r.status_code == 200
         assert b"Only @free.law email addresses are allowed" in r.content
 
     def test_accepts_free_law_email(self, client, db):
-        r = client.post("/u/login/", {"email": "test@free.law"})
+        r = client.post(reverse("login"), {"email": "test@free.law"})
         assert r.status_code == 302
 
     def test_email_normalized_to_lowercase(self, client, db):
-        client.post("/u/login/", {"email": "TEST@FREE.LAW"})
+        client.post(reverse("login"), {"email": "TEST@FREE.LAW"})
         assert User.objects.filter(username="test@free.law").exists()
 
 
 class TestMagicLinkFlow:
     def test_magic_link_email_sent(self, client, db):
-        client.post("/u/login/", {"email": "alice@free.law"})
+        client.post(reverse("login"), {"email": "alice@free.law"})
         assert len(mail.outbox) == 1
         assert "Sign in to FLP Wiki" in mail.outbox[0].subject
         assert "alice@free.law" in mail.outbox[0].to
 
     def test_magic_link_creates_user_and_profile(self, client, db):
-        client.post("/u/login/", {"email": "new@free.law"})
+        client.post(reverse("login"), {"email": "new@free.law"})
         u = User.objects.get(username="new@free.law")
         assert u.email == "new@free.law"
         assert hasattr(u, "profile")
         assert u.profile.gravatar_url != ""
 
     def test_first_user_becomes_system_owner(self, client, db):
-        client.post("/u/login/", {"email": "first@free.law"})
+        client.post(reverse("login"), {"email": "first@free.law"})
         config = SystemConfig.objects.get(pk=1)
         owner = User.objects.get(username="first@free.law")
         assert config.owner == owner
@@ -62,8 +63,8 @@ class TestMagicLinkFlow:
         assert owner.is_superuser
 
     def test_second_user_does_not_override_owner(self, client, db):
-        client.post("/u/login/", {"email": "first@free.law"})
-        client.post("/u/login/", {"email": "second@free.law"})
+        client.post(reverse("login"), {"email": "first@free.law"})
+        client.post(reverse("login"), {"email": "second@free.law"})
         config = SystemConfig.objects.get(pk=1)
         assert config.owner == User.objects.get(username="first@free.law")
         second = User.objects.get(username="second@free.law")
@@ -71,33 +72,33 @@ class TestMagicLinkFlow:
         assert not second.is_superuser
 
     def test_verify_with_valid_token_logs_in(self, client, db):
-        client.post("/u/login/", {"email": "alice@free.law"})
+        client.post(reverse("login"), {"email": "alice@free.law"})
         token = re.search(r"token=([^&]+)", mail.outbox[0].body).group(1)
         r = client.get(
-            "/u/login/verify/",
+            reverse("verify"),
             {"token": token, "email": "alice@free.law"},
         )
         assert r.status_code == 302
-        assert r.url == "/c/"
+        assert r.url == reverse("root")
 
     def test_verify_with_invalid_token_rejected(self, client, db):
-        client.post("/u/login/", {"email": "alice@free.law"})
+        client.post(reverse("login"), {"email": "alice@free.law"})
         r = client.get(
-            "/u/login/verify/",
+            reverse("verify"),
             {"token": "bogus", "email": "alice@free.law"},
         )
         assert r.status_code == 302
-        assert r.url == "/u/login/"
+        assert r.url == reverse("login")
 
     def test_verify_missing_params_rejected(self, client, db):
-        r = client.get("/u/login/verify/")
+        r = client.get(reverse("verify"))
         assert r.status_code == 302
 
     def test_token_cleared_after_use(self, client, db):
-        client.post("/u/login/", {"email": "alice@free.law"})
+        client.post(reverse("login"), {"email": "alice@free.law"})
         token = re.search(r"token=([^&]+)", mail.outbox[0].body).group(1)
         client.get(
-            "/u/login/verify/",
+            reverse("verify"),
             {"token": token, "email": "alice@free.law"},
         )
         profile = User.objects.get(username="alice@free.law").profile
@@ -106,38 +107,38 @@ class TestMagicLinkFlow:
 
     def test_authenticated_user_redirected_from_login(self, client, user):
         client.force_login(user)
-        r = client.get("/u/login/")
+        r = client.get(reverse("login"))
         assert r.status_code == 302
 
 
 class TestLogout:
     def test_logout_via_post(self, client, user):
         client.force_login(user)
-        r = client.post("/u/logout/")
+        r = client.post(reverse("logout"))
         assert r.status_code == 302
 
     def test_logout_get_does_not_logout(self, client, user):
         client.force_login(user)
-        client.get("/u/logout/")
-        r = client.get("/c/")
+        client.get(reverse("logout"))
+        r = client.get(reverse("root"))
         # User should still be logged in — Sign out button shown in header
         assert b"Sign out" in r.content
 
 
 class TestUserSettings:
     def test_settings_requires_login(self, client, db):
-        r = client.get("/u/settings/")
+        r = client.get(reverse("user_settings"))
         assert r.status_code == 302
-        assert "/u/login/" in r.url
+        assert reverse("login") in r.url
 
     def test_settings_page_loads(self, client, user):
         client.force_login(user)
-        r = client.get("/u/settings/")
+        r = client.get(reverse("user_settings"))
         assert r.status_code == 200
 
     def test_update_display_name(self, client, user):
         client.force_login(user)
-        r = client.post("/u/settings/", {"display_name": "Alice L."})
+        r = client.post(reverse("user_settings"), {"display_name": "Alice L."})
         assert r.status_code == 302
         user.profile.refresh_from_db()
         assert user.profile.display_name == "Alice L."
@@ -170,26 +171,26 @@ class TestAdminList:
 
     def test_admin_list_requires_staff(self, client, user):
         client.force_login(user)
-        r = client.get("/u/admins/")
+        r = client.get(reverse("admin_list"))
         assert r.status_code == 404
 
     def test_admin_list_visible_to_staff(self, client, user):
         user.is_staff = True
         user.save()
         client.force_login(user)
-        r = client.get("/u/admins/")
+        r = client.get(reverse("admin_list"))
         assert r.status_code == 200
 
     def test_admin_list_visible_to_system_owner(self, client, owner_user):
         client.force_login(owner_user)
-        r = client.get("/u/admins/")
+        r = client.get(reverse("admin_list"))
         assert r.status_code == 200
 
     def test_admin_list_shows_users(self, client, user, other_user):
         user.is_staff = True
         user.save()
         client.force_login(user)
-        r = client.get("/u/admins/")
+        r = client.get(reverse("admin_list"))
         content = r.content.decode()
         assert "alice@free.law" in content
         assert "bob@free.law" in content
@@ -198,7 +199,7 @@ class TestAdminList:
         user.is_staff = True
         user.save()
         client.force_login(user)
-        r = client.post(f"/u/admins/{other_user.pk}/toggle/")
+        r = client.post(reverse("admin_toggle", kwargs={"pk": other_user.pk}))
         assert r.status_code == 302
         other_user.refresh_from_db()
         assert other_user.is_staff is True
@@ -211,7 +212,7 @@ class TestAdminList:
         other_user.is_superuser = True
         other_user.save()
         client.force_login(user)
-        r = client.post(f"/u/admins/{other_user.pk}/toggle/")
+        r = client.post(reverse("admin_toggle", kwargs={"pk": other_user.pk}))
         assert r.status_code == 302
         other_user.refresh_from_db()
         assert other_user.is_staff is False
@@ -223,14 +224,14 @@ class TestAdminList:
         other_user.is_staff = True
         other_user.save()
         client.force_login(other_user)
-        r = client.post(f"/u/admins/{owner_user.pk}/toggle/")
+        r = client.post(reverse("admin_toggle", kwargs={"pk": owner_user.pk}))
         assert r.status_code == 302
         owner_user.refresh_from_db()
         assert owner_user.is_staff is True  # Not demoted
 
     def test_non_staff_cannot_toggle(self, client, user, other_user):
         client.force_login(user)
-        r = client.post(f"/u/admins/{other_user.pk}/toggle/")
+        r = client.post(reverse("admin_toggle", kwargs={"pk": other_user.pk}))
         assert r.status_code == 404
 
     def test_header_admin_link_for_staff(self, client, user, root_directory):
@@ -238,16 +239,16 @@ class TestAdminList:
         user.is_staff = True
         user.save()
         client.force_login(user)
-        r = client.get("/c/")
-        assert b"/u/admins/" in r.content
+        r = client.get(reverse("root"))
+        assert reverse("admin_list").encode() in r.content
 
     def test_header_no_admin_link_for_regular_user(
         self, client, user, root_directory
     ):
         """Regular users don't see Admin link."""
         client.force_login(user)
-        r = client.get("/c/")
-        assert b"/u/admins/" not in r.content
+        r = client.get(reverse("root"))
+        assert reverse("admin_list").encode() not in r.content
 
 
 class TestUserArchiving:
@@ -257,20 +258,22 @@ class TestUserArchiving:
         """Archived user submits login form — gets error, no email."""
         user.is_active = False
         user.save(update_fields=["is_active"])
-        r = client.post("/u/login/", {"email": "alice@free.law"}, follow=True)
+        r = client.post(
+            reverse("login"), {"email": "alice@free.law"}, follow=True
+        )
         assert b"archived" in r.content.lower()
         assert len(mail.outbox) == 0
 
     def test_archived_user_cannot_verify_magic_link(self, client, user):
         """Archived user with valid token is rejected at verify."""
         # Generate a valid token first
-        client.post("/u/login/", {"email": "alice@free.law"})
+        client.post(reverse("login"), {"email": "alice@free.law"})
         token = re.search(r"token=([^&]+)", mail.outbox[0].body).group(1)
         # Now archive the user
         user.is_active = False
         user.save(update_fields=["is_active"])
         r = client.get(
-            "/u/login/verify/",
+            reverse("verify"),
             {"token": token, "email": "alice@free.law"},
             follow=True,
         )
@@ -281,7 +284,9 @@ class TestUserArchiving:
         user.is_staff = True
         user.save()
         client.force_login(user)
-        r = client.post(f"/u/admins/{other_user.pk}/archive/")
+        r = client.post(
+            reverse("admin_archive_toggle", kwargs={"pk": other_user.pk})
+        )
         assert r.status_code == 302
         other_user.refresh_from_db()
         assert other_user.is_active is False
@@ -293,7 +298,9 @@ class TestUserArchiving:
         other_user.is_active = False
         other_user.save(update_fields=["is_active"])
         client.force_login(user)
-        r = client.post(f"/u/admins/{other_user.pk}/archive/")
+        r = client.post(
+            reverse("admin_archive_toggle", kwargs={"pk": other_user.pk})
+        )
         assert r.status_code == 302
         other_user.refresh_from_db()
         assert other_user.is_active is True
@@ -303,7 +310,10 @@ class TestUserArchiving:
         other_user.is_staff = True
         other_user.save()
         client.force_login(other_user)
-        r = client.post(f"/u/admins/{owner_user.pk}/archive/", follow=True)
+        r = client.post(
+            reverse("admin_archive_toggle", kwargs={"pk": owner_user.pk}),
+            follow=True,
+        )
         assert b"Cannot archive the system owner" in r.content
         owner_user.refresh_from_db()
         assert owner_user.is_active is True
@@ -314,7 +324,7 @@ class TestUserArchiving:
         other_client = Client()
         other_client.force_login(other_user)
         # Make a request to ensure session is persisted
-        other_client.get("/c/", follow=True)
+        other_client.get(reverse("root"), follow=True)
 
         # Verify session exists
         sessions_before = []
@@ -327,7 +337,9 @@ class TestUserArchiving:
         user.is_staff = True
         user.save()
         client.force_login(user)
-        client.post(f"/u/admins/{other_user.pk}/archive/")
+        client.post(
+            reverse("admin_archive_toggle", kwargs={"pk": other_user.pk})
+        )
 
         # Verify sessions are deleted
         sessions_after = []
@@ -343,7 +355,7 @@ class TestUserArchiving:
         other_user.is_active = False
         other_user.save(update_fields=["is_active"])
         client.force_login(user)
-        r = client.get("/u/admins/")
+        r = client.get(reverse("admin_list"))
         assert b"Archived" in r.content
 
 
@@ -356,7 +368,7 @@ class TestAdminEmailDomainSecurity:
         user.save()
         client.force_login(user)
         client.post(
-            "/admin/auth/user/add/",
+            reverse("admin:auth_user_add"),
             {
                 "username": "hacker@gmail.com",
                 "email": "hacker@gmail.com",

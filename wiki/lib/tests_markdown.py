@@ -3,6 +3,7 @@
 from unittest.mock import patch
 
 import pytest
+from django.urls import reverse
 
 from wiki.lib.markdown import (
     _convert_alerts,
@@ -114,50 +115,55 @@ class TestExtractSlugsFromInternalUrls:
     @patch("wiki.lib.markdown.settings")
     def test_relative_path(self, mock_settings):
         mock_settings.BASE_URL = "https://wiki.free.law"
-        slugs = extract_slugs_from_internal_urls(
-            "See /c/help/my-page for info"
-        )
+        url = reverse("resolve_path", kwargs={"path": "help/my-page"})
+        slugs = extract_slugs_from_internal_urls(f"See {url} for info")
         assert "my-page" in slugs
 
     @patch("wiki.lib.markdown.settings")
     def test_full_url_matching_domain(self, mock_settings):
         mock_settings.BASE_URL = "https://wiki.free.law"
-        content = "Link: https://wiki.free.law/c/help/my-page"
+        url = reverse("resolve_path", kwargs={"path": "help/my-page"})
+        content = f"Link: https://wiki.free.law{url}"
         slugs = extract_slugs_from_internal_urls(content)
         assert "my-page" in slugs
 
     @patch("wiki.lib.markdown.settings")
     def test_full_url_different_domain_ignored(self, mock_settings):
         mock_settings.BASE_URL = "https://wiki.free.law"
-        content = "Link: https://other.com/c/help/my-page"
+        url = reverse("resolve_path", kwargs={"path": "help/my-page"})
+        content = f"Link: https://other.com{url}"
         slugs = extract_slugs_from_internal_urls(content)
         assert len(slugs) == 0
 
     @patch("wiki.lib.markdown.settings")
     def test_markdown_link_with_relative_path(self, mock_settings):
         mock_settings.BASE_URL = "https://wiki.free.law"
-        content = "[My Page](/c/help/my-page)"
+        url = reverse("resolve_path", kwargs={"path": "help/my-page"})
+        content = f"[My Page]({url})"
         slugs = extract_slugs_from_internal_urls(content)
         assert "my-page" in slugs
 
     @patch("wiki.lib.markdown.settings")
     def test_markdown_link_with_full_url(self, mock_settings):
         mock_settings.BASE_URL = "https://wiki.free.law"
-        content = "[My Page](https://wiki.free.law/c/help/my-page)"
+        url = reverse("resolve_path", kwargs={"path": "help/my-page"})
+        content = f"[My Page](https://wiki.free.law{url})"
         slugs = extract_slugs_from_internal_urls(content)
         assert "my-page" in slugs
 
     @patch("wiki.lib.markdown.settings")
     def test_action_urls_ignored(self, mock_settings):
         mock_settings.BASE_URL = "https://wiki.free.law"
-        content = "Edit at /c/help/my-page/edit"
+        url = reverse("page_edit", kwargs={"path": "help/my-page"})
+        content = f"Edit at {url}"
         slugs = extract_slugs_from_internal_urls(content)
         assert len(slugs) == 0
 
     @patch("wiki.lib.markdown.settings")
     def test_root_level_page(self, mock_settings):
         mock_settings.BASE_URL = "https://wiki.free.law"
-        content = "See /c/my-page for details"
+        url = reverse("resolve_path", kwargs={"path": "my-page"})
+        content = f"See {url} for details"
         slugs = extract_slugs_from_internal_urls(content)
         assert "my-page" in slugs
 
@@ -375,13 +381,16 @@ class TestConvertButtonLinks:
 
     def test_earlier_link_not_swallowed_by_later_button(self):
         """A regular link before a button link must not become the button."""
+        linking_url = reverse(
+            "resolve_path", kwargs={"path": "help/linking-pages"}
+        )
         html = (
-            '<p>see <a href="/c/help/linking-pages">Linking Pages</a>).</p>\n'
+            f'<p>see <a href="{linking_url}">Linking Pages</a>).</p>\n'
             '<p><a href="https://example.com">Click</a>{button}</p>'
         )
         result = _convert_button_links(html)
         # The first link must remain untouched (no btn class)
-        assert '<a href="/c/help/linking-pages">Linking Pages</a>' in result
+        assert f'<a href="{linking_url}">Linking Pages</a>' in result
         # The second link gets the button class
         assert 'class="btn btn-primary"' in result
         assert ">Click</a>" in result

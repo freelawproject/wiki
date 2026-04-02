@@ -1,13 +1,24 @@
 # FLP Wiki
 
-Internal wiki for [Free Law Project](https://free.law) organizational
-documentation. A Django application that supports hierarchical directories,
-Markdown pages with versioning, granular permissions, passwordless email auth,
-and public-facing pages.
+An open-source wiki built by [Free Law Project](https://free.law) to manage organizational knowledge — both internal documentation and public-facing content — in a single system with fine-grained access control.
 
-This project — including its code, tests, and this README — was vibe coded
-with Claude Code. It has not had extensive human review. Please read everything
-with skepticism!
+Free Law Project builds tools that open up the legal system. Our projects include [CourtListener](https://www.courtlistener.com), the largest open archive of American court data, and [RECAP](https://free.law/recap), a browser extension and platform that liberates documents from PACER. As the organization grew, we needed a knowledge base that could hold internal playbooks alongside public documentation, with proper permissions, version history, and a workflow for outside contributors.
+
+FLP Wiki is the result. It is a Django application designed around a few core ideas:
+
+- **Mixed visibility in one place.** Every page and directory has a visibility level — public, internal, or private — that cascades through the directory tree. A public help guide and a private HR policy can live in the same wiki, with access enforced automatically.
+
+- **Full version history.** Every edit creates an immutable revision. Users can view diffs between any two versions, revert to a previous state, and see who changed what and when. Directory metadata is versioned the same way.
+
+- **Collaborative editing without accounts.** Authentication uses passwordless magic links — enter your `@free.law` email, click the link, you're in. Outside contributors don't need an account to suggest changes: they submit change proposals through a public feedback form, and editors can review, accept, or reject them with a side-by-side diff.
+
+- **AI-friendly content.** The wiki serves an [`llms.txt`](https://llmstxt.org/) endpoint that lists all public pages with links to their raw Markdown. LLMs and other automated tools can discover and read wiki content without scraping HTML.
+
+- **SEO as a first-class feature.** Public pages get canonical URLs, structured breadcrumb JSON-LD, Open Graph metadata, and a dynamic sitemap. Robots.txt and sitemap inclusion are configurable per-directory with inheritance, so you can make an entire subtree invisible to search engines with one setting.
+
+- **No external dependencies at runtime.** All JavaScript (Alpine.js, HTMX, EasyMDE) is vendored locally. No CDN calls, no third-party tracking, no cookie banners needed.
+
+The wiki is fully open source under AGPL-3.0. It was built with [Claude Code](https://claude.com/claude-code) and is in active use at Free Law Project.
 
 
 ## Quick Start (Development)

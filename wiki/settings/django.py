@@ -171,7 +171,7 @@ DATETIME_FORMAT = "N j, Y, P e"
 TIME_ZONE = env("TIMEZONE", default="America/Los_Angeles")
 
 LOGIN_URL = "/u/login/"
-LOGIN_REDIRECT_URL = "/c/"
+LOGIN_REDIRECT_URL = "/"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 

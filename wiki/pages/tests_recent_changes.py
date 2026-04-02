@@ -84,7 +84,7 @@ class TestRecentChanges:
         url = reverse("recent_changes")
         resp = client.get(url)
         assert resp.status_code == 302
-        assert "/u/login/" in resp.url
+        assert reverse("login") in resp.url
 
     def test_non_staff_gets_404(self, client, non_staff_user):
         client.force_login(non_staff_user)

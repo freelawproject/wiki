@@ -254,7 +254,7 @@ class Page(models.Model):
         return self.slug
 
     def get_absolute_url(self):
-        if self.directory:
+        if self.directory and self.directory.path:
             return f"/c/{self.directory.path}/{self.slug}"
         return f"/c/{self.slug}"
 

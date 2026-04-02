@@ -47,14 +47,14 @@ def client():
 
 class TestPageCreate:
     def test_create_requires_login(self, client, db):
-        r = client.get("/c/new/")
+        r = client.get(reverse("page_create"))
         assert r.status_code == 302
-        assert "/u/login/" in r.url
+        assert reverse("login") in r.url
 
     def test_create_page(self, client, user):
         client.force_login(user)
         r = client.post(
-            "/c/new/",
+            reverse("page_create"),
             {
                 "title": "Test Page",
                 "content": "Hello world",
@@ -71,7 +71,7 @@ class TestPageCreate:
     def test_create_auto_generates_slug(self, client, user):
         client.force_login(user)
         client.post(
-            "/c/new/",
+            reverse("page_create"),
             {
                 "title": "My Great Page",
                 "content": "",
@@ -84,7 +84,7 @@ class TestPageCreate:
     def test_create_auto_subscribes_creator(self, client, user):
         client.force_login(user)
         client.post(
-            "/c/new/",
+            reverse("page_create"),
             {
                 "title": "Subtest",
                 "content": "",
@@ -98,7 +98,10 @@ class TestPageCreate:
     def test_create_in_directory(self, client, user, sub_directory):
         client.force_login(user)
         r = client.post(
-            "/c/engineering/new/",
+            reverse(
+                "page_create_in_dir",
+                kwargs={"path": sub_directory.path},
+            ),
             {
                 "title": "Deploy Guide",
                 "content": "Steps here",
@@ -191,24 +194,24 @@ class TestPageCreate:
 
 class TestPageDetail:
     def test_public_page_visible_to_anon(self, client, page):
-        r = client.get("/c/getting-started")
+        r = client.get(page.get_absolute_url())
         assert r.status_code == 200
         assert b"Getting Started" in r.content
 
     def test_private_page_hidden_from_anon(self, client, private_page):
-        r = client.get("/c/secret-notes")
+        r = client.get(private_page.get_absolute_url())
         assert r.status_code == 404
 
     def test_private_page_visible_to_owner(self, client, user, private_page):
         client.force_login(user)
-        r = client.get("/c/secret-notes")
+        r = client.get(private_page.get_absolute_url())
         assert r.status_code == 200
 
     def test_private_page_hidden_from_other_user(
         self, client, other_user, private_page
     ):
         client.force_login(other_user)
-        r = client.get("/c/secret-notes")
+        r = client.get(private_page.get_absolute_url())
         assert r.status_code == 404
 
     def test_private_page_visible_to_system_owner(
@@ -216,22 +219,22 @@ class TestPageDetail:
     ):
         SystemConfig.objects.create(owner=other_user)
         client.force_login(other_user)
-        r = client.get("/c/secret-notes")
+        r = client.get(private_page.get_absolute_url())
         assert r.status_code == 200
 
     def test_records_page_view_tally(self, client, page):
         assert PageViewTally.objects.count() == 0
-        client.get("/c/getting-started")
+        client.get(page.get_absolute_url())
         assert PageViewTally.objects.count() == 1
 
     def test_breadcrumbs_on_page(self, client, page):
-        r = client.get("/c/getting-started")
+        r = client.get(page.get_absolute_url())
         assert b"Home" in r.content
 
     def test_breadcrumbs_in_directory(
         self, client, page_in_directory, sub_directory
     ):
-        r = client.get(f"/c/{page_in_directory.slug}")
+        r = client.get(page_in_directory.get_absolute_url())
         assert b"Engineering" in r.content
 
     def test_breadcrumbs_hide_private_ancestor(
@@ -274,30 +277,56 @@ class TestPageDetail:
             created_by=user,
         )
         client.force_login(other_user)
-        r = client.get(f"/c/{p.slug}")
+        r = client.get(p.get_absolute_url())
         assert r.status_code == 200
         assert b"Classified" not in r.content
         assert b"Public Child" in r.content
 
     def test_subscription_button_for_authenticated(self, client, user, page):
         client.force_login(user)
-        r = client.get("/c/getting-started")
+        r = client.get(page.get_absolute_url())
         assert b"subscribeToggle" in r.content
 
     def test_markdown_rendered(self, client, page):
-        r = client.get("/c/getting-started")
+        r = client.get(page.get_absolute_url())
         assert b"<h2" in r.content
+
+
+class TestPageAbsoluteUrl:
+    def test_page_without_directory(self, page):
+        assert page.get_absolute_url() == "/c/getting-started"
+
+    def test_page_in_subdirectory(self, page_in_directory, sub_directory):
+        assert page_in_directory.get_absolute_url() == (
+            f"/c/{sub_directory.path}/{page_in_directory.slug}"
+        )
+
+    def test_page_in_root_directory_no_double_slash(
+        self, user, root_directory
+    ):
+        p = Page.objects.create(
+            title="Root Page",
+            slug="root-page",
+            directory=root_directory,
+            owner=user,
+            created_by=user,
+            updated_by=user,
+        )
+        assert p.get_absolute_url() == "/c/root-page"
+        assert "//" not in p.get_absolute_url()
 
 
 class TestPageEdit:
     def test_edit_requires_login(self, client, page):
-        r = client.get("/c/getting-started/edit/")
+        r = client.get(
+            reverse("page_edit", kwargs={"path": page.content_path})
+        )
         assert r.status_code == 302
 
     def test_edit_page(self, client, user, page):
         client.force_login(user)
         r = client.post(
-            "/c/getting-started/edit/",
+            reverse("page_edit", kwargs={"path": page.content_path}),
             {
                 "title": "Getting Started",
                 "content": "Updated content",
@@ -315,7 +344,7 @@ class TestPageEdit:
         # Ensure no subscription exists before editing
         PageSubscription.objects.filter(user=user, page=page).delete()
         client.post(
-            "/c/getting-started/edit/",
+            reverse("page_edit", kwargs={"path": page.content_path}),
             {
                 "title": "Getting Started",
                 "content": "Updated content",
@@ -328,7 +357,7 @@ class TestPageEdit:
     def test_edit_creates_slug_redirect(self, client, user, page):
         client.force_login(user)
         client.post(
-            "/c/getting-started/edit/",
+            reverse("page_edit", kwargs={"path": page.content_path}),
             {
                 "title": "Getting Started v2",
                 "content": page.content,
@@ -345,7 +374,7 @@ class TestPageEdit:
     ):
         client.force_login(other_user)
         r = client.post(
-            "/c/getting-started/edit/",
+            reverse("page_edit", kwargs={"path": page.content_path}),
             {
                 "title": "Hacked",
                 "content": "Hacked",
@@ -366,7 +395,11 @@ class TestPageEdit:
         or page-config is missing, the editor silently won't initialise.
         """
         client.force_login(user)
-        for url in ["/c/new/", "/c/getting-started/edit/"]:
+        urls = [
+            reverse("page_create"),
+            reverse("page_edit", kwargs={"path": page.content_path}),
+        ]
+        for url in urls:
             content = client.get(url).content.decode()
             assert 'id="editor-config"' in content, (
                 f"{url} missing editor-config"
@@ -383,26 +416,34 @@ class TestPageEdit:
 
 class TestPageDelete:
     def test_delete_requires_login(self, client, page):
-        r = client.post("/c/getting-started/delete/")
+        r = client.post(
+            reverse("page_delete", kwargs={"path": page.content_path})
+        )
         assert r.status_code == 302
-        assert "/u/login/" in r.url
+        assert reverse("login") in r.url
 
     def test_owner_can_delete(self, client, user, page):
         client.force_login(user)
-        r = client.post("/c/getting-started/delete/")
+        r = client.post(
+            reverse("page_delete", kwargs={"path": page.content_path})
+        )
         assert r.status_code == 302
         assert not Page.objects.filter(slug="getting-started").exists()
 
     def test_non_owner_cannot_delete(self, client, other_user, page):
         client.force_login(other_user)
-        r = client.post("/c/getting-started/delete/")
+        r = client.post(
+            reverse("page_delete", kwargs={"path": page.content_path})
+        )
         assert r.status_code == 302
         assert Page.objects.filter(slug="getting-started").exists()
 
     def test_system_owner_can_delete_any(self, client, other_user, page):
         SystemConfig.objects.create(owner=other_user)
         client.force_login(other_user)
-        r = client.post("/c/getting-started/delete/")
+        r = client.post(
+            reverse("page_delete", kwargs={"path": page.content_path})
+        )
         assert r.status_code == 302
         assert not Page.objects.filter(slug="getting-started").exists()
 
@@ -413,7 +454,9 @@ class TestPageDelete:
 class TestPageHistory:
     def test_history_page_loads(self, client, user, page):
         client.force_login(user)
-        r = client.get("/c/getting-started/history/")
+        r = client.get(
+            reverse("page_history", kwargs={"path": page.content_path})
+        )
         assert r.status_code == 200
         assert b"v1" in r.content
 
@@ -427,7 +470,9 @@ class TestPageHistory:
             created_by=user,
         )
         client.force_login(user)
-        r = client.get("/c/getting-started/history/")
+        r = client.get(
+            reverse("page_history", kwargs={"path": page.content_path})
+        )
         assert b"v1" in r.content
         assert b"v2" in r.content
 
@@ -447,11 +492,29 @@ class TestPageDiff:
         return page
 
     def test_diff_page_loads(self, client, two_revisions):
-        r = client.get("/c/getting-started/diff/1/2/")
+        r = client.get(
+            reverse(
+                "page_diff",
+                kwargs={
+                    "path": two_revisions.content_path,
+                    "v1": 1,
+                    "v2": 2,
+                },
+            )
+        )
         assert r.status_code == 200
 
     def test_diff_shows_changes(self, client, two_revisions):
-        r = client.get("/c/getting-started/diff/1/2/")
+        r = client.get(
+            reverse(
+                "page_diff",
+                kwargs={
+                    "path": two_revisions.content_path,
+                    "v1": 1,
+                    "v2": 2,
+                },
+            )
+        )
         # Word-level highlighting wraps changed segments in <span> tags,
         # so check for the words rather than the full contiguous phrase.
         assert b"Changed" in r.content
@@ -463,7 +526,7 @@ class TestPageRevert:
     def edited_page(self, client, user, page):
         client.force_login(user)
         client.post(
-            "/c/getting-started/edit/",
+            reverse("page_edit", kwargs={"path": page.content_path}),
             {
                 "title": "Getting Started",
                 "content": "Edited content",
@@ -475,7 +538,15 @@ class TestPageRevert:
 
     def test_revert_creates_new_revision(self, client, user, edited_page):
         client.force_login(user)
-        r = client.post("/c/getting-started/revert/1/")
+        r = client.post(
+            reverse(
+                "page_revert",
+                kwargs={
+                    "path": edited_page.content_path,
+                    "rev_num": 1,
+                },
+            )
+        )
         assert r.status_code == 302
         edited_page.refresh_from_db()
         assert edited_page.content == "## Welcome\n\nHello world."
@@ -489,13 +560,17 @@ class TestHistoryRequiresAuth:
     """Revision history, diff, and revert are staff-only (login required)."""
 
     def test_history_redirects_anonymous(self, client, page):
-        r = client.get("/c/getting-started/history/")
+        r = client.get(
+            reverse("page_history", kwargs={"path": page.content_path})
+        )
         assert r.status_code == 302
-        assert "/u/login/" in r.url
+        assert reverse("login") in r.url
 
     def test_history_visible_to_authenticated(self, client, user, page):
         client.force_login(user)
-        r = client.get("/c/getting-started/history/")
+        r = client.get(
+            reverse("page_history", kwargs={"path": page.content_path})
+        )
         assert r.status_code == 200
 
     def test_diff_redirects_anonymous(self, client, user, page):
@@ -507,9 +582,14 @@ class TestHistoryRequiresAuth:
             revision_number=2,
             created_by=user,
         )
-        r = client.get("/c/getting-started/diff/1/2/")
+        r = client.get(
+            reverse(
+                "page_diff",
+                kwargs={"path": page.content_path, "v1": 1, "v2": 2},
+            )
+        )
         assert r.status_code == 302
-        assert "/u/login/" in r.url
+        assert reverse("login") in r.url
 
     def test_diff_visible_to_authenticated(self, client, user, page):
         PageRevision.objects.create(
@@ -521,16 +601,21 @@ class TestHistoryRequiresAuth:
             created_by=user,
         )
         client.force_login(user)
-        r = client.get("/c/getting-started/diff/1/2/")
+        r = client.get(
+            reverse(
+                "page_diff",
+                kwargs={"path": page.content_path, "v1": 1, "v2": 2},
+            )
+        )
         assert r.status_code == 200
 
     def test_history_link_hidden_for_anonymous(self, client, page):
-        r = client.get("/c/getting-started")
+        r = client.get(page.get_absolute_url())
         assert b"History" not in r.content
 
     def test_history_link_shown_for_authenticated(self, client, user, page):
         client.force_login(user)
-        r = client.get("/c/getting-started")
+        r = client.get(page.get_absolute_url())
         assert b"History" in r.content
 
 
@@ -540,24 +625,28 @@ class TestHistoryRequiresAuth:
 class TestSlugRedirect:
     def test_old_slug_redirects_to_new(self, client, page):
         SlugRedirect.objects.create(old_slug="old-name", page=page)
-        r = client.get("/c/old-name")
+        r = client.get(reverse("resolve_path", kwargs={"path": "old-name"}))
         assert r.status_code == 302
         assert r.url == page.get_absolute_url()
 
 
 class TestResolvePathView:
     def test_resolves_directory(self, client, sub_directory):
-        r = client.get("/c/engineering")
+        r = client.get(
+            reverse("resolve_path", kwargs={"path": sub_directory.path})
+        )
         assert r.status_code == 200
         assert b"Engineering" in r.content
 
     def test_resolves_page(self, client, page):
-        r = client.get("/c/getting-started")
+        r = client.get(page.get_absolute_url())
         assert r.status_code == 200
         assert b"Getting Started" in r.content
 
     def test_unknown_path_404(self, client, db):
-        r = client.get("/c/nonexistent-page")
+        r = client.get(
+            reverse("resolve_path", kwargs={"path": "nonexistent-page"})
+        )
         assert r.status_code == 404
 
 
@@ -568,14 +657,14 @@ class TestPreviewEndpoint:
     def test_preview_returns_rendered_html(self, client, user):
         client.force_login(user)
         r = client.post(
-            "/api/preview/",
+            reverse("page_preview"),
             {"content": "## Hello"},
         )
         assert r.status_code == 200
         assert b"<h2" in r.content
 
     def test_preview_works_without_login(self, client, db):
-        r = client.post("/api/preview/", {"content": "test"})
+        r = client.post(reverse("page_preview"), {"content": "test"})
         assert r.status_code == 200
 
 
@@ -585,7 +674,7 @@ class TestFileUpload:
         img = SimpleUploadedFile(
             "test.png", b"\x89PNG\r\n\x1a\n", content_type="image/png"
         )
-        r = client.post("/api/upload/", {"file": img})
+        r = client.post(reverse("file_upload"), {"file": img})
         assert r.status_code == 200
         data = json.loads(r.content)
         assert "![test.png]" in data["markdown"]
@@ -595,14 +684,14 @@ class TestFileUpload:
         doc = SimpleUploadedFile(
             "doc.pdf", b"PDF content", content_type="application/pdf"
         )
-        r = client.post("/api/upload/", {"file": doc})
+        r = client.post(reverse("file_upload"), {"file": doc})
         data = json.loads(r.content)
         assert "[doc.pdf]" in data["markdown"]
         assert "!" not in data["markdown"]
 
     def test_upload_no_file_returns_400(self, client, user):
         client.force_login(user)
-        r = client.post("/api/upload/")
+        r = client.post(reverse("file_upload"))
         assert r.status_code == 400
 
     def test_blocked_extension_rejected(self, client, user):
@@ -614,7 +703,7 @@ class TestFileUpload:
                 b"payload",
                 content_type="application/octet-stream",
             )
-            r = client.post("/api/upload/", {"file": f})
+            r = client.post(reverse("file_upload"), {"file": f})
             assert r.status_code == 400, f"{ext} should be blocked"
             assert b"not allowed" in r.content
 
@@ -624,7 +713,7 @@ class TestFileUpload:
         f = SimpleUploadedFile(
             "notes.txt", b"hello", content_type="text/plain"
         )
-        r = client.post("/api/upload/", {"file": f})
+        r = client.post(reverse("file_upload"), {"file": f})
         assert r.status_code == 200
 
 
@@ -633,7 +722,7 @@ class TestPresignUpload:
 
     def _presign(self, client, payload):
         return client.post(
-            "/api/upload/presign/",
+            reverse("presign_upload"),
             json.dumps(payload),
             content_type="application/json",
         )
@@ -720,7 +809,7 @@ class TestConfirmUpload:
                 lambda: _mock_s3_client(),
             )
             r = client.post(
-                "/api/upload/confirm/",
+                reverse("confirm_upload"),
                 json.dumps({"pending_id": str(pending.id)}),
                 content_type="application/json",
             )
@@ -749,7 +838,7 @@ class TestConfirmUpload:
                 lambda: _mock_s3_client(),
             )
             r = client.post(
-                "/api/upload/confirm/",
+                reverse("confirm_upload"),
                 json.dumps({"pending_id": str(pending.id)}),
                 content_type="application/json",
             )
@@ -770,7 +859,7 @@ class TestConfirmUpload:
         )
         client.force_login(other_user)
         r = client.post(
-            "/api/upload/confirm/",
+            reverse("confirm_upload"),
             json.dumps({"pending_id": str(pending.id)}),
             content_type="application/json",
         )
@@ -785,7 +874,7 @@ class TestConfirmUpload:
             uploaded_by=user,
         )
         r = client.post(
-            "/api/upload/confirm/",
+            reverse("confirm_upload"),
             json.dumps({"pending_id": str(pending.id)}),
             content_type="application/json",
         )
@@ -815,19 +904,21 @@ def _mock_s3_client():
 class TestPageSearchAutocomplete:
     def test_search_returns_matches(self, client, user, page):
         client.force_login(user)
-        r = client.get("/api/page-search/?q=getting")
+        r = client.get(f"{reverse('page_search')}?q=getting")
         assert r.status_code == 200
         assert b"getting-started" in r.content
 
     def test_search_short_query_returns_empty(self, client, user):
         client.force_login(user)
-        r = client.get("/api/page-search/?q=g")
+        r = client.get(f"{reverse('page_search')}?q=g")
         assert r.status_code == 200
         assert r.content == b""
 
     def test_search_excludes_current_page(self, client, user, page):
         client.force_login(user)
-        r = client.get("/api/page-search/?q=getting&exclude=getting-started")
+        r = client.get(
+            f"{reverse('page_search')}?q=getting&exclude={page.slug}"
+        )
         assert r.status_code == 200
         assert b"getting-started" not in r.content
 
@@ -837,7 +928,7 @@ class TestPageSearchAutocomplete:
         """SECURITY: private pages must not appear in autocomplete for
         users without permission."""
         client.force_login(other_user)
-        r = client.get("/api/page-search/?q=secret")
+        r = client.get(f"{reverse('page_search')}?q=secret")
         assert r.status_code == 200
         assert b"secret-notes" not in r.content
 
@@ -846,7 +937,7 @@ class TestPageSearchAutocomplete:
     ):
         """The page owner should still see their own private pages."""
         client.force_login(user)
-        r = client.get("/api/page-search/?q=secret")
+        r = client.get(f"{reverse('page_search')}?q=secret")
         assert b"secret-notes" in r.content
 
     def test_search_escapes_html_in_title(self, client, user):
@@ -861,7 +952,7 @@ class TestPageSearchAutocomplete:
             visibility=Page.Visibility.PUBLIC,
         )
         client.force_login(user)
-        r = client.get("/api/page-search/?q=onerror")
+        r = client.get(f"{reverse('page_search')}?q=onerror")
         # The raw <img> tag must not appear — it should be escaped
         assert b"<img" not in r.content
         assert b"&lt;img" in r.content
@@ -876,7 +967,12 @@ class TestFileServePermissions:
             file=f,
             original_filename="test.txt",
         )
-        r = client.get(f"/files/{upload.id}/test.txt")
+        r = client.get(
+            reverse(
+                "file_serve",
+                kwargs={"file_id": upload.id, "filename": "test.txt"},
+            )
+        )
         assert r.status_code == 404
 
     def test_authenticated_can_access_orphaned_file(self, client, user):
@@ -888,7 +984,12 @@ class TestFileServePermissions:
             original_filename="test.txt",
         )
         client.force_login(user)
-        r = client.get(f"/files/{upload.id}/test.txt")
+        r = client.get(
+            reverse(
+                "file_serve",
+                kwargs={"file_id": upload.id, "filename": "test.txt"},
+            )
+        )
         # 200 in DEBUG mode (FileResponse), 302 in production (S3 redirect)
         assert r.status_code in (200, 302)
 
@@ -903,7 +1004,15 @@ class TestFileServePermissions:
             file=f,
             original_filename="secret.txt",
         )
-        r = client.get(f"/files/{upload.id}/secret.txt")
+        r = client.get(
+            reverse(
+                "file_serve",
+                kwargs={
+                    "file_id": upload.id,
+                    "filename": "secret.txt",
+                },
+            )
+        )
         assert r.status_code == 404
 
     def test_other_user_cannot_access_private_page_file(
@@ -918,7 +1027,15 @@ class TestFileServePermissions:
             original_filename="secret.txt",
         )
         client.force_login(other_user)
-        r = client.get(f"/files/{upload.id}/secret.txt")
+        r = client.get(
+            reverse(
+                "file_serve",
+                kwargs={
+                    "file_id": upload.id,
+                    "filename": "secret.txt",
+                },
+            )
+        )
         assert r.status_code == 404
 
 
@@ -982,7 +1099,7 @@ class TestWikiLinks:
     def test_known_slug_resolved(self, page):
         content = "See #getting-started for info."
         result = resolve_wiki_links(content)
-        assert "[Getting Started](/c/getting-started)" in result
+        assert f"[Getting Started]({page.get_absolute_url()})" in result
 
     def test_unknown_slug_red_link(self, db):
         content = "See #nonexistent for info."
@@ -1080,13 +1197,15 @@ class TestSeedHelpPages:
 
     def test_help_pages_accessible_via_url(self, client, owner_user):
         call_command("seed_help_pages")
-        r = client.get("/c/help")
+        r = client.get(reverse("resolve_path", kwargs={"path": "help"}))
         assert r.status_code == 200
         assert b"Help" in r.content
 
     def test_help_page_detail_loads(self, client, owner_user):
         call_command("seed_help_pages")
-        r = client.get("/c/markdown-syntax")
+        r = client.get(
+            reverse("resolve_path", kwargs={"path": "markdown-syntax"})
+        )
         assert r.status_code == 200
         assert b"Markdown Syntax" in r.content
 
@@ -1105,7 +1224,7 @@ class TestChangeMessageRequired:
     def test_edit_rejects_empty_change_message(self, client, user, page):
         client.force_login(user)
         r = client.post(
-            "/c/getting-started/edit/",
+            reverse("page_edit", kwargs={"path": page.content_path}),
             {
                 "title": "Getting Started",
                 "content": "Updated",
@@ -1120,7 +1239,7 @@ class TestChangeMessageRequired:
     def test_create_also_rejects_empty_change_message(self, client, user):
         client.force_login(user)
         r = client.post(
-            "/c/new/",
+            reverse("page_create"),
             {
                 "title": "No Message Page",
                 "content": "Hello",
@@ -1137,14 +1256,16 @@ class TestChangeMessageRequired:
 
 class TestPageMove:
     def test_move_requires_login(self, client, page):
-        r = client.get("/c/getting-started/move/")
+        r = client.get(
+            reverse("page_move", kwargs={"path": page.content_path})
+        )
         assert r.status_code == 302
-        assert "/u/login/" in r.url
+        assert reverse("login") in r.url
 
     def test_move_page_to_directory(self, client, user, page, sub_directory):
         client.force_login(user)
         r = client.post(
-            "/c/getting-started/move/",
+            reverse("page_move", kwargs={"path": page.content_path}),
             {"directory": sub_directory.pk},
         )
         assert r.status_code == 302
@@ -1156,7 +1277,10 @@ class TestPageMove:
     ):
         client.force_login(user)
         r = client.post(
-            f"/c/{page_in_directory.slug}/move/",
+            reverse(
+                "page_move",
+                kwargs={"path": page_in_directory.content_path},
+            ),
             {"directory": ""},
         )
         assert r.status_code == 302
@@ -1165,7 +1289,9 @@ class TestPageMove:
 
     def test_non_editor_cannot_move(self, client, other_user, page):
         client.force_login(other_user)
-        r = client.get("/c/getting-started/move/")
+        r = client.get(
+            reverse("page_move", kwargs={"path": page.content_path})
+        )
         assert r.status_code == 302
 
 
@@ -1176,13 +1302,13 @@ class TestSubscriberDisplay:
     def test_subscribers_visible_to_authenticated(self, client, user, page):
         PageSubscription.objects.create(user=user, page=page)
         client.force_login(user)
-        r = client.get("/c/getting-started")
+        r = client.get(page.get_absolute_url())
         assert b"Watching:" in r.content
         assert b"Alice" in r.content
 
     def test_subscribers_hidden_from_anon(self, client, user, page):
         PageSubscription.objects.create(user=user, page=page)
-        r = client.get("/c/getting-started")
+        r = client.get(page.get_absolute_url())
         assert b"Watching:" not in r.content
 
 
@@ -1203,7 +1329,7 @@ class TestMentions:
     ):
         client.force_login(user)
         client.post(
-            "/c/getting-started/edit/",
+            reverse("page_edit", kwargs={"path": page.content_path}),
             {
                 "title": "Getting Started",
                 "content": "Hey @bob check this out",
@@ -1218,7 +1344,7 @@ class TestMentions:
     def test_mention_nonexistent_user_no_error(self, client, user, page):
         client.force_login(user)
         r = client.post(
-            "/c/getting-started/edit/",
+            reverse("page_edit", kwargs={"path": page.content_path}),
             {
                 "title": "Getting Started",
                 "content": "Hey @nonexistent check this",
@@ -1235,7 +1361,10 @@ class TestMentions:
 
         client.force_login(user)
         client.post(
-            "/c/secret-notes/edit/",
+            reverse(
+                "page_edit",
+                kwargs={"path": private_page.content_path},
+            ),
             {
                 "title": "Secret Notes",
                 "content": "Hey @bob help me",
@@ -1255,7 +1384,10 @@ class TestMentions:
     ):
         client.force_login(user)
         client.post(
-            "/c/secret-notes/edit/",
+            reverse(
+                "page_edit",
+                kwargs={"path": private_page.content_path},
+            ),
             {
                 "title": "Secret Notes",
                 "content": "FYI @bob",
@@ -1274,7 +1406,11 @@ class TestMentions:
 class TestPreviewTabs:
     def test_page_form_no_separate_preview_button(self, client, user, page):
         client.force_login(user)
-        for url in ["/c/new/", "/c/getting-started/edit/"]:
+        urls = [
+            reverse("page_create"),
+            reverse("page_edit", kwargs={"path": page.content_path}),
+        ]
+        for url in urls:
             content = client.get(url).content.decode()
             assert 'id="preview-btn"' not in content
 
@@ -1282,13 +1418,20 @@ class TestPreviewTabs:
         self, client, user, root_directory, sub_directory
     ):
         client.force_login(user)
-        for url in ["/c/new-dir/", "/c/engineering/edit-dir/"]:
+        urls = [
+            reverse("directory_create"),
+            reverse(
+                "directory_edit",
+                kwargs={"path": sub_directory.path},
+            ),
+        ]
+        for url in urls:
             content = client.get(url).content.decode()
             assert 'id="preview-btn"' not in content
 
     def test_preview_api_still_works(self, client, user):
         client.force_login(user)
-        r = client.post("/api/preview/", {"content": "## Test"})
+        r = client.post(reverse("page_preview"), {"content": "## Test"})
         assert r.status_code == 200
         assert b"<h2" in r.content
 
@@ -1309,7 +1452,7 @@ class TestMentionSnippet:
     ):
         client.force_login(user)
         client.post(
-            "/c/getting-started/edit/",
+            reverse("page_edit", kwargs={"path": page.content_path}),
             {
                 "title": "Getting Started",
                 "content": "Line above\nHey @bob check this\nLine below",
@@ -1328,7 +1471,7 @@ class TestMentionSnippet:
 class TestUserSearchAPI:
     def test_user_search(self, client, user, other_user):
         client.force_login(user)
-        r = client.get("/api/user-search/?q=bob")
+        r = client.get(f"{reverse('user_search')}?q=bob")
         assert r.status_code == 200
         data = json.loads(r.content)
         assert len(data) == 1
@@ -1336,13 +1479,13 @@ class TestUserSearchAPI:
 
     def test_user_search_short_query(self, client, user):
         client.force_login(user)
-        r = client.get("/api/user-search/?q=")
+        r = client.get(f"{reverse('user_search')}?q=")
         data = __import__("json").loads(r.content)
         assert data == []
 
     def test_user_search_excludes_self(self, client, user):
         client.force_login(user)
-        r = client.get("/api/user-search/?q=alice")
+        r = client.get(f"{reverse('user_search')}?q=alice")
         data = json.loads(r.content)
         usernames = [u["username"] for u in data]
         assert "alice" not in usernames
@@ -1350,20 +1493,33 @@ class TestUserSearchAPI:
 
 class TestPagePermissions:
     def test_permissions_requires_login(self, client, page):
-        r = client.get("/c/getting-started/permissions/")
+        r = client.get(
+            reverse(
+                "page_permissions",
+                kwargs={"path": page.content_path},
+            )
+        )
         assert r.status_code == 302
-        assert "/u/login/" in r.url
+        assert reverse("login") in r.url
 
     def test_permissions_page_loads(self, client, user, page):
         client.force_login(user)
-        r = client.get("/c/getting-started/permissions/")
+        r = client.get(
+            reverse(
+                "page_permissions",
+                kwargs={"path": page.content_path},
+            )
+        )
         assert r.status_code == 200
         assert b"Permissions" in r.content
 
     def test_add_user_permission(self, client, user, other_user, page):
         client.force_login(user)
         r = client.post(
-            "/c/getting-started/permissions/",
+            reverse(
+                "page_permissions",
+                kwargs={"path": page.content_path},
+            ),
             {
                 "target_type": "user",
                 "username": "bob",
@@ -1380,7 +1536,10 @@ class TestPagePermissions:
     def test_add_group_permission(self, client, user, page, group):
         client.force_login(user)
         r = client.post(
-            "/c/getting-started/permissions/",
+            reverse(
+                "page_permissions",
+                kwargs={"path": page.content_path},
+            ),
             {
                 "target_type": "group",
                 "group": group.pk,
@@ -1402,7 +1561,10 @@ class TestPagePermissions:
         )
         client.force_login(user)
         r = client.post(
-            "/c/getting-started/permissions/",
+            reverse(
+                "page_permissions",
+                kwargs={"path": page.content_path},
+            ),
             {"remove": perm.pk},
         )
         assert r.status_code == 302
@@ -1410,7 +1572,12 @@ class TestPagePermissions:
 
     def test_non_editor_cannot_access(self, client, other_user, page):
         client.force_login(other_user)
-        r = client.get("/c/getting-started/permissions/")
+        r = client.get(
+            reverse(
+                "page_permissions",
+                kwargs={"path": page.content_path},
+            )
+        )
         assert r.status_code == 302
 
     def test_group_permission_grants_view_on_private_page(
@@ -1429,7 +1596,7 @@ class TestPagePermissions:
         )
         # Without group membership, other_user can't see it
         client.force_login(other_user)
-        r = client.get("/c/group-test")
+        r = client.get(p.get_absolute_url())
         assert r.status_code == 404
 
         # Grant group VIEW permission and add user to group
@@ -1441,7 +1608,7 @@ class TestPagePermissions:
         if hasattr(other_user, "_group_ids_cache"):
             del other_user._group_ids_cache
 
-        r = client.get("/c/group-test")
+        r = client.get(p.get_absolute_url())
         assert r.status_code == 200
 
     def test_group_edit_permission_allows_editing(
@@ -1456,7 +1623,7 @@ class TestPagePermissions:
 
         client.force_login(other_user)
         r = client.post(
-            "/c/getting-started/edit/",
+            reverse("page_edit", kwargs={"path": page.content_path}),
             {
                 "title": "Getting Started",
                 "content": "Group edited",
@@ -1471,7 +1638,7 @@ class TestPagePermissions:
 
 class TestPagePeople:
     def test_creator_shown_on_detail(self, client, page):
-        r = client.get("/c/getting-started")
+        r = client.get(page.get_absolute_url())
         assert b"Creator:" in r.content
         assert b"Alice" in r.content
 
@@ -1484,7 +1651,7 @@ class TestPagePeople:
             user=other_user,
             permission_type="owner",
         )
-        r = client.get("/c/getting-started")
+        r = client.get(page.get_absolute_url())
         assert b"Admins:" in r.content
         assert b"Bob" in r.content
 
@@ -1494,7 +1661,7 @@ class TestPagePeople:
             user=other_user,
             permission_type="edit",
         )
-        r = client.get("/c/getting-started")
+        r = client.get(page.get_absolute_url())
         assert b"Editors:" in r.content
         assert b"Bob" in r.content
 
@@ -1506,7 +1673,7 @@ class TestPagePeople:
             user=other_user,
             permission_type="owner",
         )
-        r = client.get("/c/getting-started")
+        r = client.get(page.get_absolute_url())
         content = r.content.decode()
         # Bob should be in Admins but not Editors
         assert "Admins:" in content
@@ -1518,8 +1685,8 @@ class TestCheckMentionPermissions:
     def test_public_page_no_issues(self, client, user, page):
         client.force_login(user)
         r = client.post(
-            "/api/check-mention-perms/",
-            json.dumps({"page_slug": "getting-started", "usernames": ["bob"]}),
+            reverse("check_mention_perms"),
+            json.dumps({"page_slug": page.slug, "usernames": ["bob"]}),
             content_type="application/json",
         )
         data = json.loads(r.content)
@@ -1530,10 +1697,10 @@ class TestCheckMentionPermissions:
     ):
         client.force_login(user)
         r = client.post(
-            "/api/check-mention-perms/",
+            reverse("check_mention_perms"),
             json.dumps(
                 {
-                    "page_slug": "secret-notes",
+                    "page_slug": private_page.slug,
                     "usernames": ["bob"],
                 }
             ),
@@ -1551,7 +1718,12 @@ class TestPageVisibilityInheritance:
         self, client, user, private_directory
     ):
         client.force_login(user)
-        r = client.get(f"/c/{private_directory.path}/new/")
+        r = client.get(
+            reverse(
+                "page_create_in_dir",
+                kwargs={"path": private_directory.path},
+            )
+        )
         content = r.content.decode()
         # The visibility dropdown should have private selected
         assert "selected" in content
@@ -1563,7 +1735,10 @@ class TestPageVisibilityInheritance:
         """Explicit overrides always work — no 'more open than parent' validation."""
         client.force_login(user)
         r = client.post(
-            f"/c/{private_directory.path}/new/",
+            reverse(
+                "page_create_in_dir",
+                kwargs={"path": private_directory.path},
+            ),
             {
                 "title": "Public In Private",
                 "content": "test",
@@ -1580,7 +1755,10 @@ class TestPageVisibilityInheritance:
     ):
         client.force_login(user)
         r = client.post(
-            f"/c/{private_directory.path}/new/",
+            reverse(
+                "page_create_in_dir",
+                kwargs={"path": private_directory.path},
+            ),
             {
                 "title": "Private In Private",
                 "content": "test",
@@ -1616,7 +1794,7 @@ class TestPageVisibilityInheritance:
         )
         client.force_login(user)
         r = client.post(
-            f"/c/{private_directory.path}/{page.slug}/edit/",
+            reverse("page_edit", kwargs={"path": page.content_path}),
             {
                 "title": "Secret Page",
                 "content": "updated",
@@ -1637,7 +1815,7 @@ class TestCheckPagePermissions:
         """A public page linking to a private page gets flagged."""
         client.force_login(user)
         r = client.post(
-            "/api/check-page-perms/",
+            reverse("check_page_perms"),
             json.dumps(
                 {
                     "page_slug": page.slug,
@@ -1664,7 +1842,7 @@ class TestCheckPagePermissions:
         )
         client.force_login(user)
         r = client.post(
-            "/api/check-page-perms/",
+            reverse("check_page_perms"),
             json.dumps(
                 {
                     "page_slug": page.slug,
@@ -1681,7 +1859,7 @@ class TestCheckPagePermissions:
         """Unknown slugs are silently ignored."""
         client.force_login(user)
         r = client.post(
-            "/api/check-page-perms/",
+            reverse("check_page_perms"),
             json.dumps(
                 {
                     "page_slug": page.slug,
@@ -1700,7 +1878,7 @@ class TestCheckPagePermissions:
         """Both mentions and links checked in one request."""
         client.force_login(user)
         r = client.post(
-            "/api/check-page-perms/",
+            reverse("check_page_perms"),
             json.dumps(
                 {
                     "page_slug": private_page.slug,
@@ -1718,7 +1896,7 @@ class TestCheckPagePermissions:
         """The old /api/check-mention-perms/ still works."""
         client.force_login(user)
         r = client.post(
-            "/api/check-mention-perms/",
+            reverse("check_mention_perms"),
             json.dumps(
                 {
                     "page_slug": page.slug,
@@ -1758,7 +1936,7 @@ class TestPageEditability:
         """Creating a page with editability='internal' works."""
         client.force_login(user)
         r = client.post(
-            "/c/new/",
+            reverse("page_create"),
             {
                 "title": "Open Page",
                 "content": "Everyone edits",
@@ -1778,7 +1956,7 @@ class TestPageEditability:
         with restricted editability (backwards compat)."""
         client.force_login(user)
         r = client.post(
-            "/c/new/",
+            reverse("page_create"),
             {
                 "title": "Default Edit",
                 "content": "",
@@ -1794,7 +1972,7 @@ class TestPageEditability:
         """Explicit overrides always work — no editability/visibility validation."""
         client.force_login(user)
         r = client.post(
-            "/c/new/",
+            reverse("page_create"),
             {
                 "title": "Bad Combo",
                 "content": "test",
@@ -1827,7 +2005,7 @@ class TestPageEditability:
         )
         client.force_login(user)
         r = client.post(
-            f"/c/{page.slug}/edit/",
+            reverse("page_edit", kwargs={"path": page.content_path}),
             {
                 "title": "Private Edit Test",
                 "content": "updated",
@@ -1841,14 +2019,14 @@ class TestPageEditability:
     def test_form_includes_editability_field(self, client, user):
         """The page form includes the editability dropdown."""
         client.force_login(user)
-        r = client.get("/c/new/")
+        r = client.get(reverse("page_create"))
         assert b"id_editability" in r.content
 
     def test_flp_editable_public_is_valid(self, client, user):
         """FLP Staff editability + Public is a valid combination."""
         client.force_login(user)
         r = client.post(
-            "/c/new/",
+            reverse("page_create"),
             {
                 "title": "Open Public",
                 "content": "test",
@@ -1866,7 +2044,7 @@ class TestPageEditability:
         """FLP Staff editability + FLP Staff visibility is a valid combination."""
         client.force_login(user)
         r = client.post(
-            "/c/new/",
+            reverse("page_create"),
             {
                 "title": "Open Internal",
                 "content": "test",
@@ -1974,21 +2152,24 @@ class TestPageLinks:
         assert PageLink.objects.filter(from_page=other, to_page=page).exists()
 
         client.force_login(user)
+        delete_url = reverse("page_delete", kwargs={"path": page.content_path})
         # GET shows the blocking message
-        r = client.get(f"/c/{page.slug}/delete/")
+        r = client.get(delete_url)
         assert r.status_code == 200
         assert b"cannot be deleted" in r.content
         assert b"Linking Page" in r.content
 
         # POST is also blocked
-        r = client.post(f"/c/{page.slug}/delete/")
+        r = client.post(delete_url)
         assert r.status_code == 302
         assert Page.objects.filter(pk=page.pk).exists()
 
     def test_delete_allowed_when_no_incoming_links(self, client, user, page):
         """A page with no incoming links can be deleted."""
         client.force_login(user)
-        r = client.post(f"/c/{page.slug}/delete/")
+        r = client.post(
+            reverse("page_delete", kwargs={"path": page.content_path})
+        )
         assert r.status_code == 302
         assert not Page.objects.filter(pk=page.pk).exists()
 
@@ -2022,14 +2203,22 @@ class TestPageBacklinks:
             created_by=user,
             updated_by=user,
         )
-        r = client.get(f"/c/{page.slug}/backlinks/")
+        backlinks_url = reverse(
+            "page_backlinks", kwargs={"path": page.content_path}
+        )
+        r = client.get(backlinks_url)
         assert r.status_code == 200
         assert b"Linking Page" in r.content
         assert b"What links here" in r.content
 
     def test_backlinks_page_empty(self, client, user, page):
         """The backlinks view shows a message when no pages link here."""
-        r = client.get(f"/c/{page.slug}/backlinks/")
+        r = client.get(
+            reverse(
+                "page_backlinks",
+                kwargs={"path": page.content_path},
+            )
+        )
         assert r.status_code == 200
         assert b"No other pages link to this page" in r.content
 
@@ -2045,13 +2234,23 @@ class TestPageBacklinks:
             visibility="private",
         )
         # Anonymous user shouldn't see private linking page
-        r = client.get(f"/c/{page.slug}/backlinks/")
+        r = client.get(
+            reverse(
+                "page_backlinks",
+                kwargs={"path": page.content_path},
+            )
+        )
         assert r.status_code == 200
         assert b"Secret Page" not in r.content
 
     def test_backlinks_404_for_nonexistent_page(self, client):
         """Backlinks returns 404 for a page that doesn't exist."""
-        r = client.get("/c/nonexistent-page/backlinks/")
+        r = client.get(
+            reverse(
+                "page_backlinks",
+                kwargs={"path": "nonexistent-page"},
+            )
+        )
         assert r.status_code == 404
 
 
@@ -2122,7 +2321,7 @@ class TestCleanupCommand:
 class TestPageEditLock:
     def test_edit_get_acquires_lock(self, client, user, page):
         client.force_login(user)
-        client.get("/c/getting-started/edit/")
+        client.get(reverse("page_edit", kwargs={"path": page.content_path}))
         assert EditLock.objects.filter(page=page, user=user).exists()
 
     def test_warning_shown_when_locked_by_other(
@@ -2130,7 +2329,9 @@ class TestPageEditLock:
     ):
         acquire_lock_for_page(page, other_user)
         client.force_login(user)
-        r = client.get("/c/getting-started/edit/")
+        r = client.get(
+            reverse("page_edit", kwargs={"path": page.content_path})
+        )
         assert r.status_code == 200
         assert b"Editing in Progress" in r.content
         assert b"Bob" in r.content
@@ -2138,24 +2339,28 @@ class TestPageEditLock:
     def test_no_warning_when_locked_by_self(self, client, user, page):
         acquire_lock_for_page(page, user)
         client.force_login(user)
-        r = client.get("/c/getting-started/edit/")
+        r = client.get(
+            reverse("page_edit", kwargs={"path": page.content_path})
+        )
         assert r.status_code == 200
         assert b"Editing in Progress" not in r.content
 
     def test_override_takes_over_lock(self, client, user, other_user, page):
         acquire_lock_for_page(page, other_user)
         client.force_login(user)
-        r = client.post("/c/getting-started/edit/?override_lock=1")
+        edit_url = reverse("page_edit", kwargs={"path": page.content_path})
+        r = client.post(f"{edit_url}?override_lock=1")
         assert r.status_code == 302
         lock = EditLock.objects.get(page=page)
         assert lock.user == user
 
     def test_save_releases_lock(self, client, user, page):
         client.force_login(user)
-        client.get("/c/getting-started/edit/")
+        edit_url = reverse("page_edit", kwargs={"path": page.content_path})
+        client.get(edit_url)
         assert EditLock.objects.filter(page=page).exists()
         client.post(
-            "/c/getting-started/edit/",
+            edit_url,
             {
                 "title": "Getting Started",
                 "content": "Updated",
@@ -2172,7 +2377,12 @@ class TestPageEditLock:
         future = timezone.now() + EditLock.LOCK_DURATION * 2
         with time_machine.travel(future, tick=False):
             client.force_login(user)
-            r = client.get("/c/getting-started/edit/")
+            r = client.get(
+                reverse(
+                    "page_edit",
+                    kwargs={"path": page.content_path},
+                )
+            )
             assert b"Editing in Progress" not in r.content
 
 
@@ -2195,47 +2405,47 @@ class TestCSPHeaders:
     def test_csp_header_on_page_detail(self, client, user, page):
         """Page detail responses include a CSP header."""
         client.force_login(user)
-        r = client.get(f"/c/{page.slug}/")
+        r = client.get(page.get_absolute_url())
         assert "Content-Security-Policy" in r
 
     def test_csp_header_on_root(self, client, user, root_directory):
         """Root directory response includes a CSP header."""
         client.force_login(user)
-        r = client.get("/c/")
+        r = client.get(reverse("root"))
         assert "Content-Security-Policy" in r
 
     def test_csp_blocks_frames(self, client, user, page):
         """CSP header includes frame-src 'none' to block embedding."""
         client.force_login(user)
-        r = client.get(f"/c/{page.slug}/")
+        r = client.get(page.get_absolute_url())
         csp = r["Content-Security-Policy"]
         assert "frame-src 'none'" in csp
 
     def test_csp_blocks_object(self, client, user, page):
         """CSP header includes object-src 'none' to block plugins."""
         client.force_login(user)
-        r = client.get(f"/c/{page.slug}/")
+        r = client.get(page.get_absolute_url())
         csp = r["Content-Security-Policy"]
         assert "object-src 'none'" in csp
 
     def test_csp_has_default_src(self, client, user, page):
         """CSP header includes a default-src directive."""
         client.force_login(user)
-        r = client.get(f"/c/{page.slug}/")
+        r = client.get(page.get_absolute_url())
         csp = r["Content-Security-Policy"]
         assert "default-src" in csp
 
     def test_csp_has_script_src(self, client, user, page):
         """CSP header includes a script-src directive."""
         client.force_login(user)
-        r = client.get(f"/c/{page.slug}/")
+        r = client.get(page.get_absolute_url())
         csp = r["Content-Security-Policy"]
         assert "script-src" in csp
 
     def test_csp_does_not_allow_unsafe_eval(self, client, user, page):
         """SECURITY: CSP must not include unsafe-eval now that Alpine CSP build is used."""
         client.force_login(user)
-        r = client.get(f"/c/{page.slug}/")
+        r = client.get(page.get_absolute_url())
         csp = r["Content-Security-Policy"]
         assert "'unsafe-eval'" not in csp
 
@@ -2262,7 +2472,7 @@ class TestSearchPermissionFiltering:
             updated_by=user,
             visibility=Page.Visibility.PRIVATE,
         )
-        r = client.get("/search/?q=anonvisibility")
+        r = client.get(f"{reverse('search')}?q=anonvisibility")
         content = r.content.decode()
         assert "Anon Public Page" in content
         assert "Anon Private Page" not in content
@@ -2286,7 +2496,7 @@ class TestSearchPermissionFiltering:
             visibility=Page.Visibility.INTERNAL,
         )
         client.force_login(user)
-        r = client.get("/search/?q=searchterm")
+        r = client.get(f"{reverse('search')}?q=searchterm")
         content = r.content.decode()
         assert pub.title in content
         assert internal.title in content
@@ -2296,13 +2506,13 @@ class TestSearchPermissionFiltering:
     ):
         """Private pages should not be visible to non-owners."""
         client.force_login(other_user)
-        r = client.get("/search/?q=secret")
+        r = client.get(f"{reverse('search')}?q=secret")
         assert private_page.title not in r.content.decode()
 
     def test_private_visible_to_owner(self, client, user, private_page):
         """Private pages should be visible to the owner."""
         client.force_login(user)
-        r = client.get("/search/?q=secret")
+        r = client.get(f"{reverse('search')}?q=secret")
         assert private_page.title in r.content.decode()
 
     def test_page_in_private_dir_hidden(
@@ -2319,7 +2529,7 @@ class TestSearchPermissionFiltering:
             visibility=Page.Visibility.PUBLIC,
         )
         client.force_login(other_user)
-        r = client.get("/search/?q=searchterm")
+        r = client.get(f"{reverse('search')}?q=searchterm")
         assert "Hidden Dir Page" not in r.content.decode()
 
     def test_system_owner_sees_everything(
@@ -2327,7 +2537,7 @@ class TestSearchPermissionFiltering:
     ):
         """System owner should see all pages including private."""
         client.force_login(owner_user)
-        r = client.get("/search/?q=secret")
+        r = client.get(f"{reverse('search')}?q=secret")
         assert private_page.title in r.content.decode()
 
     def test_pagination_returns_correct_count(self, client, user):
@@ -2343,7 +2553,7 @@ class TestSearchPermissionFiltering:
                 visibility=Page.Visibility.PUBLIC,
             )
         client.force_login(user)
-        r = client.get("/search/?q=bulksearchterm")
+        r = client.get(f"{reverse('search')}?q=bulksearchterm")
         assert "30 results" in r.content.decode()
 
 
@@ -2354,27 +2564,27 @@ class TestSearchView:
     def test_empty_query_renders_form(self, client, user):
         """Empty query should render the search form without results."""
         client.force_login(user)
-        r = client.get("/search/")
+        r = client.get(reverse("search"))
         assert r.status_code == 200
         assert b"Search" in r.content
 
     def test_basic_search_returns_results(self, client, user, page):
         """Basic text query should return matching pages."""
         client.force_login(user)
-        r = client.get("/search/?q=Welcome")
+        r = client.get(f"{reverse('search')}?q=Welcome")
         assert r.status_code == 200
         assert page.title in r.content.decode()
 
     def test_search_snippet_in_results(self, client, user, page):
         """Results should contain highlighted snippets with <mark> tags."""
         client.force_login(user)
-        r = client.get("/search/?q=Welcome")
+        r = client.get(f"{reverse('search')}?q=Welcome")
         assert b"<mark>" in r.content
 
     def test_search_sort_edited_desc(self, client, user, page):
         """Sort=edited_desc should not error and should return results."""
         client.force_login(user)
-        r = client.get("/search/?q=Welcome&sort=edited_desc")
+        r = client.get(f"{reverse('search')}?q=Welcome&sort=edited_desc")
         assert r.status_code == 200
         assert page.title in r.content.decode()
 
@@ -2390,7 +2600,7 @@ class TestSearchView:
                 visibility=Page.Visibility.PUBLIC,
             )
         client.force_login(user)
-        r = client.get("/search/?q=paginationterm&page=2")
+        r = client.get(f"{reverse('search')}?q=paginationterm&page=2")
         assert r.status_code == 200
         content = r.content.decode()
         assert "Paginated Page" in content
@@ -2407,7 +2617,7 @@ class TestSearchView:
             visibility=Page.Visibility.PUBLIC,
         )
         client.force_login(user)
-        r = client.get("/search/?q=facetterm")
+        r = client.get(f"{reverse('search')}?q=facetterm")
         content = r.content.decode()
         assert "Engineering" in content
 
@@ -2433,7 +2643,7 @@ class TestSearchView:
             visibility=Page.Visibility.PUBLIC,
         )
         client.force_login(user)
-        r = client.get("/search/?q=narrowterm&in=engineering")
+        r = client.get(f"{reverse('search')}?q=narrowterm&in=engineering")
         content = r.content.decode()
         assert "Engineering Page" in content
         assert "Other Page" not in content
@@ -2449,7 +2659,7 @@ class TestSearchView:
             visibility=Page.Visibility.PUBLIC,
         )
         client.force_login(user)
-        r = client.get('/search/?q="quick brown fox"')
+        r = client.get(f'{reverse("search")}?q="quick brown fox"')
         assert "Phrase Match Page" in r.content.decode()
 
     def test_exclude_search(self, client, user):
@@ -2471,7 +2681,7 @@ class TestSearchView:
             visibility=Page.Visibility.PUBLIC,
         )
         client.force_login(user)
-        r = client.get("/search/?q=excludetest -draft")
+        r = client.get(f"{reverse('search')}?q=excludetest -draft")
         content = r.content.decode()
         assert "Keep This Page" in content
         assert "Exclude This Draft" not in content
@@ -2487,7 +2697,7 @@ class TestSearchView:
             visibility=Page.Visibility.INTERNAL,
         )
         client.force_login(user)
-        r = client.get("/search/?q=badgeterm")
+        r = client.get(f"{reverse('search')}?q=badgeterm")
         # Building icon has title="FLP Staff"
         assert b'title="FLP Staff"' in r.content
 
@@ -2496,7 +2706,12 @@ class TestRawMarkdown:
     """Test the .md endpoint that returns raw markdown."""
 
     def test_returns_markdown_content(self, client, page):
-        r = client.get(f"/c/{page.slug}.md")
+        r = client.get(
+            reverse(
+                "page_raw_markdown",
+                kwargs={"path": page.content_path},
+            )
+        )
         assert r.status_code == 200
         assert r["Content-Type"] == "text/markdown"
         assert r.content.startswith(f"# {page.title}\n".encode())
@@ -2506,23 +2721,43 @@ class TestRawMarkdown:
         self, client, page_in_directory
     ):
         page = page_in_directory
-        r = client.get(f"/c/{page.directory.path}/{page.slug}.md")
+        r = client.get(
+            reverse(
+                "page_raw_markdown",
+                kwargs={"path": page.content_path},
+            )
+        )
         assert r.status_code == 200
         assert r["Content-Type"] == "text/markdown"
 
     def test_private_page_blocked_for_anonymous(self, client, private_page):
-        r = client.get(f"/c/{private_page.slug}.md")
+        r = client.get(
+            reverse(
+                "page_raw_markdown",
+                kwargs={"path": private_page.content_path},
+            )
+        )
         assert r.status_code == 404
 
     def test_private_page_allowed_for_owner(self, client, user, private_page):
         client.force_login(user)
-        r = client.get(f"/c/{private_page.slug}.md")
+        r = client.get(
+            reverse(
+                "page_raw_markdown",
+                kwargs={"path": private_page.content_path},
+            )
+        )
         assert r.status_code == 200
         assert f"# {private_page.title}".encode() in r.content
         assert private_page.content.encode() in r.content
 
     def test_nonexistent_page_returns_404(self, client, db):
-        r = client.get("/c/no-such-page.md")
+        r = client.get(
+            reverse(
+                "page_raw_markdown",
+                kwargs={"path": "no-such-page"},
+            )
+        )
         assert r.status_code == 404
 
 
@@ -2544,7 +2779,7 @@ class TestLinkUploadsToPage:
         assert upload.page is None
 
         r = client.post(
-            "/c/new/",
+            reverse("page_create"),
             {
                 "title": "Page With Image",
                 "content": f"![pic](/files/{upload.pk}/pic.png)",
@@ -2566,8 +2801,9 @@ class TestLinkUploadsToPage:
             original_filename="doc.pdf",
             content_type="application/pdf",
         )
+        edit_url = reverse("page_edit", kwargs={"path": page.content_path})
         r = client.post(
-            f"/c/{page.slug}/edit/",
+            edit_url,
             {
                 "title": page.title,
                 "content": f"See [doc](/files/{upload.pk}/doc.pdf)",
@@ -2591,7 +2827,7 @@ class TestLinkUploadsToPage:
         # No revision references the upload, so removing from content
         # should unlink it.
         r = client.post(
-            f"/c/{page.slug}/edit/",
+            reverse("page_edit", kwargs={"path": page.content_path}),
             {
                 "title": page.title,
                 "content": "No images here.",
@@ -2621,7 +2857,7 @@ class TestLinkUploadsToPage:
 
         # Edit page to remove the reference from current content
         r = client.post(
-            f"/c/{page.slug}/edit/",
+            reverse("page_edit", kwargs={"path": page.content_path}),
             {
                 "title": page.title,
                 "content": "Image removed from current content.",
@@ -2643,9 +2879,10 @@ class TestLinkUploadsToPage:
             original_filename="rev.png",
             content_type="image/png",
         )
+        edit_url = reverse("page_edit", kwargs={"path": page.content_path})
         # Edit page via view to add the file reference (links the upload)
         client.post(
-            f"/c/{page.slug}/edit/",
+            edit_url,
             {
                 "title": page.title,
                 "content": f"![img](/files/{upload.pk}/rev.png)",
@@ -2661,7 +2898,7 @@ class TestLinkUploadsToPage:
         # Edit page to remove the reference — upload stays linked
         # because the previous revision still references it.
         client.post(
-            f"/c/{page.slug}/edit/",
+            edit_url,
             {
                 "title": page.title,
                 "content": "No image.",
@@ -2674,7 +2911,13 @@ class TestLinkUploadsToPage:
 
         # Revert to the revision that had the image
         r = client.post(
-            f"/c/{page.slug}/revert/{rev_with_image.revision_number}/"
+            reverse(
+                "page_revert",
+                kwargs={
+                    "path": page.content_path,
+                    "rev_num": rev_with_image.revision_number,
+                },
+            )
         )
         assert r.status_code == 302
         upload.refresh_from_db()
@@ -2692,7 +2935,7 @@ class TestLinkUploadsToPage:
         )
         client.force_login(user)
         r = client.post(
-            f"/c/{page.slug}/edit/",
+            reverse("page_edit", kwargs={"path": page.content_path}),
             {
                 "title": page.title,
                 "content": f"![stolen](/files/{foreign_upload.pk}/secret.png)",
@@ -2725,7 +2968,7 @@ class TestLinkUploadsToPage:
         )
         client.force_login(user)
         r = client.post(
-            f"/c/{page.slug}/edit/",
+            reverse("page_edit", kwargs={"path": page.content_path}),
             {
                 "title": page.title,
                 "content": f"![img](/files/{upload.pk}/attached.png)",

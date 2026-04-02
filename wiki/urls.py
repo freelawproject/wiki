@@ -2,8 +2,8 @@ from django.conf import settings
 from django.contrib import admin
 from django.contrib.sitemaps.views import sitemap
 from django.urls import include, path
-from django.views.generic import RedirectView
 
+from wiki.directories.views import root_view
 from wiki.lib.monitoring import health_check, heartbeat, sentry_fail
 from wiki.lib.sitemap import DirectorySitemap, PageSitemap
 from wiki.lib.views import llms_txt, robots_txt
@@ -16,7 +16,7 @@ sitemaps = {
 }
 
 urlpatterns = [
-    path("", RedirectView.as_view(url="/c/", permanent=False)),
+    path("", root_view, name="root"),
     path("monitoring/heartbeat/", heartbeat, name="heartbeat"),
     path("monitoring/health-check/", health_check, name="health_check"),
     path("sentry/error/", sentry_fail, name="sentry_fail"),
