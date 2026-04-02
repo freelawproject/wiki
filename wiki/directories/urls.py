@@ -1,4 +1,5 @@
 from django.urls import path
+from django.views.generic import RedirectView
 
 from wiki.pages.views import page_create
 from wiki.subscriptions.views import toggle_directory_subscription
@@ -6,7 +7,7 @@ from wiki.subscriptions.views import toggle_directory_subscription
 from . import views
 
 urlpatterns = [
-    path("", views.root_view, name="root"),
+    path("", RedirectView.as_view(url="/", permanent=True)),
     path("new/", page_create, name="page_create"),
     path("new-dir/", views.directory_create, name="directory_create"),
     path(

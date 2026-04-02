@@ -96,7 +96,7 @@ class Directory(models.Model):
     def get_absolute_url(self):
         if self.path:
             return f"/c/{self.path}"
-        return "/c/"
+        return "/"
 
     def get_ancestors(self):
         """Walk up the parent chain and return list of ancestors."""

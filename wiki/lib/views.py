@@ -27,6 +27,7 @@ def robots_txt(request):
     sitemap_url = f"{settings.BASE_URL}{reverse('django.contrib.sitemaps.views.sitemap')}"
     lines = [
         "User-agent: *",
+        "Allow: /",
         "Allow: /c/",
         "Allow: /llms.txt",
         "",
