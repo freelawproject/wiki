@@ -252,7 +252,10 @@ class TestSitemap:
         )
         response = client.get(reverse("django.contrib.sitemaps.views.sitemap"))
         content = response.content.decode()
-        assert directory.get_absolute_url() in content
+        assert (
+            f"<loc>http://testserver{directory.get_absolute_url()}</loc>"
+            in content
+        )
 
     def test_sitemap_excludes_private_directory(self, client):
         directory = Directory.objects.create(

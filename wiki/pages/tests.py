@@ -292,6 +292,30 @@ class TestPageDetail:
         assert b"<h2" in r.content
 
 
+class TestPageAbsoluteUrl:
+    def test_page_without_directory(self, page):
+        assert page.get_absolute_url() == "/c/getting-started"
+
+    def test_page_in_subdirectory(self, page_in_directory, sub_directory):
+        assert page_in_directory.get_absolute_url() == (
+            f"/c/{sub_directory.path}/{page_in_directory.slug}"
+        )
+
+    def test_page_in_root_directory_no_double_slash(
+        self, user, root_directory
+    ):
+        p = Page.objects.create(
+            title="Root Page",
+            slug="root-page",
+            directory=root_directory,
+            owner=user,
+            created_by=user,
+            updated_by=user,
+        )
+        assert p.get_absolute_url() == "/c/root-page"
+        assert "//" not in p.get_absolute_url()
+
+
 class TestPageEdit:
     def test_edit_requires_login(self, client, page):
         r = client.get(
