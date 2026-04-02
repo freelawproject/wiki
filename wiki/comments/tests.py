@@ -3,6 +3,7 @@
 import pytest
 from django.core import mail
 from django.test import Client
+from django.urls import reverse
 
 from wiki.comments.models import PageComment
 from wiki.proposals.models import ChangeProposal
@@ -21,7 +22,7 @@ class TestSubmitComment:
         """A viewer can submit a comment via the feedback page."""
         client.force_login(other_user)
         r = client.post(
-            f"/c/{page.slug}/feedback/",
+            reverse("page_feedback", kwargs={"path": page.slug}),
             {
                 "submit_comment": "1",
                 "message": "This page needs updating.",
@@ -37,7 +38,7 @@ class TestSubmitComment:
         """Submitting a comment emails the page owner."""
         client.force_login(other_user)
         client.post(
-            f"/c/{page.slug}/feedback/",
+            reverse("page_feedback", kwargs={"path": page.slug}),
             {
                 "submit_comment": "1",
                 "message": "Please fix the intro.",
@@ -50,7 +51,7 @@ class TestSubmitComment:
     def test_anon_can_comment_on_public_page(self, client, page):
         """An anonymous user can leave a comment with optional email."""
         r = client.post(
-            f"/c/{page.slug}/feedback/",
+            reverse("page_feedback", kwargs={"path": page.slug}),
             {
                 "submit_comment": "1",
                 "message": "Anon feedback here.",
@@ -64,14 +65,16 @@ class TestSubmitComment:
 
     def test_anon_cannot_comment_on_private_page(self, client, private_page):
         """An anonymous user gets 404 for a private page."""
-        r = client.get(f"/c/{private_page.slug}/feedback/")
+        r = client.get(
+            reverse("page_feedback", kwargs={"path": private_page.slug})
+        )
         assert r.status_code == 404
 
     def test_editor_can_submit_comment(self, client, user, page):
         """Editors/owners can leave feedback via the propose workflow."""
         client.force_login(user)
         r = client.post(
-            f"/c/{page.slug}/feedback/",
+            reverse("page_feedback", kwargs={"path": page.slug}),
             {
                 "submit_comment": "1",
                 "message": "Owner leaving a comment.",
@@ -87,14 +90,24 @@ class TestCommentDetail:
     def test_detail_requires_login(self, client, page):
         """Comment detail requires authentication."""
         comment = PageComment.objects.create(page=page, message="Test comment")
-        r = client.get(f"/c/{page.slug}/comments/{comment.pk}/")
+        r = client.get(
+            reverse(
+                "comment_detail",
+                kwargs={"path": page.slug, "pk": comment.pk},
+            )
+        )
         assert r.status_code == 302  # redirect to login
 
     def test_editor_sees_comment_detail(self, client, user, page):
         """Editor can view a comment."""
         comment = PageComment.objects.create(page=page, message="Test comment")
         client.force_login(user)
-        r = client.get(f"/c/{page.slug}/comments/{comment.pk}/")
+        r = client.get(
+            reverse(
+                "comment_detail",
+                kwargs={"path": page.slug, "pk": comment.pk},
+            )
+        )
         assert r.status_code == 200
         assert b"Test comment" in r.content
 
@@ -102,14 +115,24 @@ class TestCommentDetail:
         """Non-editors cannot view comment details."""
         comment = PageComment.objects.create(page=page, message="Test comment")
         client.force_login(other_user)
-        r = client.get(f"/c/{page.slug}/comments/{comment.pk}/")
+        r = client.get(
+            reverse(
+                "comment_detail",
+                kwargs={"path": page.slug, "pk": comment.pk},
+            )
+        )
         assert r.status_code == 404
 
     def test_editor_sees_reply_form_on_pending(self, client, user, page):
         """Editor sees reply form for pending comments."""
         comment = PageComment.objects.create(page=page, message="Need help")
         client.force_login(user)
-        r = client.get(f"/c/{page.slug}/comments/{comment.pk}/")
+        r = client.get(
+            reverse(
+                "comment_detail",
+                kwargs={"path": page.slug, "pk": comment.pk},
+            )
+        )
         assert b"Send Reply" in r.content
 
     def test_no_reply_form_on_resolved(self, client, user, page):
@@ -120,7 +143,12 @@ class TestCommentDetail:
             status=PageComment.Status.RESOLVED,
         )
         client.force_login(user)
-        r = client.get(f"/c/{page.slug}/comments/{comment.pk}/")
+        r = client.get(
+            reverse(
+                "comment_detail",
+                kwargs={"path": page.slug, "pk": comment.pk},
+            )
+        )
         assert b"Send Reply" not in r.content
 
 
@@ -137,7 +165,10 @@ class TestCommentReply:
         )
         client.force_login(user)
         r = client.post(
-            f"/c/{page.slug}/comments/{comment.pk}/reply/",
+            reverse(
+                "comment_reply",
+                kwargs={"path": page.slug, "pk": comment.pk},
+            ),
             {"reply": "Done, thanks!"},
         )
         assert r.status_code == 302
@@ -160,7 +191,10 @@ class TestCommentReply:
         )
         client.force_login(user)
         client.post(
-            f"/c/{page.slug}/comments/{comment.pk}/reply/",
+            reverse(
+                "comment_reply",
+                kwargs={"path": page.slug, "pk": comment.pk},
+            ),
             {"reply": "Thanks for the feedback."},
         )
         anon_emails = [m for m in mail.outbox if "anon@example.com" in m.to]
@@ -171,7 +205,10 @@ class TestCommentReply:
         comment = PageComment.objects.create(page=page, message="Test")
         client.force_login(other_user)
         r = client.post(
-            f"/c/{page.slug}/comments/{comment.pk}/reply/",
+            reverse(
+                "comment_reply",
+                kwargs={"path": page.slug, "pk": comment.pk},
+            ),
             {"reply": "Should fail"},
         )
         assert r.status_code == 404
@@ -185,7 +222,10 @@ class TestCommentReply:
         )
         client.force_login(user)
         r = client.post(
-            f"/c/{page.slug}/comments/{comment.pk}/reply/",
+            reverse(
+                "comment_reply",
+                kwargs={"path": page.slug, "pk": comment.pk},
+            ),
             {"reply": "Too late"},
         )
         assert r.status_code == 404
@@ -199,7 +239,12 @@ class TestCommentResolve:
         """Resolving sets status to resolved."""
         comment = PageComment.objects.create(page=page, message="Fix needed")
         client.force_login(user)
-        r = client.post(f"/c/{page.slug}/comments/{comment.pk}/resolve/")
+        r = client.post(
+            reverse(
+                "comment_resolve",
+                kwargs={"path": page.slug, "pk": comment.pk},
+            )
+        )
         assert r.status_code == 302
         comment.refresh_from_db()
         assert comment.status == "resolved"
@@ -210,7 +255,12 @@ class TestCommentResolve:
         """Non-editors cannot resolve comments."""
         comment = PageComment.objects.create(page=page, message="Test")
         client.force_login(other_user)
-        r = client.post(f"/c/{page.slug}/comments/{comment.pk}/resolve/")
+        r = client.post(
+            reverse(
+                "comment_resolve",
+                kwargs={"path": page.slug, "pk": comment.pk},
+            )
+        )
         assert r.status_code == 404
 
     def test_already_resolved_returns_404(self, client, user, page):
@@ -221,7 +271,12 @@ class TestCommentResolve:
             status=PageComment.Status.RESOLVED,
         )
         client.force_login(user)
-        r = client.post(f"/c/{page.slug}/comments/{comment.pk}/resolve/")
+        r = client.post(
+            reverse(
+                "comment_resolve",
+                kwargs={"path": page.slug, "pk": comment.pk},
+            )
+        )
         assert r.status_code == 404
 
 
@@ -231,7 +286,7 @@ class TestCommentResolve:
 class TestReviewQueue:
     def test_requires_login(self, client):
         """Review queue requires authentication."""
-        r = client.get("/u/review/")
+        r = client.get(reverse("review_queue"))
         assert r.status_code == 302
 
     def test_shows_pending_proposals(self, client, user, other_user, page):
@@ -244,7 +299,7 @@ class TestReviewQueue:
             change_message="Fix typo",
         )
         client.force_login(user)
-        r = client.get("/u/review/")
+        r = client.get(reverse("review_queue"))
         assert r.status_code == 200
         assert b"Fix typo" in r.content
 
@@ -255,7 +310,7 @@ class TestReviewQueue:
             message="Please update this section.",
         )
         client.force_login(user)
-        r = client.get("/u/review/")
+        r = client.get(reverse("review_queue"))
         assert r.status_code == 200
         assert b"Please update this section" in r.content
 
@@ -266,14 +321,14 @@ class TestReviewQueue:
             message="Should not see this.",
         )
         client.force_login(other_user)
-        r = client.get("/u/review/")
+        r = client.get(reverse("review_queue"))
         assert r.status_code == 200
         assert b"Should not see this" not in r.content
 
     def test_empty_state(self, client, user, page):
         """Review queue shows empty state when no pending items."""
         client.force_login(user)
-        r = client.get("/u/review/")
+        r = client.get(reverse("review_queue"))
         assert r.status_code == 200
         assert b"No pending items" in r.content
 
@@ -289,12 +344,12 @@ class TestReviewQueue:
         page.save()
 
         client.force_login(other_user)
-        r = client.get("/u/review/")
+        r = client.get(reverse("review_queue"))
         assert b"Old comment" in r.content
 
         # Original owner no longer sees it
         client.force_login(user)
-        r = client.get("/u/review/")
+        r = client.get(reverse("review_queue"))
         assert b"Old comment" not in r.content
 
 
@@ -308,14 +363,14 @@ class TestNavbarBadge:
         """Review icon with badge appears when pending items exist."""
         PageComment.objects.create(page=page, message="Need fix")
         client.force_login(user)
-        r = client.get(f"/c/{page.slug}")
+        r = client.get(reverse("resolve_path", kwargs={"path": page.slug}))
         assert b"Review queue" in r.content
         assert b"bg-red-500" in r.content
 
     def test_review_link_hidden_when_none(self, client, user, page):
         """Review icon is hidden when no pending items."""
         client.force_login(user)
-        r = client.get(f"/c/{page.slug}")
+        r = client.get(reverse("resolve_path", kwargs={"path": page.slug}))
         assert b"Review queue" not in r.content
 
 
@@ -328,7 +383,7 @@ class TestPageDetailCommentCount:
         PageComment.objects.create(page=page, message="Comment 1")
         PageComment.objects.create(page=page, message="Comment 2")
         client.force_login(user)
-        r = client.get(f"/c/{page.slug}")
+        r = client.get(reverse("resolve_path", kwargs={"path": page.slug}))
         assert b"Feedback (2)" in r.content
 
     def test_combined_count(self, client, user, other_user, page):
@@ -342,5 +397,5 @@ class TestPageDetailCommentCount:
             change_message="fix",
         )
         client.force_login(user)
-        r = client.get(f"/c/{page.slug}")
+        r = client.get(reverse("resolve_path", kwargs={"path": page.slug}))
         assert b"Feedback (2)" in r.content

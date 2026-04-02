@@ -7,6 +7,7 @@ import pytest
 from django.contrib.auth.models import User
 from django.core.management import call_command
 from django.test import Client
+from django.urls import reverse
 from django.utils import timezone
 
 from wiki.directories.models import (
@@ -29,73 +30,75 @@ def client():
 
 class TestRootView:
     def test_root_page_loads(self, client, db):
-        r = client.get("/c/")
+        r = client.get(reverse("root"))
         assert r.status_code == 200
 
     def test_root_shows_pages(self, client, page):
-        r = client.get("/c/")
+        r = client.get(reverse("root"))
         assert b"Getting Started" in r.content
 
     def test_root_shows_subdirectories(
         self, client, root_directory, sub_directory
     ):
-        r = client.get("/c/")
+        r = client.get(reverse("root"))
         assert b"Engineering" in r.content
 
     def test_root_shows_new_page_link_for_auth(self, client, user):
         client.force_login(user)
-        r = client.get("/c/")
-        assert b"/c/new/" in r.content
+        r = client.get(reverse("root"))
+        assert reverse("page_create").encode() in r.content
 
     def test_root_hides_new_page_for_anon(self, client, db):
-        r = client.get("/c/")
-        assert b"/c/new/" not in r.content
+        r = client.get(reverse("root"))
+        assert reverse("page_create").encode() not in r.content
 
 
 class TestDirectoryDetail:
     def test_directory_loads(self, client, sub_directory):
-        r = client.get("/c/engineering")
+        r = client.get(sub_directory.get_absolute_url())
         assert r.status_code == 200
         assert b"Engineering" in r.content
 
     def test_directory_shows_pages(
         self, client, page_in_directory, sub_directory
     ):
-        r = client.get("/c/engineering")
+        r = client.get(sub_directory.get_absolute_url())
         assert b"Coding Standards" in r.content
 
     def test_directory_shows_subdirectories(
         self, client, sub_directory, nested_directory
     ):
-        r = client.get("/c/engineering")
+        r = client.get(sub_directory.get_absolute_url())
         assert b"DevOps" in r.content
 
     def test_nested_directory_loads(self, client, nested_directory):
-        r = client.get("/c/engineering/devops")
+        r = client.get(nested_directory.get_absolute_url())
         assert r.status_code == 200
         assert b"DevOps" in r.content
 
     def test_breadcrumbs_show_ancestry(self, client, nested_directory):
-        r = client.get("/c/engineering/devops")
+        r = client.get(nested_directory.get_absolute_url())
         content = r.content.decode()
         assert "Home" in content
         assert "Engineering" in content
         assert "DevOps" in content
 
     def test_nonexistent_directory_404(self, client, db):
-        r = client.get("/c/nonexistent")
+        r = client.get(reverse("resolve_path", kwargs={"path": "nonexistent"}))
         assert r.status_code == 404
 
 
 class TestDirectoryEdit:
     def test_edit_requires_login(self, client, sub_directory):
-        r = client.get("/c/engineering/edit-dir/")
+        r = client.get(
+            reverse("directory_edit", kwargs={"path": "engineering"})
+        )
         assert r.status_code == 302
 
     def test_owner_can_edit(self, client, user, sub_directory):
         client.force_login(user)
         r = client.post(
-            "/c/engineering/edit-dir/",
+            reverse("directory_edit", kwargs={"path": "engineering"}),
             {
                 "title": "Eng Team",
                 "description": "Updated",
@@ -109,7 +112,7 @@ class TestDirectoryEdit:
     def test_non_owner_cannot_edit(self, client, other_user, sub_directory):
         client.force_login(other_user)
         r = client.post(
-            "/c/engineering/edit-dir/",
+            reverse("directory_edit", kwargs={"path": "engineering"}),
             {"title": "Hacked", "description": ""},
         )
         assert r.status_code == 302
@@ -118,7 +121,9 @@ class TestDirectoryEdit:
 
     def test_edit_form_has_markdown_editor(self, client, user, sub_directory):
         client.force_login(user)
-        r = client.get("/c/engineering/edit-dir/")
+        r = client.get(
+            reverse("directory_edit", kwargs={"path": "engineering"})
+        )
         content = r.content.decode()
         assert 'id="markdown-editor"' in content
         assert "easymde.min.js" in content
@@ -129,7 +134,7 @@ class TestDirectoryEdit:
         self, client, user, root_directory
     ):
         client.force_login(user)
-        r = client.get("/c/new-dir/")
+        r = client.get(reverse("directory_create"))
         content = r.content.decode()
         assert 'id="markdown-editor"' in content
         assert "easymde.min.js" in content
@@ -144,7 +149,11 @@ class TestDirectoryEdit:
         the editor would silently fail to appear.
         """
         client.force_login(user)
-        for url in ["/c/new-dir/", "/c/engineering/edit-dir/"]:
+        urls = [
+            reverse("directory_create"),
+            reverse("directory_edit", kwargs={"path": "engineering"}),
+        ]
+        for url in urls:
             content = client.get(url).content.decode()
             assert 'id="editor-config"' in content, (
                 f"{url} missing editor-config"
@@ -157,7 +166,7 @@ class TestDirectoryEdit:
 
 class TestDirectoryModel:
     def test_get_absolute_url_root(self, root_directory):
-        assert root_directory.get_absolute_url() == "/c/"
+        assert root_directory.get_absolute_url() == "/"
 
     def test_get_absolute_url_subdir(self, sub_directory):
         assert sub_directory.get_absolute_url() == "/c/engineering"
@@ -169,7 +178,7 @@ class TestDirectoryModel:
 
     def test_get_breadcrumbs(self, nested_directory):
         crumbs = nested_directory.get_breadcrumbs()
-        assert crumbs[0] == ("Home", "/c/")
+        assert crumbs[0] == ("Home", reverse("root"))
         assert crumbs[-1][0] == "DevOps"
 
 
@@ -177,7 +186,7 @@ class TestCreatePageInDirectory:
     def test_create_page_in_dir(self, client, user, sub_directory):
         client.force_login(user)
         r = client.post(
-            "/c/engineering/new/",
+            reverse("page_create_in_dir", kwargs={"path": "engineering"}),
             {
                 "title": "New Page",
                 "content": "Content",
@@ -192,14 +201,14 @@ class TestCreatePageInDirectory:
 
 class TestCreateDirectory:
     def test_create_requires_login(self, client, db):
-        r = client.get("/c/new-dir/")
+        r = client.get(reverse("directory_create"))
         assert r.status_code == 302
-        assert "/u/login/" in r.url
+        assert reverse("login") in r.url
 
     def test_create_root_directory(self, client, user, root_directory):
         client.force_login(user)
         r = client.post(
-            "/c/new-dir/",
+            reverse("directory_create"),
             {"title": "Projects", "description": "", "visibility": "public"},
         )
         assert r.status_code == 302
@@ -211,7 +220,10 @@ class TestCreateDirectory:
     def test_create_subdirectory(self, client, user, sub_directory):
         client.force_login(user)
         r = client.post(
-            "/c/engineering/new-dir/",
+            reverse(
+                "directory_create_in_dir",
+                kwargs={"path": "engineering"},
+            ),
             {
                 "title": "Backend",
                 "description": "Backend team docs",
@@ -226,23 +238,27 @@ class TestCreateDirectory:
         self, client, user, root_directory
     ):
         client.force_login(user)
-        r = client.get("/c/")
+        r = client.get(reverse("root"))
         assert b"new-dir" in r.content
 
     def test_new_dir_button_hidden_for_anon(self, client, db):
-        r = client.get("/c/")
+        r = client.get(reverse("root"))
         assert b"new-dir" not in r.content
 
 
 class TestDeleteDirectory:
     def test_delete_requires_login(self, client, sub_directory):
-        r = client.get("/c/engineering/delete-dir/")
+        r = client.get(
+            reverse("directory_delete", kwargs={"path": "engineering"})
+        )
         assert r.status_code == 302
-        assert "/u/login/" in r.url
+        assert reverse("login") in r.url
 
     def test_delete_empty_directory(self, client, user, sub_directory):
         client.force_login(user)
-        r = client.post("/c/engineering/delete-dir/")
+        r = client.post(
+            reverse("directory_delete", kwargs={"path": "engineering"})
+        )
         assert r.status_code == 302
         assert not Directory.objects.filter(path="engineering").exists()
 
@@ -250,7 +266,9 @@ class TestDeleteDirectory:
         self, client, user, sub_directory, nested_directory
     ):
         client.force_login(user)
-        r = client.post("/c/engineering/delete-dir/")
+        r = client.post(
+            reverse("directory_delete", kwargs={"path": "engineering"})
+        )
         # Should redirect back with error, directory still exists
         assert r.status_code == 302
         assert Directory.objects.filter(path="engineering").exists()
@@ -259,33 +277,41 @@ class TestDeleteDirectory:
         self, client, user, sub_directory, page_in_directory
     ):
         client.force_login(user)
-        r = client.post("/c/engineering/delete-dir/")
+        r = client.post(
+            reverse("directory_delete", kwargs={"path": "engineering"})
+        )
         assert r.status_code == 302
         assert Directory.objects.filter(path="engineering").exists()
 
     def test_non_editor_cannot_delete(self, client, other_user, sub_directory):
         client.force_login(other_user)
-        r = client.post("/c/engineering/delete-dir/")
+        r = client.post(
+            reverse("directory_delete", kwargs={"path": "engineering"})
+        )
         assert r.status_code == 302
         assert Directory.objects.filter(path="engineering").exists()
 
 
 class TestDirectoryPermissions:
     def test_permissions_requires_login(self, client, sub_directory):
-        r = client.get("/c/engineering/permissions-dir/")
+        r = client.get(
+            reverse("directory_permissions", kwargs={"path": "engineering"})
+        )
         assert r.status_code == 302
-        assert "/u/login/" in r.url
+        assert reverse("login") in r.url
 
     def test_permissions_page_loads(self, client, user, sub_directory):
         client.force_login(user)
-        r = client.get("/c/engineering/permissions-dir/")
+        r = client.get(
+            reverse("directory_permissions", kwargs={"path": "engineering"})
+        )
         assert r.status_code == 200
         assert b"Permissions" in r.content
 
     def test_add_permission(self, client, user, other_user, sub_directory):
         client.force_login(user)
         r = client.post(
-            "/c/engineering/permissions-dir/",
+            reverse("directory_permissions", kwargs={"path": "engineering"}),
             {"username": "bob", "permission_type": "view"},
         )
         assert r.status_code == 302
@@ -303,7 +329,7 @@ class TestDirectoryPermissions:
         )
         client.force_login(user)
         r = client.post(
-            "/c/engineering/permissions-dir/",
+            reverse("directory_permissions", kwargs={"path": "engineering"}),
             {"remove": perm.pk},
         )
         assert r.status_code == 302
@@ -311,13 +337,15 @@ class TestDirectoryPermissions:
 
     def test_non_editor_cannot_access(self, client, other_user, sub_directory):
         client.force_login(other_user)
-        r = client.get("/c/engineering/permissions-dir/")
+        r = client.get(
+            reverse("directory_permissions", kwargs={"path": "engineering"})
+        )
         assert r.status_code == 302
 
     def test_add_group_permission(self, client, user, sub_directory, group):
         client.force_login(user)
         r = client.post(
-            "/c/engineering/permissions-dir/",
+            reverse("directory_permissions", kwargs={"path": "engineering"}),
             {
                 "target_type": "group",
                 "group": group.pk,
@@ -339,7 +367,7 @@ class TestDirectoryPermissions:
         )
         client.force_login(user)
         r = client.post(
-            "/c/engineering/permissions-dir/",
+            reverse("directory_permissions", kwargs={"path": "engineering"}),
             {"remove": perm.pk},
         )
         assert r.status_code == 302
@@ -354,14 +382,16 @@ class TestDirectoryPermissions:
             permission_type="view",
         )
         client.force_login(user)
-        r = client.get("/c/engineering/permissions-dir/")
+        r = client.get(
+            reverse("directory_permissions", kwargs={"path": "engineering"})
+        )
         assert b"Engineering Team" in r.content
         assert b"Group Permissions" in r.content
 
 
 class TestDirectorySort:
     def test_default_sort_is_title(self, client, page):
-        r = client.get("/c/")
+        r = client.get(reverse("root"))
         assert r.status_code == 200
         assert b"Sort" in r.content
         # "Title" should be highlighted (active pill)
@@ -395,12 +425,12 @@ class TestDirectorySort:
         Page.objects.filter(pk=newer.pk).update(updated_at=timezone.now())
 
         # Default sort (title): AAA before ZZZ
-        r = client.get("/c/")
+        r = client.get(reverse("root"))
         content = r.content.decode()
         assert content.index("AAA First") < content.index("ZZZ Last")
 
         # Sort by updated: ZZZ (newer) before AAA (older)
-        r = client.get("/c/?sort=updated")
+        r = client.get(f"{reverse('root')}?sort=updated")
         content = r.content.decode()
         assert content.index("ZZZ Last") < content.index("AAA First")
 
@@ -427,18 +457,18 @@ class TestDirectorySort:
         )
 
         # Sort by views: high views page first
-        r = client.get("/c/?sort=views")
+        r = client.get(f"{reverse('root')}?sort=views")
         content = r.content.decode()
         assert content.index("ZZZ High Views") < content.index("AAA Low Views")
 
     def test_invalid_sort_falls_back_to_title(self, client, page):
-        r = client.get("/c/?sort=bogus")
+        r = client.get(f"{reverse('root')}?sort=bogus")
         assert r.status_code == 200
         # Should fall back to title (active pill)
         assert b">Title</span>" in r.content
 
     def test_sort_controls_hidden_when_empty(self, client, db):
-        r = client.get("/c/")
+        r = client.get(reverse("root"))
         assert b"Sort by:" not in r.content
 
     def test_sort_works_on_subdirectory(self, client, user, sub_directory):
@@ -451,7 +481,7 @@ class TestDirectorySort:
             created_by=user,
             updated_by=user,
         )
-        r = client.get("/c/engineering?sort=updated")
+        r = client.get(f"{sub_directory.get_absolute_url()}?sort=updated")
         assert r.status_code == 200
         # "Last edited" should be the active pill
         assert b">Last edited</span>" in r.content
@@ -482,7 +512,7 @@ class TestPinnedPages:
             updated_by=user,
             is_pinned=True,
         )
-        r = client.get("/c/")
+        r = client.get(reverse("root"))
         content = r.content.decode()
         assert content.index("ZZZ Pinned") < content.index("AAA Normal")
 
@@ -512,7 +542,7 @@ class TestPinnedPages:
         Page.objects.filter(pk=pinned.pk).update(
             updated_at=timezone.now() - timedelta(days=10)
         )
-        r = client.get("/c/?sort=updated")
+        r = client.get(f"{reverse('root')}?sort=updated")
         content = r.content.decode()
         assert content.index("Old Pinned") < content.index("New Unpinned")
 
@@ -521,7 +551,7 @@ class TestPinnedPages:
     ):
         """Page editors without directory edit permission cannot pin."""
         client.force_login(other_user)
-        r = client.post(f"/c/{page.slug}/pin/")
+        r = client.post(reverse("page_toggle_pin", kwargs={"path": page.slug}))
         assert r.status_code == 404
 
     def test_toggle_pin_works(self, client, owner_user, root_directory, page):
@@ -529,14 +559,14 @@ class TestPinnedPages:
         page.save(update_fields=["directory"])
         client.force_login(owner_user)
         assert not page.is_pinned
-        r = client.post(f"/c/{page.slug}/pin/")
+        r = client.post(reverse("page_toggle_pin", kwargs={"path": page.slug}))
         assert r.status_code == 200
         assert r.json()["is_pinned"] is True
         page.refresh_from_db()
         assert page.is_pinned
 
         # Toggle off
-        r = client.post(f"/c/{page.slug}/pin/")
+        r = client.post(reverse("page_toggle_pin", kwargs={"path": page.slug}))
         assert r.status_code == 200
         assert r.json()["is_pinned"] is False
         page.refresh_from_db()
@@ -548,7 +578,7 @@ class TestDirectorySearchAPI:
         self, client, user, root_directory, sub_directory
     ):
         client.force_login(user)
-        r = client.get("/api/dir-search/?parent=")
+        r = client.get(f"{reverse('dir_search')}?parent=")
         assert r.status_code == 200
         data = json.loads(r.content)
         titles = [d["title"] for d in data]
@@ -558,8 +588,8 @@ class TestDirectorySearchAPI:
         self, client, user, root_directory, sub_directory
     ):
         client.force_login(user)
-        r = client.get("/api/dir-search/?parent=&q=eng")
-        data = __import__("json").loads(r.content)
+        r = client.get(f"{reverse('dir_search')}?parent=&q=eng")
+        data = json.loads(r.content)
         assert len(data) == 1
         assert data[0]["title"] == "Engineering"
 
@@ -567,8 +597,8 @@ class TestDirectorySearchAPI:
         self, client, user, sub_directory, nested_directory
     ):
         client.force_login(user)
-        r = client.get("/api/dir-search/?parent=engineering")
-        data = __import__("json").loads(r.content)
+        r = client.get(f"{reverse('dir_search')}?parent=engineering")
+        data = json.loads(r.content)
         titles = [d["title"] for d in data]
         assert "DevOps" in titles
 
@@ -578,14 +608,14 @@ class TestHelpLink:
         """The /c/help link works after seed_help_pages creates the dir."""
         client.force_login(user)
         call_command("seed_help_pages")
-        r = client.get("/c/help")
+        r = client.get(reverse("resolve_path", kwargs={"path": "help"}))
         assert r.status_code == 200
         assert b"Help" in r.content
 
     def test_root_created_on_first_visit(self, client, db):
-        """Visiting /c/ creates the root directory if it doesn't exist."""
+        """Visiting / creates the root directory if it doesn't exist."""
         assert not Directory.objects.filter(path="").exists()
-        r = client.get("/c/")
+        r = client.get(reverse("root"))
         assert r.status_code == 200
         assert Directory.objects.filter(path="").exists()
 
@@ -601,17 +631,19 @@ class TestDirectorySearchOrphans:
             created_by=user,
         )
         client.force_login(user)
-        r = client.get("/api/dir-search/?parent=")
-        data = __import__("json").loads(r.content)
+        r = client.get(f"{reverse('dir_search')}?parent=")
+        data = json.loads(r.content)
         titles = [d["title"] for d in data]
         assert "Orphan Dir" in titles
 
 
 class TestMoveDirectory:
     def test_move_requires_login(self, client, sub_directory):
-        r = client.get("/c/engineering/move-dir/")
+        r = client.get(
+            reverse("directory_move", kwargs={"path": "engineering"})
+        )
         assert r.status_code == 302
-        assert "/u/login/" in r.url
+        assert reverse("login") in r.url
 
     def test_move_directory(self, client, user, sub_directory, root_directory):
         # Create a second top-level directory to move engineering into
@@ -624,7 +656,7 @@ class TestMoveDirectory:
         )
         client.force_login(user)
         r = client.post(
-            "/c/engineering/move-dir/",
+            reverse("directory_move", kwargs={"path": "engineering"}),
             {"parent": other.pk},
         )
         assert r.status_code == 302
@@ -649,7 +681,7 @@ class TestMoveDirectory:
         )
         client.force_login(user)
         client.post(
-            "/c/engineering/move-dir/",
+            reverse("directory_move", kwargs={"path": "engineering"}),
             {"parent": other.pk},
         )
         nested_directory.refresh_from_db()
@@ -665,7 +697,7 @@ class TestDirectoryVisibility:
     def test_create_private_directory(self, client, user, root_directory):
         client.force_login(user)
         r = client.post(
-            "/c/new-dir/",
+            reverse("directory_create"),
             {
                 "title": "Secret",
                 "description": "",
@@ -679,7 +711,7 @@ class TestDirectoryVisibility:
     def test_edit_visibility(self, client, user, sub_directory):
         client.force_login(user)
         r = client.post(
-            "/c/engineering/edit-dir/",
+            reverse("directory_edit", kwargs={"path": "engineering"}),
             {
                 "title": "Engineering",
                 "description": "",
@@ -696,21 +728,21 @@ class TestDirectoryVisibility:
         user = private_directory.owner
         SystemConfig.objects.create(owner=user)
         client.force_login(user)
-        r = client.get("/c/secret-team")
+        r = client.get(private_directory.get_absolute_url())
         assert b"Private" in r.content
 
     def test_visibility_badge_not_shown_for_public(
         self, client, user, sub_directory
     ):
         client.force_login(user)
-        r = client.get("/c/engineering")
+        r = client.get(sub_directory.get_absolute_url())
         assert b"Private" not in r.content
 
     def test_form_includes_visibility_field(
         self, client, user, root_directory
     ):
         client.force_login(user)
-        r = client.get("/c/new-dir/")
+        r = client.get(reverse("directory_create"))
         assert b'name="visibility"' in r.content
 
 
@@ -718,25 +750,25 @@ class TestDirectoryGate:
     """Part 2: can_view_directory and gate enforcement."""
 
     def test_public_directory_visible_to_anon(self, client, sub_directory):
-        r = client.get("/c/engineering")
+        r = client.get(sub_directory.get_absolute_url())
         assert r.status_code == 200
 
     def test_private_directory_404_for_anon(self, client, private_directory):
-        r = client.get("/c/secret-team")
+        r = client.get(private_directory.get_absolute_url())
         assert r.status_code == 404
 
     def test_private_directory_visible_to_owner(
         self, client, user, private_directory
     ):
         client.force_login(user)
-        r = client.get("/c/secret-team")
+        r = client.get(private_directory.get_absolute_url())
         assert r.status_code == 200
 
     def test_private_directory_404_for_other_user(
         self, client, other_user, private_directory
     ):
         client.force_login(other_user)
-        r = client.get("/c/secret-team")
+        r = client.get(private_directory.get_absolute_url())
         assert r.status_code == 404
 
     def test_private_directory_visible_to_system_owner(
@@ -744,7 +776,7 @@ class TestDirectoryGate:
     ):
         SystemConfig.objects.create(owner=other_user)
         client.force_login(other_user)
-        r = client.get("/c/secret-team")
+        r = client.get(private_directory.get_absolute_url())
         assert r.status_code == 200
 
     def test_private_directory_visible_with_permission(
@@ -756,13 +788,13 @@ class TestDirectoryGate:
             permission_type="view",
         )
         client.force_login(other_user)
-        r = client.get("/c/secret-team")
+        r = client.get(private_directory.get_absolute_url())
         assert r.status_code == 200
 
     def test_private_directory_hidden_in_root_listing(
         self, client, root_directory, sub_directory, private_directory
     ):
-        r = client.get("/c/")
+        r = client.get(reverse("root"))
         content = r.content.decode()
         assert "Engineering" in content
         assert "Secret Team" not in content
@@ -787,7 +819,7 @@ class TestDirectoryGate:
         )
         UserProfile.objects.create(user=other, display_name="Eve")
         client.force_login(other)
-        r = client.get("/c/engineering")
+        r = client.get(sub_directory.get_absolute_url())
         assert b"Private Child" not in r.content
 
     def test_private_page_in_private_dir_hidden(
@@ -820,7 +852,10 @@ class TestDirectoryGate:
         """Non-editor cannot create a subdirectory."""
         client.force_login(other_user)
         r = client.post(
-            "/c/engineering/new-dir/",
+            reverse(
+                "directory_create_in_dir",
+                kwargs={"path": "engineering"},
+            ),
             {
                 "title": "Hacked",
                 "description": "",
@@ -854,7 +889,10 @@ class TestApplyPermissions:
         )
         client.force_login(user)
         r = client.post(
-            "/c/engineering/apply-permissions-dir/",
+            reverse(
+                "directory_apply_permissions",
+                kwargs={"path": "engineering"},
+            ),
             {"scope": "direct"},
         )
         assert r.status_code == 302
@@ -885,7 +923,10 @@ class TestApplyPermissions:
         )
         client.force_login(user)
         r = client.post(
-            "/c/engineering/apply-permissions-dir/",
+            reverse(
+                "directory_apply_permissions",
+                kwargs={"path": "engineering"},
+            ),
             {"scope": "recursive"},
         )
         assert r.status_code == 302
@@ -907,7 +948,12 @@ class TestApplyPermissions:
         self, client, other_user, sub_directory
     ):
         client.force_login(other_user)
-        r = client.get("/c/engineering/apply-permissions-dir/")
+        r = client.get(
+            reverse(
+                "directory_apply_permissions",
+                kwargs={"path": "engineering"},
+            )
+        )
         assert r.status_code == 302  # redirect with error
 
     def test_apply_confirmation_page_shows_counts(
@@ -923,14 +969,21 @@ class TestApplyPermissions:
             updated_by=user,
         )
         client.force_login(user)
-        r = client.get("/c/engineering/apply-permissions-dir/")
+        r = client.get(
+            reverse(
+                "directory_apply_permissions",
+                kwargs={"path": "engineering"},
+            )
+        )
         assert r.status_code == 200
         assert b"direct pages only" in r.content
         assert b"recursively" in r.content
 
     def test_apply_link_on_permissions_page(self, client, user, sub_directory):
         client.force_login(user)
-        r = client.get("/c/engineering/permissions-dir/")
+        r = client.get(
+            reverse("directory_permissions", kwargs={"path": "engineering"})
+        )
         assert b"apply-permissions-dir" in r.content
 
     def test_apply_propagates_editability(self, client, user, sub_directory):
@@ -949,7 +1002,10 @@ class TestApplyPermissions:
         )
         client.force_login(user)
         client.post(
-            "/c/engineering/apply-permissions-dir/",
+            reverse(
+                "directory_apply_permissions",
+                kwargs={"path": "engineering"},
+            ),
             {"scope": "direct"},
         )
         page.refresh_from_db()
@@ -963,7 +1019,10 @@ class TestApplyPermissions:
         sub_directory.save(update_fields=["editability"])
         client.force_login(user)
         client.post(
-            "/c/engineering/apply-permissions-dir/",
+            reverse(
+                "directory_apply_permissions",
+                kwargs={"path": "engineering"},
+            ),
             {"scope": "recursive"},
         )
         nested_directory.refresh_from_db()
@@ -993,7 +1052,7 @@ class TestDirectoryEditability:
     ):
         client.force_login(user)
         r = client.post(
-            "/c/new-dir/",
+            reverse("directory_create"),
             {
                 "title": "Open Dir",
                 "description": "",
@@ -1008,7 +1067,7 @@ class TestDirectoryEditability:
     def test_edit_directory_editability(self, client, user, sub_directory):
         client.force_login(user)
         r = client.post(
-            "/c/engineering/edit-dir/",
+            reverse("directory_edit", kwargs={"path": "engineering"}),
             {
                 "title": "Engineering",
                 "description": "",
@@ -1026,7 +1085,7 @@ class TestDirectoryEditability:
         """Explicit overrides always work — no editability/visibility validation."""
         client.force_login(user)
         r = client.post(
-            "/c/new-dir/",
+            reverse("directory_create"),
             {
                 "title": "Bad Dir",
                 "description": "",
@@ -1043,7 +1102,7 @@ class TestDirectoryEditability:
         """Explicit overrides always work — no editability/visibility validation."""
         client.force_login(user)
         r = client.post(
-            "/c/engineering/edit-dir/",
+            reverse("directory_edit", kwargs={"path": "engineering"}),
             {
                 "title": "Engineering",
                 "description": "",
@@ -1061,7 +1120,7 @@ class TestDirectoryEditability:
         """Omitting editability still creates with 'restricted'."""
         client.force_login(user)
         r = client.post(
-            "/c/new-dir/",
+            reverse("directory_create"),
             {
                 "title": "Default Dir",
                 "description": "",
@@ -1076,7 +1135,7 @@ class TestDirectoryEditability:
         self, client, user, root_directory
     ):
         client.force_login(user)
-        r = client.get("/c/new-dir/")
+        r = client.get(reverse("directory_create"))
         assert b'name="editability"' in r.content
 
 
@@ -1087,7 +1146,7 @@ class TestDirectoryInheritableSettings:
         """in_llms_txt value is saved when editing a directory."""
         client.force_login(user)
         r = client.post(
-            "/c/engineering/edit-dir/",
+            reverse("directory_edit", kwargs={"path": "engineering"}),
             {
                 "title": "Engineering",
                 "description": "",
@@ -1106,7 +1165,7 @@ class TestDirectoryInheritableSettings:
         """in_sitemap value is saved when editing a directory."""
         client.force_login(user)
         r = client.post(
-            "/c/engineering/edit-dir/",
+            reverse("directory_edit", kwargs={"path": "engineering"}),
             {
                 "title": "Engineering",
                 "description": "",
@@ -1125,7 +1184,7 @@ class TestDirectoryInheritableSettings:
         """Setting fields to 'inherit' is saved correctly."""
         client.force_login(user)
         r = client.post(
-            "/c/engineering/edit-dir/",
+            reverse("directory_edit", kwargs={"path": "engineering"}),
             {
                 "title": "Engineering",
                 "description": "",
@@ -1150,7 +1209,7 @@ class TestDirectoryInheritableSettings:
 
         client.force_login(user)
         r = client.post(
-            "/c/engineering/edit-dir/",
+            reverse("directory_edit", kwargs={"path": "engineering"}),
             {
                 "title": "Engineering",
                 "description": "",
@@ -1172,7 +1231,7 @@ class TestDirectoryInheritableSettings:
         """Creating a directory saves all four inheritable settings."""
         client.force_login(user)
         r = client.post(
-            "/c/new-dir/",
+            reverse("directory_create"),
             {
                 "title": "New Dir",
                 "description": "",
@@ -1193,7 +1252,10 @@ class TestDirectoryInheritableSettings:
         """New directories default to 'inherit' when parent is provided."""
         client.force_login(user)
         r = client.post(
-            "/c/engineering/new-dir/",
+            reverse(
+                "directory_create_in_dir",
+                kwargs={"path": "engineering"},
+            ),
             {
                 "title": "Sub Team",
                 "description": "",
@@ -1217,7 +1279,7 @@ class TestDirectoryHistory:
     ):
         client.force_login(user)
         client.post(
-            "/c/engineering/edit-dir/",
+            reverse("directory_edit", kwargs={"path": "engineering"}),
             {
                 "title": "Engineering Updated",
                 "description": "New desc",
@@ -1237,7 +1299,7 @@ class TestDirectoryHistory:
     ):
         client.force_login(user)
         client.post(
-            "/c/new-dir/",
+            reverse("directory_create"),
             {
                 "title": "New Team",
                 "description": "",
@@ -1261,7 +1323,9 @@ class TestDirectoryHistory:
             revision_number=1,
             created_by=user,
         )
-        r = client.get("/c/engineering/history-dir/")
+        r = client.get(
+            reverse("directory_history", kwargs={"path": "engineering"})
+        )
         assert r.status_code == 200
         assert b"First edit" in r.content
 
@@ -1286,7 +1350,12 @@ class TestDirectoryHistory:
             revision_number=2,
             created_by=user,
         )
-        r = client.get("/c/engineering/diff-dir/1/2/")
+        r = client.get(
+            reverse(
+                "directory_diff",
+                kwargs={"path": "engineering", "v1": 1, "v2": 2},
+            )
+        )
         assert r.status_code == 200
         content = r.content.decode()
         assert "Metadata changes" in content
@@ -1319,7 +1388,12 @@ class TestDirectoryHistory:
             created_by=user,
         )
         client.force_login(user)
-        r = client.post("/c/engineering/revert-dir/1/")
+        r = client.post(
+            reverse(
+                "directory_revert",
+                kwargs={"path": "engineering", "rev_num": 1},
+            )
+        )
         assert r.status_code == 302
         sub_directory.refresh_from_db()
         assert sub_directory.title == "Old Title"
@@ -1334,7 +1408,9 @@ class TestDirectoryHistory:
         self, client, other_user, private_directory
     ):
         client.force_login(other_user)
-        r = client.get("/c/secret-team/history-dir/")
+        r = client.get(
+            reverse("directory_history", kwargs={"path": "secret-team"})
+        )
         assert r.status_code == 404
 
 
@@ -1344,14 +1420,14 @@ class TestDirectoryHistory:
 class TestDirectoryEditLock:
     def test_edit_acquires_lock(self, client, user, sub_directory):
         client.force_login(user)
-        client.get("/c/engineering/edit-dir/")
+        client.get(reverse("directory_edit", kwargs={"path": "engineering"}))
         assert EditLock.objects.filter(
             directory=sub_directory, user=user
         ).exists()
 
     def test_root_edit_acquires_lock(self, client, owner_user, root_directory):
         client.force_login(owner_user)
-        client.get("/c/edit-dir/")
+        client.get(reverse("directory_edit_root"))
         assert EditLock.objects.filter(
             directory=root_directory, user=owner_user
         ).exists()
@@ -1361,17 +1437,19 @@ class TestDirectoryEditLock:
     ):
         acquire_lock_for_directory(sub_directory, other_user)
         client.force_login(user)
-        r = client.get("/c/engineering/edit-dir/")
+        r = client.get(
+            reverse("directory_edit", kwargs={"path": "engineering"})
+        )
         assert r.status_code == 200
         assert b"Editing in Progress" in r.content
         assert b"Bob" in r.content
 
     def test_save_releases_lock(self, client, user, sub_directory):
         client.force_login(user)
-        client.get("/c/engineering/edit-dir/")
+        client.get(reverse("directory_edit", kwargs={"path": "engineering"}))
         assert EditLock.objects.filter(directory=sub_directory).exists()
         client.post(
-            "/c/engineering/edit-dir/",
+            reverse("directory_edit", kwargs={"path": "engineering"}),
             {
                 "title": "Engineering",
                 "description": "",
@@ -1391,7 +1469,7 @@ class TestDirectorySearchSecurity:
         """SECURITY: private directories must not appear in autocomplete
         for users without permission."""
         client.force_login(other_user)
-        r = client.get("/api/dir-search/?parent=&q=secret")
+        r = client.get(f"{reverse('dir_search')}?parent=&q=secret")
         data = json.loads(r.content)
         titles = [d["title"] for d in data]
         assert "Secret Team" not in titles
@@ -1401,7 +1479,7 @@ class TestDirectorySearchSecurity:
     ):
         """Directory owner should see their private directories."""
         client.force_login(user)
-        r = client.get("/api/dir-search/?parent=&q=secret")
+        r = client.get(f"{reverse('dir_search')}?parent=&q=secret")
         data = json.loads(r.content)
         titles = [d["title"] for d in data]
         assert "Secret Team" in titles
@@ -1425,7 +1503,9 @@ class TestMoveDirectoryFormSecurity:
         sub_directory.owner = other_user
         sub_directory.save()
         client.force_login(other_user)
-        r = client.get("/c/engineering/move-dir/")
+        r = client.get(
+            reverse("directory_move", kwargs={"path": "engineering"})
+        )
         assert r.status_code == 200
         assert b"Private Target" not in r.content
 
@@ -1449,7 +1529,9 @@ class TestMovePageFormSecurity:
         page.editability = "internal"
         page.save()
         client.force_login(other_user)
-        r = client.get("/c/getting-started/move/")
+        r = client.get(
+            reverse("page_move", kwargs={"path": "getting-started"})
+        )
         assert r.status_code == 200
         assert b"Private Target" not in r.content
 
@@ -1633,7 +1715,7 @@ class TestCleanRedundantOverrides:
         )
         client.force_login(user)
         r = client.post(
-            "/c/engineering/edit-dir/",
+            reverse("directory_edit", kwargs={"path": "engineering"}),
             {
                 "title": sub_directory.title,
                 "description": sub_directory.description,

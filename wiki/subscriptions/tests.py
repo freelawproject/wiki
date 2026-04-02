@@ -4,6 +4,7 @@ import pytest
 from django.core import mail
 from django.core.signing import Signer
 from django.test import Client
+from django.urls import reverse
 
 from wiki.subscriptions.models import (
     DirectorySubscription,
@@ -375,7 +376,7 @@ class TestUserJourneyScenarios:
 class TestToggleSubscription:
     def test_subscribe_to_page(self, client, user, page):
         client.force_login(user)
-        r = client.post(f"/c/{page.slug}/subscribe/")
+        r = client.post(reverse("page_subscribe", kwargs={"path": page.slug}))
         assert r.status_code == 302
         assert PageSubscription.objects.filter(
             user=user, page=page, status=S
@@ -384,7 +385,7 @@ class TestToggleSubscription:
     def test_unsubscribe_from_page(self, client, user, page):
         PageSubscription.objects.create(user=user, page=page)
         client.force_login(user)
-        r = client.post(f"/c/{page.slug}/subscribe/")
+        r = client.post(reverse("page_subscribe", kwargs={"path": page.slug}))
         assert r.status_code == 302
         assert PageSubscription.objects.filter(
             user=user, page=page, status=U
@@ -393,7 +394,7 @@ class TestToggleSubscription:
     def test_htmx_subscribe_returns_button(self, client, user, page):
         client.force_login(user)
         r = client.post(
-            f"/c/{page.slug}/subscribe/",
+            reverse("page_subscribe", kwargs={"path": page.slug}),
             HTTP_HX_REQUEST="true",
         )
         assert r.status_code == 200
@@ -403,19 +404,19 @@ class TestToggleSubscription:
         PageSubscription.objects.create(user=user, page=page)
         client.force_login(user)
         r = client.post(
-            f"/c/{page.slug}/subscribe/",
+            reverse("page_subscribe", kwargs={"path": page.slug}),
             HTTP_HX_REQUEST="true",
         )
         assert b"Subscribe" in r.content
 
     def test_requires_login(self, client, page):
-        r = client.post(f"/c/{page.slug}/subscribe/")
+        r = client.post(reverse("page_subscribe", kwargs={"path": page.slug}))
         assert r.status_code == 302
-        assert "/u/login/" in r.url
+        assert reverse("login") in r.url
 
     def test_get_returns_404(self, client, user, page):
         client.force_login(user)
-        r = client.get(f"/c/{page.slug}/subscribe/")
+        r = client.get(reverse("page_subscribe", kwargs={"path": page.slug}))
         assert r.status_code == 404
 
     def test_unsub_page_when_dir_subscribed(
@@ -428,7 +429,12 @@ class TestToggleSubscription:
         )
         client.force_login(user)
         r = client.post(
-            f"/c/{sub_directory.path}/{page_in_directory.slug}/subscribe/"
+            reverse(
+                "page_subscribe",
+                kwargs={
+                    "path": f"{sub_directory.path}/{page_in_directory.slug}"
+                },
+            )
         )
         assert r.status_code == 302
         assert PageSubscription.objects.filter(
@@ -448,7 +454,12 @@ class TestToggleSubscription:
         )
         client.force_login(user)
         r = client.post(
-            f"/c/{sub_directory.path}/{page_in_directory.slug}/subscribe/"
+            reverse(
+                "page_subscribe",
+                kwargs={
+                    "path": f"{sub_directory.path}/{page_in_directory.slug}"
+                },
+            )
         )
         assert r.status_code == 302
         assert PageSubscription.objects.filter(
@@ -466,7 +477,12 @@ class TestToggleSubscription:
         )
         client.force_login(user)
         r = client.post(
-            f"/c/{sub_directory.path}/{page_in_directory.slug}/subscribe/"
+            reverse(
+                "page_subscribe",
+                kwargs={
+                    "path": f"{sub_directory.path}/{page_in_directory.slug}"
+                },
+            )
         )
         assert r.status_code == 302
         assert PageSubscription.objects.filter(
@@ -478,7 +494,10 @@ class TestToggleDirectorySubscription:
     def test_subscribe_to_directory(self, client, user, sub_directory):
         client.force_login(user)
         r = client.post(
-            f"/c/{sub_directory.path}/subscribe-dir/",
+            reverse(
+                "directory_subscribe",
+                kwargs={"path": sub_directory.path},
+            ),
             HTTP_X_REQUESTED_WITH="XMLHttpRequest",
         )
         assert r.status_code == 204
@@ -492,7 +511,10 @@ class TestToggleDirectorySubscription:
         )
         client.force_login(user)
         r = client.post(
-            f"/c/{sub_directory.path}/subscribe-dir/",
+            reverse(
+                "directory_subscribe",
+                kwargs={"path": sub_directory.path},
+            ),
             HTTP_X_REQUESTED_WITH="XMLHttpRequest",
         )
         assert r.status_code == 204
@@ -503,7 +525,7 @@ class TestToggleDirectorySubscription:
     def test_subscribe_root(self, client, user, root_directory):
         client.force_login(user)
         r = client.post(
-            "/c/subscribe-dir/",
+            reverse("directory_subscribe_root"),
             HTTP_X_REQUESTED_WITH="XMLHttpRequest",
         )
         assert r.status_code == 204
@@ -512,13 +534,23 @@ class TestToggleDirectorySubscription:
         ).exists()
 
     def test_requires_login(self, client, sub_directory):
-        r = client.post(f"/c/{sub_directory.path}/subscribe-dir/")
+        r = client.post(
+            reverse(
+                "directory_subscribe",
+                kwargs={"path": sub_directory.path},
+            )
+        )
         assert r.status_code == 302
-        assert "/u/login/" in r.url
+        assert reverse("login") in r.url
 
     def test_get_returns_404(self, client, user, sub_directory):
         client.force_login(user)
-        r = client.get(f"/c/{sub_directory.path}/subscribe-dir/")
+        r = client.get(
+            reverse(
+                "directory_subscribe",
+                kwargs={"path": sub_directory.path},
+            )
+        )
         assert r.status_code == 404
 
     def test_unsub_creates_override_when_parent_subscribed(
@@ -532,7 +564,10 @@ class TestToggleDirectorySubscription:
         )
         client.force_login(user)
         r = client.post(
-            f"/c/{sub_directory.path}/subscribe-dir/",
+            reverse(
+                "directory_subscribe",
+                kwargs={"path": sub_directory.path},
+            ),
             HTTP_X_REQUESTED_WITH="XMLHttpRequest",
         )
         assert r.status_code == 204
@@ -552,7 +587,10 @@ class TestToggleDirectorySubscription:
         )
         client.force_login(user)
         r = client.post(
-            f"/c/{sub_directory.path}/subscribe-dir/",
+            reverse(
+                "directory_subscribe",
+                kwargs={"path": sub_directory.path},
+            ),
             HTTP_X_REQUESTED_WITH="XMLHttpRequest",
         )
         assert r.status_code == 204
@@ -562,7 +600,12 @@ class TestToggleDirectorySubscription:
 
     def test_non_ajax_redirects(self, client, user, sub_directory):
         client.force_login(user)
-        r = client.post(f"/c/{sub_directory.path}/subscribe-dir/")
+        r = client.post(
+            reverse(
+                "directory_subscribe",
+                kwargs={"path": sub_directory.path},
+            )
+        )
         assert r.status_code == 302
 
     def test_non_ajax_unsub_redirects(self, client, user, sub_directory):
@@ -570,7 +613,12 @@ class TestToggleDirectorySubscription:
             user=user, directory=sub_directory
         )
         client.force_login(user)
-        r = client.post(f"/c/{sub_directory.path}/subscribe-dir/")
+        r = client.post(
+            reverse(
+                "directory_subscribe",
+                kwargs={"path": sub_directory.path},
+            )
+        )
         assert r.status_code == 302
 
 
@@ -760,7 +808,7 @@ class TestUnsubscribeLanding:
         PageSubscription.objects.create(user=user, page=page)
         signer = Signer()
         token = signer.sign(f"{user.id}:{page.id}")
-        r = client.get(f"/unsubscribe/{token}/")
+        r = client.get(reverse("unsubscribe", kwargs={"token": token}))
         assert r.status_code == 200
         assert b"Unsubscribe" in r.content
 
@@ -768,14 +816,14 @@ class TestUnsubscribeLanding:
         PageSubscription.objects.create(user=user, page=page)
         signer = Signer()
         token = signer.sign(f"{user.id}:{page.id}")
-        r = client.post(f"/unsubscribe/{token}/")
+        r = client.post(reverse("unsubscribe", kwargs={"token": token}))
         assert r.status_code == 302
         assert PageSubscription.objects.filter(
             user=user, page=page, status=U
         ).exists()
 
     def test_invalid_token_redirects(self, client, db):
-        r = client.get("/unsubscribe/bad-token/")
+        r = client.get(reverse("unsubscribe", kwargs={"token": "bad-token"}))
         assert r.status_code == 302
 
     def test_dir_token_shows_confirm(self, client, user, sub_directory):
@@ -784,7 +832,7 @@ class TestUnsubscribeLanding:
         )
         signer = Signer()
         token = signer.sign(f"d:{user.id}:{sub_directory.id}")
-        r = client.get(f"/unsubscribe/{token}/")
+        r = client.get(reverse("unsubscribe", kwargs={"token": token}))
         assert r.status_code == 200
         assert b"Unsubscribe" in r.content
 
@@ -796,7 +844,7 @@ class TestDirectoryUnsubscribeViaEmail:
         )
         signer = Signer()
         token = signer.sign(f"d:{user.id}:{sub_directory.id}")
-        r = client.post(f"/unsubscribe/{token}/")
+        r = client.post(reverse("unsubscribe", kwargs={"token": token}))
         assert r.status_code == 302
         assert DirectorySubscription.objects.filter(
             user=user, directory=sub_directory, status=U
@@ -812,7 +860,7 @@ class TestDirectoryUnsubscribeViaEmail:
         PageSubscription.objects.create(user=user, page=page_in_directory)
         signer = Signer()
         token = signer.sign(f"{user.id}:{page_in_directory.id}")
-        r = client.post(f"/unsubscribe/{token}/")
+        r = client.post(reverse("unsubscribe", kwargs={"token": token}))
         assert r.status_code == 302
         assert PageSubscription.objects.filter(
             user=user, page=page_in_directory, status=U
@@ -824,7 +872,9 @@ class TestOneClickUnsubscribe:
         PageSubscription.objects.create(user=user, page=page)
         signer = Signer()
         token = signer.sign(f"{user.id}:{page.id}")
-        r = client.post(f"/unsubscribe/{token}/one-click/")
+        r = client.post(
+            reverse("unsubscribe_one_click", kwargs={"token": token})
+        )
         assert r.status_code == 200
         assert PageSubscription.objects.filter(
             user=user, page=page, status=U
@@ -836,7 +886,9 @@ class TestOneClickUnsubscribe:
         )
         signer = Signer()
         token = signer.sign(f"d:{user.id}:{sub_directory.id}")
-        r = client.post(f"/unsubscribe/{token}/one-click/")
+        r = client.post(
+            reverse("unsubscribe_one_click", kwargs={"token": token})
+        )
         assert r.status_code == 200
         assert DirectorySubscription.objects.filter(
             user=user, directory=sub_directory, status=U
@@ -852,7 +904,9 @@ class TestOneClickUnsubscribe:
         )
         signer = Signer()
         token = signer.sign(f"{user.id}:{page_in_directory.id}")
-        r = client.post(f"/unsubscribe/{token}/one-click/")
+        r = client.post(
+            reverse("unsubscribe_one_click", kwargs={"token": token})
+        )
         assert r.status_code == 200
         assert PageSubscription.objects.filter(
             user=user, page=page_in_directory, status=U
@@ -869,7 +923,7 @@ class TestRevertNotifiesSubscribers:
         # Create revision 2 by editing
         client.force_login(user)
         client.post(
-            f"/c/{page.slug}/edit/",
+            reverse("page_edit", kwargs={"path": page.slug}),
             {
                 "title": page.title,
                 "content": "Edited content",
@@ -881,7 +935,12 @@ class TestRevertNotifiesSubscribers:
 
         # Subscribe another user, then revert to revision 1
         PageSubscription.objects.create(user=other_user, page=page)
-        client.post(f"/c/{page.slug}/revert/1/")
+        client.post(
+            reverse(
+                "page_revert",
+                kwargs={"path": page.slug, "rev_num": 1},
+            )
+        )
         assert len(mail.outbox) == 1
         assert "Reverted to version 1" in mail.outbox[0].body
 
@@ -893,7 +952,7 @@ class TestEditNotifiesSubscribers:
         PageSubscription.objects.create(user=other_user, page=page)
         client.force_login(user)
         client.post(
-            f"/c/{page.slug}/edit/",
+            reverse("page_edit", kwargs={"path": page.slug}),
             {
                 "title": page.title,
                 "content": "New content",
@@ -912,7 +971,12 @@ class TestEditNotifiesSubscribers:
         )
         client.force_login(user)
         client.post(
-            f"/c/{sub_directory.path}/{page_in_directory.slug}/edit/",
+            reverse(
+                "page_edit",
+                kwargs={
+                    "path": f"{sub_directory.path}/{page_in_directory.slug}"
+                },
+            ),
             {
                 "title": page_in_directory.title,
                 "content": "Updated via dir sub",
@@ -935,12 +999,22 @@ class TestDirectoryDetailSubscriptionState:
             user=user, directory=sub_directory
         )
         client.force_login(user)
-        r = client.get(f"/c/{sub_directory.path}/")
+        r = client.get(
+            reverse(
+                "resolve_path",
+                kwargs={"path": f"{sub_directory.path}/"},
+            )
+        )
         assert r.context["is_dir_subscribed"] is True
 
     def test_not_subscribed_context(self, client, user, sub_directory):
         client.force_login(user)
-        r = client.get(f"/c/{sub_directory.path}/")
+        r = client.get(
+            reverse(
+                "resolve_path",
+                kwargs={"path": f"{sub_directory.path}/"},
+            )
+        )
         assert r.context["is_dir_subscribed"] is False
 
 

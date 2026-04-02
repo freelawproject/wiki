@@ -3,6 +3,7 @@
 import pytest
 from django.contrib.auth.models import Group
 from django.test import Client
+from django.urls import reverse
 
 
 @pytest.fixture
@@ -12,27 +13,27 @@ def client():
 
 class TestGroupList:
     def test_list_requires_login(self, client, db):
-        r = client.get("/u/admins/groups/")
+        r = client.get(reverse("group_list"))
         assert r.status_code == 302
-        assert "/u/login/" in r.url
+        assert reverse("login") in r.url
 
     def test_list_shows_groups(self, client, user, group):
         client.force_login(user)
-        r = client.get("/u/admins/groups/")
+        r = client.get(reverse("group_list"))
         assert r.status_code == 200
         assert b"Engineering Team" in r.content
 
     def test_list_shows_member_count(self, client, user, group):
         user.groups.add(group)
         client.force_login(user)
-        r = client.get("/u/admins/groups/")
+        r = client.get(reverse("group_list"))
         assert b"1 member" in r.content
 
 
 class TestGroupCreate:
     def test_create_requires_staff(self, client, user, db):
         client.force_login(user)
-        r = client.get("/u/admins/groups/new/")
+        r = client.get(reverse("group_create"))
         # Non-staff redirected with error
         assert r.status_code == 302
 
@@ -40,13 +41,13 @@ class TestGroupCreate:
         user.is_staff = True
         user.save()
         client.force_login(user)
-        r = client.post("/u/admins/groups/new/", {"name": "Backend"})
+        r = client.post(reverse("group_create"), {"name": "Backend"})
         assert r.status_code == 302
         assert Group.objects.filter(name="Backend").exists()
 
     def test_system_owner_can_create(self, client, owner_user, db):
         client.force_login(owner_user)
-        r = client.post("/u/admins/groups/new/", {"name": "Frontend"})
+        r = client.post(reverse("group_create"), {"name": "Frontend"})
         assert r.status_code == 302
         assert Group.objects.filter(name="Frontend").exists()
 
@@ -54,7 +55,7 @@ class TestGroupCreate:
         user.is_staff = True
         user.save()
         client.force_login(user)
-        r = client.post("/u/admins/groups/new/", {"name": "Engineering Team"})
+        r = client.post(reverse("group_create"), {"name": "Engineering Team"})
         # Stays on form with error
         assert r.status_code == 200
 
@@ -63,7 +64,7 @@ class TestGroupDetail:
     def test_detail_shows_members(self, client, user, other_user, group):
         other_user.groups.add(group)
         client.force_login(user)
-        r = client.get(f"/u/admins/groups/{group.pk}/")
+        r = client.get(reverse("group_detail", kwargs={"pk": group.pk}))
         assert r.status_code == 200
         assert b"Bob" in r.content
 
@@ -72,7 +73,7 @@ class TestGroupDetail:
         user.save()
         client.force_login(user)
         r = client.post(
-            f"/u/admins/groups/{group.pk}/add-member/",
+            reverse("group_add_member", kwargs={"pk": group.pk}),
             {"username": "bob"},
         )
         assert r.status_code == 302
@@ -83,7 +84,7 @@ class TestGroupDetail:
         user.save()
         client.force_login(user)
         r = client.post(
-            f"/u/admins/groups/{group.pk}/add-member/",
+            reverse("group_add_member", kwargs={"pk": group.pk}),
             {"username": "nobody"},
         )
         assert r.status_code == 302
@@ -95,7 +96,7 @@ class TestGroupDetail:
         other_user.groups.add(group)
         client.force_login(user)
         r = client.post(
-            f"/u/admins/groups/{group.pk}/remove-member/",
+            reverse("group_remove_member", kwargs={"pk": group.pk}),
             {"user_id": other_user.pk},
         )
         assert r.status_code == 302
@@ -106,7 +107,7 @@ class TestGroupDetail:
     ):
         client.force_login(user)
         client.post(
-            f"/u/admins/groups/{group.pk}/add-member/",
+            reverse("group_add_member", kwargs={"pk": group.pk}),
             {"username": "bob"},
         )
         assert not group.user_set.filter(pk=other_user.pk).exists()
@@ -118,7 +119,8 @@ class TestGroupEdit:
         user.save()
         client.force_login(user)
         r = client.post(
-            f"/u/admins/groups/{group.pk}/edit/", {"name": "Eng Team"}
+            reverse("group_edit", kwargs={"pk": group.pk}),
+            {"name": "Eng Team"},
         )
         assert r.status_code == 302
         group.refresh_from_db()
@@ -127,7 +129,8 @@ class TestGroupEdit:
     def test_non_staff_cannot_edit(self, client, user, group):
         client.force_login(user)
         r = client.post(
-            f"/u/admins/groups/{group.pk}/edit/", {"name": "Hacked"}
+            reverse("group_edit", kwargs={"pk": group.pk}),
+            {"name": "Hacked"},
         )
         assert r.status_code == 302
         group.refresh_from_db()
@@ -137,7 +140,7 @@ class TestGroupEdit:
 class TestGroupDelete:
     def test_delete_requires_staff(self, client, user, group):
         client.force_login(user)
-        r = client.post(f"/u/admins/groups/{group.pk}/delete/")
+        r = client.post(reverse("group_delete", kwargs={"pk": group.pk}))
         assert r.status_code == 302
         assert Group.objects.filter(pk=group.pk).exists()
 
@@ -145,7 +148,7 @@ class TestGroupDelete:
         user.is_staff = True
         user.save()
         client.force_login(user)
-        r = client.post(f"/u/admins/groups/{group.pk}/delete/")
+        r = client.post(reverse("group_delete", kwargs={"pk": group.pk}))
         assert r.status_code == 302
         assert not Group.objects.filter(pk=group.pk).exists()
 
@@ -165,7 +168,7 @@ class TestGroupEmailSecurity:
         """SECURITY: group detail page must not show full email addresses."""
         other_user.groups.add(group)
         client.force_login(user)
-        r = client.get(f"/u/admins/groups/{group.pk}/")
+        r = client.get(reverse("group_detail", kwargs={"pk": group.pk}))
         assert r.status_code == 200
         # Display name should appear, but full email must not
         assert b"Bob" in r.content

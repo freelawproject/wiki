@@ -13,6 +13,7 @@ import pytest
 os.environ.setdefault("DJANGO_ALLOW_ASYNC_UNSAFE", "true")
 from django.contrib.auth.models import User
 from django.test import Client
+from django.urls import reverse
 from playwright.sync_api import expect, sync_playwright
 
 from wiki.directories.models import Directory
@@ -138,7 +139,8 @@ class TestInheritSelectDropdown:
         as both the inherit option and an explicit option."""
         _force_login(browser_page, live_server, browser_user)
 
-        browser_page.goto(f"{live_server.url}/c/staff/edit-dir/")
+        url = reverse("directory_edit", kwargs={"path": "staff"})
+        browser_page.goto(f"{live_server.url}{url}")
 
         # Open the visibility dropdown
         vis_button = browser_page.locator(
@@ -167,7 +169,8 @@ class TestInheritSelectDropdown:
         NOT a separate 'Public' explicit option (it's redundant)."""
         _force_login(browser_page, live_server, browser_user)
 
-        browser_page.goto(f"{live_server.url}/c/docs/edit-dir/")
+        url = reverse("directory_edit", kwargs={"path": "docs"})
+        browser_page.goto(f"{live_server.url}{url}")
 
         # Button should show "Public" (proper label, not raw "public")
         vis_button = browser_page.locator(
@@ -193,7 +196,8 @@ class TestInheritSelectDropdown:
         not plain <select> elements."""
         _force_login(browser_page, live_server, browser_user)
 
-        browser_page.goto(f"{live_server.url}/c/staff/new/")
+        url = reverse("page_create_in_dir", kwargs={"path": "staff"})
+        browser_page.goto(f"{live_server.url}{url}")
 
         # Should NOT have a plain <select> for visibility
         plain_select = browser_page.locator("select[name='visibility']")
@@ -215,7 +219,7 @@ class TestInheritSelectDropdown:
         inherit-select components when a directory is picked."""
         _force_login(browser_page, live_server, browser_user)
 
-        browser_page.goto(f"{live_server.url}/c/new/")
+        browser_page.goto(f"{live_server.url}{reverse('page_create')}")
 
         # Initially should be a plain <select>
         plain_select = browser_page.locator("select[name='visibility']")
@@ -244,7 +248,8 @@ class TestInheritSelectDropdown:
         _force_login(browser_page, live_server, browser_user)
 
         # Start creating a page in "Staff" (internal visibility)
-        browser_page.goto(f"{live_server.url}/c/staff/new/")
+        url = reverse("page_create_in_dir", kwargs={"path": "staff"})
+        browser_page.goto(f"{live_server.url}{url}")
 
         # The visibility button should show "FLP Staff"
         vis_button = browser_page.locator(
@@ -278,7 +283,8 @@ class TestInheritSelectDropdown:
         _force_login(browser_page, live_server, browser_user)
 
         # Start in "Staff" dir, then switch to "Docs"
-        browser_page.goto(f"{live_server.url}/c/staff/new/")
+        url = reverse("page_create_in_dir", kwargs={"path": "staff"})
+        browser_page.goto(f"{live_server.url}{url}")
 
         location_input = browser_page.locator("#location-input")
         location_input.click()
@@ -327,7 +333,7 @@ class TestLocationPickerKeyboard:
     ):
         """Arrow keys should move the highlight through dropdown items."""
         _force_login(browser_page, live_server, browser_user)
-        browser_page.goto(f"{live_server.url}/c/new/")
+        browser_page.goto(f"{live_server.url}{reverse('page_create')}")
 
         location_input = browser_page.locator("#location-input")
         location_input.click()
@@ -360,7 +366,7 @@ class TestLocationPickerKeyboard:
     ):
         """Enter should select the currently highlighted item."""
         _force_login(browser_page, live_server, browser_user)
-        browser_page.goto(f"{live_server.url}/c/new/")
+        browser_page.goto(f"{live_server.url}{reverse('page_create')}")
 
         location_input = browser_page.locator("#location-input")
         location_input.click()
@@ -398,7 +404,7 @@ class TestPageCreateFromRoot:
         """From /c/new/, pick an existing dir, create a new subdir,
         fill the form, and verify the page is created."""
         _force_login(browser_page, live_server, browser_user)
-        browser_page.goto(f"{live_server.url}/c/new/")
+        browser_page.goto(f"{live_server.url}{reverse('page_create')}")
 
         location_input = browser_page.locator("#location-input")
         dropdown = browser_page.locator("#dir-dropdown")
@@ -428,7 +434,11 @@ class TestPageCreateFromRoot:
         browser_page.get_by_role("button", name="Create Page").click()
 
         # Should redirect to the new page
-        browser_page.wait_for_url("**/c/docs/operations/ops-runbook")
+        expected = reverse(
+            "resolve_path",
+            kwargs={"path": "docs/operations/ops-runbook"},
+        )
+        browser_page.wait_for_url(f"**{expected}")
         expect(browser_page.locator("h1")).to_contain_text("Ops Runbook")
 
         # Verify directory was created
@@ -440,7 +450,7 @@ class TestPageCreateFromRoot:
         """From /c/new/, pick an existing directory and submit.
         Inherit fields (in_sitemap, in_llms_txt) should be accepted."""
         _force_login(browser_page, live_server, browser_user)
-        browser_page.goto(f"{live_server.url}/c/new/")
+        browser_page.goto(f"{live_server.url}{reverse('page_create')}")
 
         location_input = browser_page.locator("#location-input")
         dropdown = browser_page.locator("#dir-dropdown")
@@ -460,7 +470,8 @@ class TestPageCreateFromRoot:
         browser_page.get_by_role("button", name="Create Page").click()
 
         # Should redirect to the new page
-        browser_page.wait_for_url("**/c/docs/quick-start")
+        expected = reverse("resolve_path", kwargs={"path": "docs/quick-start"})
+        browser_page.wait_for_url(f"**{expected}")
         expect(browser_page.locator("h1")).to_contain_text("Quick Start")
 
     def test_validation_error_preserves_location_picker(
@@ -469,7 +480,7 @@ class TestPageCreateFromRoot:
         """When form validation fails, the location picker should
         preserve the selected directory."""
         _force_login(browser_page, live_server, browser_user)
-        browser_page.goto(f"{live_server.url}/c/new/")
+        browser_page.goto(f"{live_server.url}{reverse('page_create')}")
 
         location_input = browser_page.locator("#location-input")
         dropdown = browser_page.locator("#dir-dropdown")

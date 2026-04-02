@@ -5,6 +5,7 @@ import json
 import pytest
 from django.http import HttpResponse
 from django.test import RequestFactory
+from django.urls import reverse
 
 from wiki.directories.models import Directory
 from wiki.lib.middleware import SEOHeadersMiddleware
@@ -194,7 +195,7 @@ class TestSEOHeadersMiddleware:
 @pytest.mark.django_db
 class TestRobotsTxt:
     def test_robots_txt_content(self, client):
-        response = client.get("/robots.txt")
+        response = client.get(reverse("robots_txt"))
         assert response.status_code == 200
         assert response["Content-Type"] == "text/plain"
         content = response.content.decode()
@@ -215,7 +216,7 @@ class TestRobotsTxt:
 @pytest.mark.django_db
 class TestSitemap:
     def test_sitemap_includes_public_page(self, client, user):
-        Page.objects.create(
+        page = Page.objects.create(
             title="Public Page",
             slug="public-page",
             content="Hello",
@@ -224,13 +225,13 @@ class TestSitemap:
             updated_by=user,
             visibility=Page.Visibility.PUBLIC,
         )
-        response = client.get("/sitemap.xml")
+        response = client.get(reverse("django.contrib.sitemaps.views.sitemap"))
         assert response.status_code == 200
         content = response.content.decode()
-        assert "/c/public-page" in content
+        assert page.get_absolute_url() in content
 
     def test_sitemap_excludes_private_page(self, client, user):
-        Page.objects.create(
+        page = Page.objects.create(
             title="Private Page",
             slug="private-page",
             content="Secret",
@@ -239,29 +240,29 @@ class TestSitemap:
             updated_by=user,
             visibility=Page.Visibility.PRIVATE,
         )
-        response = client.get("/sitemap.xml")
+        response = client.get(reverse("django.contrib.sitemaps.views.sitemap"))
         content = response.content.decode()
-        assert "private-page" not in content
+        assert page.get_absolute_url() not in content
 
     def test_sitemap_includes_public_directory(self, client):
-        Directory.objects.create(
+        directory = Directory.objects.create(
             path="",
             title="Home",
             visibility=Directory.Visibility.PUBLIC,
         )
-        response = client.get("/sitemap.xml")
+        response = client.get(reverse("django.contrib.sitemaps.views.sitemap"))
         content = response.content.decode()
-        assert "/c/" in content
+        assert directory.get_absolute_url() in content
 
     def test_sitemap_excludes_private_directory(self, client):
-        Directory.objects.create(
+        directory = Directory.objects.create(
             path="secret",
             title="Secret",
             visibility=Directory.Visibility.PRIVATE,
         )
-        response = client.get("/sitemap.xml")
+        response = client.get(reverse("django.contrib.sitemaps.views.sitemap"))
         content = response.content.decode()
-        assert "/c/secret" not in content
+        assert directory.get_absolute_url() not in content
 
     def test_sitemap_includes_public_page_in_private_directory(
         self, client, user
@@ -272,7 +273,7 @@ class TestSitemap:
             title="Private Dir",
             visibility=Directory.Visibility.PRIVATE,
         )
-        Page.objects.create(
+        page = Page.objects.create(
             title="Hidden Page",
             slug="hidden-page",
             content="Explicitly public",
@@ -282,9 +283,9 @@ class TestSitemap:
             updated_by=user,
             visibility=Page.Visibility.PUBLIC,
         )
-        response = client.get("/sitemap.xml")
+        response = client.get(reverse("django.contrib.sitemaps.views.sitemap"))
         content = response.content.decode()
-        assert "hidden-page" in content
+        assert page.get_absolute_url() in content
 
 
 # ── Raw markdown headers ─────────────────────────────────────────────
@@ -441,12 +442,12 @@ class TestSeoDescription:
 @pytest.mark.django_db
 class TestLlmsTxt:
     def test_llms_txt_status_and_content_type(self, client):
-        response = client.get("/llms.txt")
+        response = client.get(reverse("llms_txt"))
         assert response.status_code == 200
         assert response["Content-Type"] == "text/plain"
 
     def test_llms_txt_has_noindex(self, client):
-        response = client.get("/llms.txt")
+        response = client.get(reverse("llms_txt"))
         assert response["X-Robots-Tag"] == "noindex"
 
     def test_llms_txt_includes_public_page(self, client, user):
@@ -460,7 +461,7 @@ class TestLlmsTxt:
             visibility=Page.Visibility.PUBLIC,
             in_llms_txt=Page.LlmsTxtStatus.INCLUDE,
         )
-        response = client.get("/llms.txt")
+        response = client.get(reverse("llms_txt"))
         content = response.content.decode()
         assert "Public LLM Page" in content
         assert "public-llm-page.md" in content
@@ -475,7 +476,7 @@ class TestLlmsTxt:
             updated_by=user,
             visibility=Page.Visibility.PRIVATE,
         )
-        response = client.get("/llms.txt")
+        response = client.get(reverse("llms_txt"))
         content = response.content.decode()
         assert "Private LLM Page" not in content
 
@@ -491,12 +492,12 @@ class TestLlmsTxt:
             visibility=Page.Visibility.PUBLIC,
             in_llms_txt=Page.LlmsTxtStatus.INCLUDE,
         )
-        response = client.get("/llms.txt")
+        response = client.get(reverse("llms_txt"))
         content = response.content.decode()
         assert "Custom LLM description" in content
 
     def test_llms_txt_has_header(self, client):
-        response = client.get("/llms.txt")
+        response = client.get(reverse("llms_txt"))
         content = response.content.decode()
         assert content.startswith("# FLP Wiki")
 
@@ -511,7 +512,7 @@ class TestLlmsTxt:
             visibility=Page.Visibility.PUBLIC,
             in_llms_txt=Page.LlmsTxtStatus.EXCLUDE,
         )
-        response = client.get("/llms.txt")
+        response = client.get(reverse("llms_txt"))
         content = response.content.decode()
         assert "Excluded LLM Page" not in content
 
@@ -526,7 +527,7 @@ class TestLlmsTxt:
             visibility=Page.Visibility.PUBLIC,
             in_llms_txt=Page.LlmsTxtStatus.OPTIONAL,
         )
-        response = client.get("/llms.txt")
+        response = client.get(reverse("llms_txt"))
         content = response.content.decode()
         assert "Optional LLM Page" in content
         # Should be after the Optional heading
@@ -562,7 +563,7 @@ class TestLlmsTxt:
             visibility=Page.Visibility.PUBLIC,
             in_llms_txt=Page.LlmsTxtStatus.INCLUDE,
         )
-        response = client.get("/llms.txt")
+        response = client.get(reverse("llms_txt"))
         content = response.content.decode()
         assert "Cascade Excluded Page" not in content
 
@@ -595,7 +596,7 @@ class TestLlmsTxt:
             visibility=Page.Visibility.PUBLIC,
             in_llms_txt=Page.LlmsTxtStatus.INCLUDE,
         )
-        response = client.get("/llms.txt")
+        response = client.get(reverse("llms_txt"))
         content = response.content.decode()
         assert "Kept Page" in content
         # Should appear in main section (before Optional), not downgraded
@@ -605,9 +606,9 @@ class TestLlmsTxt:
             assert page_pos < optional_pos
 
     def test_robots_txt_allows_llms_txt(self, client):
-        response = client.get("/robots.txt")
+        response = client.get(reverse("robots_txt"))
         content = response.content.decode()
-        assert "Allow: /llms.txt" in content
+        assert f"Allow: {reverse('llms_txt')}" in content
 
 
 # ── Sitemap in_sitemap controls ─────────────────────────────────────
@@ -616,7 +617,7 @@ class TestLlmsTxt:
 @pytest.mark.django_db
 class TestSitemapInSitemapField:
     def test_page_excluded_when_in_sitemap_false(self, client, user):
-        Page.objects.create(
+        page = Page.objects.create(
             title="No Sitemap Page",
             slug="no-sitemap-page",
             content="Content.",
@@ -626,12 +627,12 @@ class TestSitemapInSitemapField:
             visibility=Page.Visibility.PUBLIC,
             in_sitemap="exclude",
         )
-        response = client.get("/sitemap.xml")
+        response = client.get(reverse("django.contrib.sitemaps.views.sitemap"))
         content = response.content.decode()
-        assert "no-sitemap-page" not in content
+        assert page.get_absolute_url() not in content
 
     def test_page_included_when_in_sitemap_include(self, client, user):
-        Page.objects.create(
+        page = Page.objects.create(
             title="Sitemap Page",
             slug="sitemap-page",
             content="Content.",
@@ -641,9 +642,9 @@ class TestSitemapInSitemapField:
             visibility=Page.Visibility.PUBLIC,
             in_sitemap=Page.SitemapStatus.INCLUDE,
         )
-        response = client.get("/sitemap.xml")
+        response = client.get(reverse("django.contrib.sitemaps.views.sitemap"))
         content = response.content.decode()
-        assert "sitemap-page" in content
+        assert page.get_absolute_url() in content
 
     def test_inheriting_page_excluded_when_directory_excluded(
         self, client, user
@@ -664,7 +665,7 @@ class TestSitemapInSitemapField:
             visibility=Directory.Visibility.PUBLIC,
             in_sitemap="exclude",
         )
-        Page.objects.create(
+        page = Page.objects.create(
             title="Inheriting Child",
             slug="inheriting-child",
             content="Content.",
@@ -675,9 +676,9 @@ class TestSitemapInSitemapField:
             visibility=Page.Visibility.PUBLIC,
             in_sitemap="inherit",
         )
-        response = client.get("/sitemap.xml")
+        response = client.get(reverse("django.contrib.sitemaps.views.sitemap"))
         content = response.content.decode()
-        assert "inheriting-child" not in content
+        assert page.get_absolute_url() not in content
 
     def test_explicit_include_overrides_directory_exclude(self, client, user):
         """A page with explicit in_sitemap='include' appears in the
@@ -696,7 +697,7 @@ class TestSitemapInSitemapField:
             visibility=Directory.Visibility.PUBLIC,
             in_sitemap="exclude",
         )
-        Page.objects.create(
+        page = Page.objects.create(
             title="Override Page",
             slug="override-page",
             content="Content.",
@@ -707,6 +708,6 @@ class TestSitemapInSitemapField:
             visibility=Page.Visibility.PUBLIC,
             in_sitemap="include",
         )
-        response = client.get("/sitemap.xml")
+        response = client.get(reverse("django.contrib.sitemaps.views.sitemap"))
         content = response.content.decode()
-        assert "override-page" in content
+        assert page.get_absolute_url() in content
