@@ -36,7 +36,7 @@ _BUTTON_LINK_RE = re.compile(
     r"\s*\{button(?:-(outline|danger))?\}",
 )
 
-WIKI_LINK_RE = re.compile(r"(?<!\w)(?<!\()#([a-z0-9]+(?:-[a-z0-9]+)*)")
+WIKI_LINK_RE = re.compile(r"(?<!\w)(?<!\()(?<!/)#([a-z0-9]+(?:-[a-z0-9]+)*)")
 
 # Matches [text](#slug) markdown links where #slug is a wiki page reference
 _MD_LINK_WIKI_RE = re.compile(r"\[([^\]]+)\]\(#([a-z0-9]+(?:-[a-z0-9]+)*)\)")
