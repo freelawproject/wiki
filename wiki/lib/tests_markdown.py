@@ -6,6 +6,9 @@ import pytest
 from django.urls import reverse
 
 from wiki.lib.markdown import (
+    _MD_LINK_WIKI_RE,
+    _REF_LINK_WIKI_RE,
+    WIKI_LINK_RE,
     _convert_alerts,
     _convert_button_links,
     extract_all_wiki_slugs,
@@ -200,44 +203,35 @@ class TestWikiLinkRegexes:
 
     def test_standalone_not_matched_in_parens(self):
         """WIKI_LINK_RE should not match #slug inside parentheses."""
-        from wiki.lib.markdown import WIKI_LINK_RE
-
         assert WIKI_LINK_RE.findall("(#some-slug)") == []
 
     def test_standalone_matched_normally(self):
-        from wiki.lib.markdown import WIKI_LINK_RE
-
         assert WIKI_LINK_RE.findall("See #some-slug here") == ["some-slug"]
 
-    def test_md_link_regex_matches(self):
-        from wiki.lib.markdown import _MD_LINK_WIKI_RE
+    def test_standalone_not_matched_after_slash(self):
+        """WIKI_LINK_RE should not match #slug after / (URL fragments)."""
+        assert WIKI_LINK_RE.findall("https://example.com/page/#section") == []
+        assert WIKI_LINK_RE.findall("https://example.com/page/#a-b") == []
 
+    def test_md_link_regex_matches(self):
         m = _MD_LINK_WIKI_RE.search("[click here](#my-page)")
         assert m is not None
         assert m.group(1) == "click here"
         assert m.group(2) == "my-page"
 
     def test_md_link_regex_no_match_for_url(self):
-        from wiki.lib.markdown import _MD_LINK_WIKI_RE
-
         assert _MD_LINK_WIKI_RE.search("[text](https://example.com)") is None
 
     def test_ref_link_regex_matches(self):
-        from wiki.lib.markdown import _REF_LINK_WIKI_RE
-
         m = _REF_LINK_WIKI_RE.search("[ref]: #my-page")
         assert m is not None
         assert m.group(2) == "my-page"
 
     def test_ref_link_regex_no_match_for_url(self):
-        from wiki.lib.markdown import _REF_LINK_WIKI_RE
-
         assert _REF_LINK_WIKI_RE.search("[ref]: https://example.com") is None
 
     def test_standalone_skips_ref_definition_line(self):
         """Standalone replacement must not mangle #slug inside [ref]: #slug."""
-        from wiki.lib.markdown import WIKI_LINK_RE
-
         content = "[food]: #nonexistent-slug"
         # The standalone regex matches #nonexistent-slug ...
         assert WIKI_LINK_RE.search(content) is not None
@@ -264,6 +258,13 @@ class TestRefLinkUnknownSlug:
         html = render_markdown(md)
         assert "text-red-500" in html
         assert "Page not found" in html
+
+    def test_url_anchor_in_ref_link_not_mangled(self):
+        """URL fragment in a reference link must not be treated as wiki slug."""
+        md = "[my button][j]{button}\n\n[j]: https://example.com/page/#section-two"
+        html = render_markdown(md)
+        assert "text-red-500" not in html
+        assert 'href="https://example.com/page/#section-two"' in html
 
 
 class TestConvertAlerts:
