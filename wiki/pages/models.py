@@ -380,6 +380,14 @@ class FileUpload(models.Model):
     file = models.FileField(upload_to="uploads/%Y/%m/", max_length=1000)
     original_filename = models.CharField(max_length=255)
     content_type = models.CharField(max_length=100, blank=True)
+    optimization_gain = models.IntegerField(
+        null=True,
+        blank=True,
+        help_text=(
+            "Bytes saved by optimization. "
+            "Null=pending, positive=saved, negative=grew, 0=error."
+        ),
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
