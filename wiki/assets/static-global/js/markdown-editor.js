@@ -166,16 +166,56 @@ var initMarkdownEditor = (function() {
       xhr.send(fd);
     }
 
+    var MAX_IMAGE_SIZE = 20 * 1024 * 1024; // 20 MB
+    var MAX_FILE_SIZE = 1024 * 1024 * 1024; // 1 GB
+    // Types where Canvas API would destroy the format (animation, vector)
+    var SKIP_STRIP_TYPES = ['image/gif', 'image/svg+xml'];
+
+    /**
+     * Strip image metadata (EXIF, GPS, camera info) using the Canvas API.
+     * Draws the image to an offscreen canvas and re-exports it, which
+     * produces a clean blob with only pixel data — no metadata survives.
+     * Returns a Promise that resolves to a new File (or the original if
+     * stripping is not applicable).
+     */
+    function stripImageMetadata(file) {
+      if (!file.type.startsWith('image/') || SKIP_STRIP_TYPES.indexOf(file.type) !== -1) {
+        return Promise.resolve(file);
+      }
+      return new Promise(function(resolve) {
+        var url = URL.createObjectURL(file);
+        var img = new Image();
+        img.onload = function() {
+          var canvas = document.createElement('canvas');
+          canvas.width = img.naturalWidth;
+          canvas.height = img.naturalHeight;
+          canvas.getContext('2d').drawImage(img, 0, 0);
+          URL.revokeObjectURL(url);
+          canvas.toBlob(function(blob) {
+            if (!blob) { resolve(file); return; }
+            resolve(new File([blob], file.name, { type: file.type }));
+          }, file.type, 1.0);
+        };
+        img.onerror = function() {
+          URL.revokeObjectURL(url);
+          resolve(file); // pass through on error
+        };
+        img.src = url;
+      });
+    }
+
     function handleFileUpload(file) {
-      if (file.size > 1024 * 1024 * 1024) {
+      var isImage = file.type.startsWith('image/');
+      if (isImage && file.size > MAX_IMAGE_SIZE) {
+        alert('Image too large. Maximum image size is 20 MB.');
+        return;
+      }
+      if (file.size > MAX_FILE_SIZE) {
         alert('File too large. Maximum size is 1 GB.');
         return;
       }
-      if (directUpload) {
-        handleDirectUpload(file);
-      } else {
-        handleLocalUpload(file);
-      }
+      var upload = directUpload ? handleDirectUpload : handleLocalUpload;
+      stripImageMetadata(file).then(upload);
     }
 
     // ── EasyMDE Editor ──────────────────────────────────────
