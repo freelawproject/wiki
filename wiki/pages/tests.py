@@ -1,5 +1,6 @@
 """Tests for the pages app: CRUD, history, diff, search, wiki links."""
 
+import io
 import json
 from datetime import timedelta
 
@@ -30,7 +31,11 @@ from wiki.pages.models import (
     PendingUpload,
     SlugRedirect,
 )
-from wiki.pages.tasks import sync_page_view_counts, update_search_vectors
+from wiki.pages.tasks import (
+    optimize_images,
+    sync_page_view_counts,
+    update_search_vectors,
+)
 from wiki.pages.views import _extract_mentions
 from wiki.subscriptions.models import PageSubscription
 from wiki.subscriptions.tasks import _get_content_snippet
@@ -3040,3 +3045,239 @@ class TestSearchContentCommand:
         call_command("search_content", "xyzzyplugh")
         captured = capsys.readouterr()
         assert "0 page(s)" in captured.out
+
+
+# ── Image optimization tests ──────────────────────────────────────
+
+
+def _make_jpeg(width=200, height=200, color="red"):
+    """Create a JPEG image with Pillow and return its bytes."""
+    from PIL import Image as PILImage
+
+    img = PILImage.new("RGB", (width, height), color=color)
+    buf = io.BytesIO()
+    # Save unoptimized so there's room to compress
+    img.save(buf, format="JPEG", quality=100)
+    buf.seek(0)
+    return buf.read()
+
+
+def _make_png(width=200, height=200, color="blue"):
+    """Create a PNG image with Pillow and return its bytes."""
+    from PIL import Image as PILImage
+
+    img = PILImage.new("RGB", (width, height), color=color)
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    buf.seek(0)
+    return buf.read()
+
+
+def _make_webp(width=200, height=200, color="green"):
+    """Create a WebP image with Pillow and return its bytes."""
+    from PIL import Image as PILImage
+
+    img = PILImage.new("RGB", (width, height), color=color)
+    buf = io.BytesIO()
+    img.save(buf, format="WEBP", quality=100)
+    buf.seek(0)
+    return buf.read()
+
+
+@pytest.mark.django_db
+class TestImageOptimization:
+    def test_optimize_jpeg(self, user):
+        data = _make_jpeg()
+        upload = FileUpload.objects.create(
+            uploaded_by=user,
+            file=SimpleUploadedFile("photo.jpg", data),
+            original_filename="photo.jpg",
+            content_type="image/jpeg",
+        )
+        assert upload.optimization_gain is None
+
+        count = optimize_images()
+
+        assert count == 1
+        upload.refresh_from_db()
+        assert upload.optimization_gain is not None
+        assert upload.optimization_gain != 0  # not an error
+
+    def test_optimize_png(self, user):
+        data = _make_png()
+        upload = FileUpload.objects.create(
+            uploaded_by=user,
+            file=SimpleUploadedFile("chart.png", data),
+            original_filename="chart.png",
+            content_type="image/png",
+        )
+
+        optimize_images()
+        upload.refresh_from_db()
+        assert upload.optimization_gain is not None
+
+    def test_optimize_webp(self, user):
+        data = _make_webp()
+        upload = FileUpload.objects.create(
+            uploaded_by=user,
+            file=SimpleUploadedFile("pic.webp", data),
+            original_filename="pic.webp",
+            content_type="image/webp",
+        )
+
+        optimize_images()
+        upload.refresh_from_db()
+        assert upload.optimization_gain is not None
+
+    def test_skips_svg(self, user):
+        upload = FileUpload.objects.create(
+            uploaded_by=user,
+            file=SimpleUploadedFile("icon.svg", b"<svg></svg>"),
+            original_filename="icon.svg",
+            content_type="image/svg+xml",
+        )
+
+        count = optimize_images()
+        assert count == 0
+        upload.refresh_from_db()
+        assert upload.optimization_gain is None  # still pending
+
+    def test_skips_gif(self, user):
+        upload = FileUpload.objects.create(
+            uploaded_by=user,
+            file=SimpleUploadedFile("anim.gif", b"GIF89a"),
+            original_filename="anim.gif",
+            content_type="image/gif",
+        )
+
+        count = optimize_images()
+        assert count == 0
+        upload.refresh_from_db()
+        assert upload.optimization_gain is None
+
+    def test_skips_non_image(self, user):
+        upload = FileUpload.objects.create(
+            uploaded_by=user,
+            file=SimpleUploadedFile("doc.pdf", b"%PDF-1.4"),
+            original_filename="doc.pdf",
+            content_type="application/pdf",
+        )
+
+        count = optimize_images()
+        assert count == 0
+        upload.refresh_from_db()
+        assert upload.optimization_gain is None
+
+    def test_idempotent(self, user):
+        data = _make_jpeg()
+        upload = FileUpload.objects.create(
+            uploaded_by=user,
+            file=SimpleUploadedFile("done.jpg", data),
+            original_filename="done.jpg",
+            content_type="image/jpeg",
+        )
+        optimize_images()
+        upload.refresh_from_db()
+        first_gain = upload.optimization_gain
+
+        # Running again should not reprocess
+        count = optimize_images()
+        assert count == 0
+        upload.refresh_from_db()
+        assert upload.optimization_gain == first_gain
+
+    def test_corrupt_file_sets_zero(self, user):
+        upload = FileUpload.objects.create(
+            uploaded_by=user,
+            file=SimpleUploadedFile("bad.jpg", b"not-an-image"),
+            original_filename="bad.jpg",
+            content_type="image/jpeg",
+        )
+
+        count = optimize_images()
+        assert count == 1
+        upload.refresh_from_db()
+        assert upload.optimization_gain == 0
+
+    def test_batch_limit(self, user):
+        from wiki.pages.tasks import OPTIMIZE_BATCH_SIZE
+
+        for i in range(OPTIMIZE_BATCH_SIZE + 5):
+            FileUpload.objects.create(
+                uploaded_by=user,
+                file=SimpleUploadedFile(f"img{i}.jpg", _make_jpeg()),
+                original_filename=f"img{i}.jpg",
+                content_type="image/jpeg",
+            )
+
+        count = optimize_images()
+        assert count == OPTIMIZE_BATCH_SIZE
+
+        # Second run picks up the remaining 5
+        count2 = optimize_images()
+        assert count2 == 5
+
+    def test_preserves_storage_key(self, user):
+        data = _make_jpeg()
+        upload = FileUpload.objects.create(
+            uploaded_by=user,
+            file=SimpleUploadedFile("keep-key.jpg", data),
+            original_filename="keep-key.jpg",
+            content_type="image/jpeg",
+        )
+        original_name = upload.file.name
+
+        optimize_images()
+        upload.refresh_from_db()
+        assert upload.file.name == original_name
+
+    def test_already_optimized_not_replaced(self, user):
+        """When optimization can't improve the file, original is kept."""
+        from PIL import Image as PILImage
+
+        # Create a tiny 1x1 JPEG — already minimal, hard to compress further
+        img = PILImage.new("RGB", (1, 1), color="red")
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=85, optimize=True)
+        buf.seek(0)
+        tiny_data = buf.read()
+
+        upload = FileUpload.objects.create(
+            uploaded_by=user,
+            file=SimpleUploadedFile("tiny.jpg", tiny_data),
+            original_filename="tiny.jpg",
+            content_type="image/jpeg",
+        )
+
+        optimize_images()
+        upload.refresh_from_db()
+
+        # gain should be <= 0 (no improvement)
+        assert upload.optimization_gain is not None
+        assert upload.optimization_gain <= 0
+        # File content should still be readable
+        upload.file.seek(0)
+        assert len(upload.file.read()) > 0
+
+    def test_rgba_jpeg_conversion(self, user):
+        """RGBA images saved as JPEG are converted to RGB."""
+        from PIL import Image as PILImage
+
+        img = PILImage.new("RGBA", (100, 100), color=(255, 0, 0, 128))
+        buf = io.BytesIO()
+        # Save as PNG first (JPEG can't store RGBA)
+        img.save(buf, format="PNG")
+        buf.seek(0)
+
+        upload = FileUpload.objects.create(
+            uploaded_by=user,
+            file=SimpleUploadedFile("alpha.jpg", buf.read()),
+            original_filename="alpha.jpg",
+            content_type="image/jpeg",
+        )
+
+        # Should not crash
+        count = optimize_images()
+        assert count == 1
+        upload.refresh_from_db()
+        assert upload.optimization_gain is not None

@@ -337,13 +337,14 @@ docker run -d \
     wiki-django run_daemon
 ```
 
-The daemon runs three tasks:
+The daemon runs these tasks:
 
 | Task | Default interval | Purpose |
 |---|---|---|
 | `sync_view_counts` | 5 s | Aggregates `PageViewTally` rows into `Page.view_count` and deletes processed tallies. Avoids write contention on the Page table during reads. |
 | `update_search_vectors` | 30 s | Rebuilds PostgreSQL full-text search vectors for all pages, so search results stay current. |
 | `cleanup` | 6 hours | Runs miscellaneous cleanup tasks. |
+| `optimize_images` | 60 s | Compresses uploaded images (JPEG, PNG, WebP) with Pillow to reduce file sizes. Only replaces the file when the optimized version is smaller. |
 
 Override intervals with environment variables (values in seconds):
 
@@ -352,6 +353,7 @@ Override intervals with environment variables (values in seconds):
 | `DAEMON_SYNC_VIEW_COUNTS_INTERVAL` | `5` |
 | `DAEMON_UPDATE_SEARCH_VECTORS_INTERVAL` | `30` |
 | `DAEMON_CLEANUP_INTERVAL` | `21600` |
+| `DAEMON_OPTIMIZE_IMAGES_INTERVAL` | `60` |
 
 
 ### Step 8: Seed Help Pages (Optional)

@@ -323,14 +323,22 @@ The file is uploaded and the appropriate Markdown syntax is inserted
 automatically — `![alt](url)` for images and `[filename](url)` for
 other files.
 
-**File size limit**: The maximum upload size is **1 GB** per file.
+**File size limit**: Images can be up to **20 MB**. Other files
+can be up to **1 GB**.
 
 **Blocked file types**: Executable files (`.exe`, `.sh`, `.bat`,
 `.js`, `.dll`, and similar) cannot be uploaded for security reasons.
 
-**Privacy**: Uploaded files are served through signed URLs. Files
-attached to a private page are only accessible to users who have
-permission to view that page.
+**Privacy**: Image metadata (EXIF data such as GPS coordinates,
+camera model, and timestamps) is automatically stripped before
+upload so it never reaches the server. Uploaded files are served
+through signed URLs. Files attached to a private page are only
+accessible to users who have permission to view that page.
+
+**Image optimization**: Uploaded images (JPEG, PNG, WebP) are
+automatically optimized in the background to reduce file sizes
+without noticeable quality loss. The original file is kept if
+optimization would make it larger.
 
 ### The editor
 
