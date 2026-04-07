@@ -168,8 +168,10 @@ var initMarkdownEditor = (function() {
 
     var MAX_IMAGE_SIZE = 20 * 1024 * 1024; // 20 MB
     var MAX_FILE_SIZE = 1024 * 1024 * 1024; // 1 GB
-    // Types where Canvas API would destroy the format (animation, vector)
-    var SKIP_STRIP_TYPES = ['image/gif', 'image/svg+xml'];
+    // Types where Canvas API would destroy the format (animation, vector).
+    // WebP is included because animated WebP is common and Canvas would
+    // silently discard all frames beyond the first.
+    var SKIP_STRIP_TYPES = ['image/gif', 'image/svg+xml', 'image/webp'];
 
     /**
      * Strip image metadata (EXIF, GPS, camera info) using the Canvas API.
@@ -186,15 +188,22 @@ var initMarkdownEditor = (function() {
         var url = URL.createObjectURL(file);
         var img = new Image();
         img.onload = function() {
-          var canvas = document.createElement('canvas');
-          canvas.width = img.naturalWidth;
-          canvas.height = img.naturalHeight;
-          canvas.getContext('2d').drawImage(img, 0, 0);
-          URL.revokeObjectURL(url);
-          canvas.toBlob(function(blob) {
-            if (!blob) { resolve(file); return; }
-            resolve(new File([blob], file.name, { type: file.type }));
-          }, file.type, 1.0);
+          try {
+            var canvas = document.createElement('canvas');
+            canvas.width = img.naturalWidth;
+            canvas.height = img.naturalHeight;
+            var ctx = canvas.getContext('2d');
+            if (!ctx) { URL.revokeObjectURL(url); resolve(file); return; }
+            ctx.drawImage(img, 0, 0);
+            URL.revokeObjectURL(url);
+            canvas.toBlob(function(blob) {
+              if (!blob) { resolve(file); return; }
+              resolve(new File([blob], file.name, { type: file.type }));
+            }, file.type, 1.0);
+          } catch (e) {
+            URL.revokeObjectURL(url);
+            resolve(file); // pass through on error
+          }
         };
         img.onerror = function() {
           URL.revokeObjectURL(url);

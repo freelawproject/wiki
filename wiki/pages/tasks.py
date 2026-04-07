@@ -2,6 +2,7 @@
 
 import io
 import logging
+import os
 from datetime import timedelta
 
 from django.contrib.postgres.search import SearchVector
@@ -63,7 +64,7 @@ def purge_deleted_pages(days=90):
 # ── Image optimization ──────────────────────────────────────────────
 
 OPTIMIZABLE_TYPES = {"image/jpeg", "image/png", "image/webp"}
-OPTIMIZE_BATCH_SIZE = 50
+OPTIMIZE_BATCH_SIZE = 5
 # Pillow format names keyed by MIME type
 _PILLOW_FORMAT = {
     "image/jpeg": "JPEG",
@@ -111,11 +112,19 @@ def _optimize_single_image(upload):
         # Optimized version is the same size or larger — keep original
         return gain
 
-    # Replace file in storage at the same key
+    # Replace file in storage at the same key, crash-safe.
     storage = upload.file.storage
     name = upload.file.name
-    storage.delete(name)
-    storage.save(name, ContentFile(optimized_bytes))
+    try:
+        # Local filesystem: write to temp file, then atomic rename
+        full_path = storage.path(name)
+        tmp_path = full_path + ".tmp"
+        with open(tmp_path, "wb") as f:
+            f.write(optimized_bytes)
+        os.replace(tmp_path, full_path)
+    except NotImplementedError:
+        # S3: save() performs an atomic PUT (file_overwrite=True)
+        storage.save(name, ContentFile(optimized_bytes))
     return gain
 
 

@@ -14,6 +14,7 @@ from django.core.management import call_command
 from django.test import Client
 from django.urls import reverse
 from django.utils import timezone
+from PIL import Image as PILImage
 
 from wiki.directories.models import Directory
 from wiki.lib.edit_lock import acquire_lock_for_page
@@ -32,6 +33,7 @@ from wiki.pages.models import (
     SlugRedirect,
 )
 from wiki.pages.tasks import (
+    OPTIMIZE_BATCH_SIZE,
     optimize_images,
     sync_page_view_counts,
     update_search_vectors,
@@ -3052,7 +3054,6 @@ class TestSearchContentCommand:
 
 def _make_jpeg(width=200, height=200, color="red"):
     """Create a JPEG image with Pillow and return its bytes."""
-    from PIL import Image as PILImage
 
     img = PILImage.new("RGB", (width, height), color=color)
     buf = io.BytesIO()
@@ -3064,7 +3065,6 @@ def _make_jpeg(width=200, height=200, color="red"):
 
 def _make_png(width=200, height=200, color="blue"):
     """Create a PNG image with Pillow and return its bytes."""
-    from PIL import Image as PILImage
 
     img = PILImage.new("RGB", (width, height), color=color)
     buf = io.BytesIO()
@@ -3075,7 +3075,6 @@ def _make_png(width=200, height=200, color="blue"):
 
 def _make_webp(width=200, height=200, color="green"):
     """Create a WebP image with Pillow and return its bytes."""
-    from PIL import Image as PILImage
 
     img = PILImage.new("RGB", (width, height), color=color)
     buf = io.BytesIO()
@@ -3200,8 +3199,6 @@ class TestImageOptimization:
         assert upload.optimization_gain == 0
 
     def test_batch_limit(self, user):
-        from wiki.pages.tasks import OPTIMIZE_BATCH_SIZE
-
         for i in range(OPTIMIZE_BATCH_SIZE + 5):
             FileUpload.objects.create(
                 uploaded_by=user,
@@ -3233,7 +3230,6 @@ class TestImageOptimization:
 
     def test_already_optimized_not_replaced(self, user):
         """When optimization can't improve the file, original is kept."""
-        from PIL import Image as PILImage
 
         # Create a tiny 1x1 JPEG — already minimal, hard to compress further
         img = PILImage.new("RGB", (1, 1), color="red")
@@ -3261,7 +3257,6 @@ class TestImageOptimization:
 
     def test_rgba_jpeg_conversion(self, user):
         """RGBA images saved as JPEG are converted to RGB."""
-        from PIL import Image as PILImage
 
         img = PILImage.new("RGBA", (100, 100), color=(255, 0, 0, 128))
         buf = io.BytesIO()
