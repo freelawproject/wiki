@@ -14,6 +14,7 @@ from django.core.management.base import BaseCommand
 
 from wiki.pages.management.commands.cleanup import Command as CleanupCommand
 from wiki.pages.tasks import (
+    optimize_images,
     purge_deleted_pages,
     sync_page_view_counts,
     update_search_vectors,
@@ -74,6 +75,11 @@ class Command(BaseCommand):
                 purge_deleted_pages,
                 settings.DAEMON_PURGE_DELETED_PAGES_INTERVAL,
                 "purge_deleted_pages",
+            ),
+            (
+                optimize_images,
+                settings.DAEMON_OPTIMIZE_IMAGES_INTERVAL,
+                "optimize_images",
             ),
         ]
 
