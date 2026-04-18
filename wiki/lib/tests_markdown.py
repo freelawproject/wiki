@@ -565,3 +565,17 @@ class TestAddNofollowToNonPublicLinks:
             f'<a rel="nofollow" href="{private_page.get_absolute_url()}">'
             in result
         )
+
+    def test_fragment_anchor_not_false_nofollow(self, page):
+        """Links with #fragment to public pages should NOT get nofollow."""
+        url = f"{page.get_absolute_url()}#some-heading"
+        html = f'<a href="{url}">link</a>'
+        result = _add_nofollow_to_non_public_links(html)
+        assert "nofollow" not in result
+
+    def test_fragment_anchor_private_still_nofollow(self, private_page):
+        """Links with #fragment to private pages should still get nofollow."""
+        url = f"{private_page.get_absolute_url()}#heading"
+        html = f'<a href="{url}">link</a>'
+        result = _add_nofollow_to_non_public_links(html)
+        assert 'rel="nofollow"' in result

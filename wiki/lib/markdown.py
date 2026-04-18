@@ -10,7 +10,9 @@ from urllib.parse import urlparse
 import markdown2
 import nh3
 from django.conf import settings
+from django.urls import Resolver404, resolve
 
+from wiki.directories.models import Directory
 from wiki.lib.inheritance import resolve_effective_value
 
 # ── Alert types (GitHub-style) ───────────────────────────────────────
@@ -342,31 +344,32 @@ _INTERNAL_HREF_RE = re.compile(r'<a\s+href="((?:https?://[^"]*)?/c/[^"]+)"')
 def _add_nofollow_to_non_public_links(html):
     """Add rel="nofollow" to internal links pointing to non-public content.
 
-    Finds <a href="/c/..."> tags, resolves them to pages or directories,
-    and adds rel="nofollow" when the target is non-public or doesn't
-    exist (broken link → 404 for crawlers).
+    Finds <a href="/c/..."> tags, uses Django's URL resolver to extract
+    content paths, then batch-checks pages and directories. Adds
+    rel="nofollow" when the target is non-public or doesn't exist
+    (broken link → 404 for crawlers).
     """
     # Inline import to avoid circular dependency (pages/models ↔ lib/markdown)
-    from wiki.directories.models import Directory
     from wiki.pages.models import Page
 
     hrefs = _INTERNAL_HREF_RE.findall(html)
     if not hrefs:
         return html
 
-    # Extract content paths from internal URLs (everything after /c/)
+    # Use Django's URL resolver to extract content paths from hrefs
     path_by_href = {}
     slug_set = set()
     for href in hrefs:
-        if href.startswith("http"):
-            url_path = urlparse(href).path
-        else:
-            url_path = href
-        url_path = url_path.rstrip("/")
-        idx = url_path.find("/c/")
-        if idx == -1:
+        url_path = urlparse(href).path
+        try:
+            match = resolve(url_path)
+        except Resolver404:
             continue
-        content_path = url_path[idx + 3 :]
+        # Only process the content catch-all; action URLs (edit, move,
+        # etc.) are already blocked by robots.txt.
+        if match.url_name != "resolve_path":
+            continue
+        content_path = match.kwargs.get("path", "")
         if not content_path:
             continue
         path_by_href[href] = content_path
@@ -377,7 +380,7 @@ def _add_nofollow_to_non_public_links(html):
 
     # Batch-load pages by slug, then index by content_path
     pages = Page.objects.filter(slug__in=slug_set).select_related(
-        "directory", "directory__parent"
+        "directory", "directory__parent", "directory__parent__parent"
     )
     page_by_path = {p.content_path: p for p in pages}
 
@@ -387,7 +390,7 @@ def _add_nofollow_to_non_public_links(html):
     dir_by_path = {}
     if unmatched:
         dirs = Directory.objects.filter(path__in=unmatched).select_related(
-            "parent"
+            "parent", "parent__parent", "parent__parent__parent"
         )
         dir_by_path = {d.path: d for d in dirs}
 
