@@ -2,9 +2,10 @@
 
 import time_machine
 from django.contrib.auth.models import AnonymousUser
+from django.urls import reverse
 from django.utils import timezone
 
-from wiki.directories.models import DirectoryPermission
+from wiki.directories.models import Directory, DirectoryPermission
 from wiki.lib.edit_lock import (
     acquire_lock_for_directory,
     acquire_lock_for_page,
@@ -18,10 +19,13 @@ from wiki.lib.models import EditLock
 from wiki.lib.permissions import (
     can_edit_directory,
     can_edit_page,
+    can_view_directory,
     can_view_page,
+    editable_page_ids,
     is_system_owner,
 )
-from wiki.pages.models import Page, PagePermission
+from wiki.pages.models import Page, PagePermission, PageRevision
+from wiki.proposals.models import ChangeProposal
 from wiki.users.models import SystemConfig
 
 
@@ -223,6 +227,437 @@ class TestCanEditDirectory:
         if hasattr(other_user, "_group_ids_cache"):
             del other_user._group_ids_cache
         assert can_edit_directory(other_user, sub_directory)
+
+
+class TestVisibilityGatesEditAccess:
+    """Verify that view access is enforced before edit access.
+
+    The core security invariant: a user who cannot VIEW a page or
+    directory must NEVER be able to edit it, even if the editability
+    setting would otherwise allow it (e.g. editability="internal" on
+    a private directory).
+    """
+
+    def test_private_dir_internal_edit_denies_non_viewer_page(
+        self, user, other_user, private_directory
+    ):
+        """Page in a private dir with editability=internal: non-viewer
+        must not be able to edit."""
+        private_directory.editability = "internal"
+        private_directory.save()
+
+        page = Page.objects.create(
+            title="Secret Roadmap",
+            slug="secret-roadmap",
+            content="Confidential plans.",
+            directory=private_directory,
+            owner=user,
+            created_by=user,
+            updated_by=user,
+            visibility="inherit",
+            editability="inherit",
+        )
+
+        # other_user is authenticated but has no access to private dir
+        assert not can_view_page(other_user, page)
+        assert not can_edit_page(other_user, page)
+
+    def test_private_dir_internal_edit_allows_authorized_viewer(
+        self, user, other_user, private_directory
+    ):
+        """Page in a private dir with editability=internal: user with
+        view permission should be able to edit."""
+        private_directory.editability = "internal"
+        private_directory.save()
+
+        page = Page.objects.create(
+            title="Visible Roadmap",
+            slug="visible-roadmap",
+            content="Plans for those with access.",
+            directory=private_directory,
+            owner=user,
+            created_by=user,
+            updated_by=user,
+            visibility="inherit",
+            editability="inherit",
+        )
+        DirectoryPermission.objects.create(
+            directory=private_directory,
+            user=other_user,
+            permission_type=DirectoryPermission.PermissionType.VIEW,
+        )
+
+        assert can_view_page(other_user, page)
+        assert can_edit_page(other_user, page)
+
+    def test_private_dir_internal_edit_denies_non_viewer_directory(
+        self, user, other_user, root_directory
+    ):
+        """Private dir with editability=internal: non-viewer must not
+        be able to edit the directory itself."""
+        private_dir = Directory.objects.create(
+            path="classified",
+            title="Classified",
+            parent=root_directory,
+            owner=user,
+            created_by=user,
+            visibility="private",
+            editability="internal",
+        )
+
+        assert not can_view_directory(other_user, private_dir)
+        assert not can_edit_directory(other_user, private_dir)
+
+    def test_private_dir_internal_edit_allows_authorized_viewer_directory(
+        self, user, other_user, root_directory
+    ):
+        """Private dir with editability=internal: user with view
+        permission should be able to edit the directory."""
+        private_dir = Directory.objects.create(
+            path="team-dir",
+            title="Team Dir",
+            parent=root_directory,
+            owner=user,
+            created_by=user,
+            visibility="private",
+            editability="internal",
+        )
+        DirectoryPermission.objects.create(
+            directory=private_dir,
+            user=other_user,
+            permission_type=DirectoryPermission.PermissionType.VIEW,
+        )
+
+        assert can_view_directory(other_user, private_dir)
+        assert can_edit_directory(other_user, private_dir)
+
+    def test_private_page_internal_edit_denies_non_viewer(
+        self, user, other_user
+    ):
+        """A directly private page with editability=internal: non-viewer
+        must not be able to edit."""
+        page = Page.objects.create(
+            title="Private Internal",
+            slug="private-internal",
+            content="Secret.",
+            owner=user,
+            created_by=user,
+            updated_by=user,
+            visibility="private",
+            editability="internal",
+        )
+
+        assert not can_view_page(other_user, page)
+        assert not can_edit_page(other_user, page)
+
+    def test_editable_page_ids_excludes_non_viewable(
+        self, user, other_user, private_directory
+    ):
+        """editable_page_ids must not include pages the user cannot view."""
+        private_directory.editability = "internal"
+        private_directory.save()
+
+        page = Page.objects.create(
+            title="Hidden Page",
+            slug="hidden-page",
+            content="Cannot see this.",
+            directory=private_directory,
+            owner=user,
+            created_by=user,
+            updated_by=user,
+            visibility="inherit",
+            editability="inherit",
+        )
+
+        ids = editable_page_ids(other_user)
+        assert page.id not in ids
+
+
+class TestVisibilityGatesEditViews:
+    """Verify that edit/move/permissions/revert views return 404 for
+    users who cannot view the page or directory, even when editability
+    would otherwise grant access."""
+
+    def test_page_edit_returns_404_for_non_viewer(
+        self, client, user, other_user, private_directory
+    ):
+        private_directory.editability = "internal"
+        private_directory.save()
+        page = Page.objects.create(
+            title="Secret Page",
+            slug="secret-page-edit",
+            content="Hidden.",
+            directory=private_directory,
+            owner=user,
+            created_by=user,
+            updated_by=user,
+            visibility="inherit",
+            editability="inherit",
+        )
+        client.force_login(other_user)
+        url = reverse("page_edit", kwargs={"path": page.content_path})
+        response = client.get(url)
+        assert response.status_code == 404
+
+    def test_page_move_returns_404_for_non_viewer(
+        self, client, user, other_user, private_directory
+    ):
+        private_directory.editability = "internal"
+        private_directory.save()
+        page = Page.objects.create(
+            title="Secret Move",
+            slug="secret-page-move",
+            content="Hidden.",
+            directory=private_directory,
+            owner=user,
+            created_by=user,
+            updated_by=user,
+            visibility="inherit",
+            editability="inherit",
+        )
+        client.force_login(other_user)
+        url = reverse("page_move", kwargs={"path": page.content_path})
+        response = client.get(url)
+        assert response.status_code == 404
+
+    def test_page_permissions_returns_404_for_non_viewer(
+        self, client, user, other_user, private_directory
+    ):
+        private_directory.editability = "internal"
+        private_directory.save()
+        page = Page.objects.create(
+            title="Secret Perms",
+            slug="secret-page-perms",
+            content="Hidden.",
+            directory=private_directory,
+            owner=user,
+            created_by=user,
+            updated_by=user,
+            visibility="inherit",
+            editability="inherit",
+        )
+        client.force_login(other_user)
+        url = reverse("page_permissions", kwargs={"path": page.content_path})
+        response = client.get(url)
+        assert response.status_code == 404
+
+    def test_directory_edit_returns_404_for_non_viewer(
+        self, client, user, other_user, root_directory
+    ):
+        private_dir = Directory.objects.create(
+            path="secret-dir-edit",
+            title="Secret Dir",
+            parent=root_directory,
+            owner=user,
+            created_by=user,
+            visibility="private",
+            editability="internal",
+        )
+        client.force_login(other_user)
+        url = reverse("directory_edit", kwargs={"path": private_dir.path})
+        response = client.get(url)
+        assert response.status_code == 404
+
+    def test_directory_delete_returns_404_for_non_viewer(
+        self, client, user, other_user, root_directory
+    ):
+        private_dir = Directory.objects.create(
+            path="secret-dir-del",
+            title="Secret Dir Del",
+            parent=root_directory,
+            owner=user,
+            created_by=user,
+            visibility="private",
+            editability="internal",
+        )
+        client.force_login(other_user)
+        url = reverse("directory_delete", kwargs={"path": private_dir.path})
+        response = client.get(url)
+        assert response.status_code == 404
+
+    def test_directory_permissions_returns_404_for_non_viewer(
+        self, client, user, other_user, root_directory
+    ):
+        private_dir = Directory.objects.create(
+            path="secret-dir-perms",
+            title="Secret Dir Perms",
+            parent=root_directory,
+            owner=user,
+            created_by=user,
+            visibility="private",
+            editability="internal",
+        )
+        client.force_login(other_user)
+        url = reverse(
+            "directory_permissions",
+            kwargs={"path": private_dir.path},
+        )
+        response = client.get(url)
+        assert response.status_code == 404
+
+    def test_page_delete_returns_404_for_non_viewer(
+        self, client, user, other_user, private_directory
+    ):
+        private_directory.editability = "internal"
+        private_directory.save()
+        page = Page.objects.create(
+            title="Secret Delete",
+            slug="secret-page-del",
+            content="Hidden.",
+            directory=private_directory,
+            owner=user,
+            created_by=user,
+            updated_by=user,
+            visibility="inherit",
+            editability="inherit",
+        )
+        client.force_login(other_user)
+        url = reverse("page_delete", kwargs={"path": page.content_path})
+        response = client.get(url)
+        assert response.status_code == 404
+
+    def test_page_revert_returns_404_for_non_viewer(
+        self, client, user, other_user, private_directory
+    ):
+        private_directory.editability = "internal"
+        private_directory.save()
+        page = Page.objects.create(
+            title="Secret Revert",
+            slug="secret-page-rev",
+            content="Hidden.",
+            directory=private_directory,
+            owner=user,
+            created_by=user,
+            updated_by=user,
+            visibility="inherit",
+            editability="inherit",
+        )
+        PageRevision.objects.create(
+            page=page,
+            title=page.title,
+            content=page.content,
+            change_message="v1",
+            revision_number=1,
+            created_by=user,
+        )
+        client.force_login(other_user)
+        url = reverse(
+            "page_revert",
+            kwargs={"path": page.content_path, "rev_num": 1},
+        )
+        response = client.get(url)
+        assert response.status_code == 404
+
+    def test_proposal_list_returns_404_for_non_viewer(
+        self, client, user, other_user, private_directory
+    ):
+        private_directory.editability = "internal"
+        private_directory.save()
+        page = Page.objects.create(
+            title="Secret Proposals",
+            slug="secret-page-prop",
+            content="Hidden.",
+            directory=private_directory,
+            owner=user,
+            created_by=user,
+            updated_by=user,
+            visibility="inherit",
+            editability="inherit",
+        )
+        client.force_login(other_user)
+        url = reverse("proposal_list", kwargs={"path": page.content_path})
+        response = client.get(url)
+        assert response.status_code == 404
+
+    def test_proposal_review_returns_404_for_non_viewer(
+        self, client, user, other_user, private_directory
+    ):
+        private_directory.editability = "internal"
+        private_directory.save()
+        page = Page.objects.create(
+            title="Secret Review",
+            slug="secret-page-review",
+            content="Hidden.",
+            directory=private_directory,
+            owner=user,
+            created_by=user,
+            updated_by=user,
+            visibility="inherit",
+            editability="inherit",
+        )
+        proposal = ChangeProposal.objects.create(
+            page=page,
+            proposed_title=page.title,
+            proposed_content="New content",
+            change_message="test",
+        )
+        client.force_login(other_user)
+        url = reverse(
+            "proposal_review",
+            kwargs={"path": page.content_path, "pk": proposal.pk},
+        )
+        response = client.get(url)
+        assert response.status_code == 404
+
+    def test_proposal_accept_returns_404_for_non_viewer(
+        self, client, user, other_user, private_directory
+    ):
+        private_directory.editability = "internal"
+        private_directory.save()
+        page = Page.objects.create(
+            title="Secret Accept",
+            slug="secret-page-accept",
+            content="Hidden.",
+            directory=private_directory,
+            owner=user,
+            created_by=user,
+            updated_by=user,
+            visibility="inherit",
+            editability="inherit",
+        )
+        proposal = ChangeProposal.objects.create(
+            page=page,
+            proposed_title=page.title,
+            proposed_content="New content",
+            change_message="test",
+        )
+        client.force_login(other_user)
+        url = reverse(
+            "proposal_accept",
+            kwargs={"path": page.content_path, "pk": proposal.pk},
+        )
+        response = client.post(url)
+        assert response.status_code == 404
+
+    def test_proposal_deny_returns_404_for_non_viewer(
+        self, client, user, other_user, private_directory
+    ):
+        private_directory.editability = "internal"
+        private_directory.save()
+        page = Page.objects.create(
+            title="Secret Deny",
+            slug="secret-page-deny",
+            content="Hidden.",
+            directory=private_directory,
+            owner=user,
+            created_by=user,
+            updated_by=user,
+            visibility="inherit",
+            editability="inherit",
+        )
+        proposal = ChangeProposal.objects.create(
+            page=page,
+            proposed_title=page.title,
+            proposed_content="New content",
+            change_message="test",
+        )
+        client.force_login(other_user)
+        url = reverse(
+            "proposal_deny",
+            kwargs={"path": page.content_path, "pk": proposal.pk},
+        )
+        response = client.post(url)
+        assert response.status_code == 404
 
 
 # ── Edit Lock Helpers ─────────────────────────────────────

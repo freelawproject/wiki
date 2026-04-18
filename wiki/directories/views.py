@@ -316,6 +316,9 @@ def directory_edit(request, path):
     """Edit a directory's title and description."""
     directory = get_object_or_404(Directory, path=path.strip("/"))
 
+    if not can_view_directory(request.user, directory):
+        raise Http404
+
     if not can_edit_directory(request.user, directory):
         messages.error(
             request,
@@ -399,13 +402,16 @@ def directory_create(request, path=""):
             path="", defaults={"title": "Home"}
         )
 
-    # Check edit permission on parent directory
-    if parent.path and not can_edit_directory(request.user, parent):
-        messages.error(
-            request,
-            "You don't have permission to create directories here.",
-        )
-        return redirect(parent.get_absolute_url())
+    # Check permissions on parent directory
+    if parent.path:
+        if not can_view_directory(request.user, parent):
+            raise Http404
+        if not can_edit_directory(request.user, parent):
+            messages.error(
+                request,
+                "You don't have permission to create directories here.",
+            )
+            return redirect(parent.get_absolute_url())
 
     breadcrumbs = parent.get_breadcrumbs()
     breadcrumbs.append(("New Subdirectory", ""))
@@ -454,6 +460,9 @@ def _get_permissions_url(directory):
 
 def _directory_permissions_inner(request, directory):
     """Shared logic for managing directory permissions."""
+    if not can_view_directory(request.user, directory):
+        raise Http404
+
     if not can_edit_directory(request.user, directory):
         messages.error(
             request,
@@ -572,6 +581,9 @@ def directory_move(request, path):
     """Move a directory to a new parent."""
     directory = get_object_or_404(Directory, path=path.strip("/"))
 
+    if not can_view_directory(request.user, directory):
+        raise Http404
+
     if not can_edit_directory(request.user, directory):
         messages.error(
             request,
@@ -649,6 +661,9 @@ def _update_descendant_paths(directory):
 def directory_delete(request, path):
     """Delete a directory (must be empty)."""
     directory = get_object_or_404(Directory, path=path.strip("/"))
+
+    if not can_view_directory(request.user, directory):
+        raise Http404
 
     if not can_edit_directory(request.user, directory):
         messages.error(
@@ -764,6 +779,9 @@ def directory_inherit_meta(request):
 
 def _directory_apply_permissions_inner(request, directory):
     """Shared logic for applying directory permissions to children."""
+    if not can_view_directory(request.user, directory):
+        raise Http404
+
     if not can_edit_directory(request.user, directory):
         messages.error(
             request,
@@ -1018,6 +1036,9 @@ def directory_diff_root(request, v1, v2):
 
 def _directory_revert_inner(request, directory, rev_num):
     """Shared logic for directory revert view."""
+    if not can_view_directory(request.user, directory):
+        raise Http404
+
     if not can_edit_directory(request.user, directory):
         messages.error(
             request,
