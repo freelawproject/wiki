@@ -85,6 +85,9 @@ def proposal_list(request, path):
     """List proposals and comments for a page (for editors/owners)."""
     page = get_page_from_path(path)
 
+    if not can_view_page(request.user, page):
+        raise Http404
+
     if not can_edit_page(request.user, page):
         messages.error(
             request,
@@ -124,6 +127,9 @@ def proposal_review(request, path, pk):
     """Review a single proposal with diff view."""
     page = get_page_from_path(path)
 
+    if not can_view_page(request.user, page):
+        raise Http404
+
     if not can_edit_page(request.user, page):
         messages.error(
             request,
@@ -151,6 +157,9 @@ def proposal_review(request, path, pk):
 def proposal_accept(request, path, pk):
     """Accept a proposal, applying changes to the page."""
     page = get_page_from_path(path)
+
+    if not can_view_page(request.user, page):
+        raise Http404
 
     if not can_edit_page(request.user, page):
         messages.error(
@@ -209,6 +218,9 @@ def proposal_accept(request, path, pk):
 def proposal_deny(request, path, pk):
     """Deny a proposal with an optional reason."""
     page = get_page_from_path(path)
+
+    if not can_view_page(request.user, page):
+        raise Http404
 
     if not can_edit_page(request.user, page):
         messages.error(request, "You don't have permission to deny proposals.")

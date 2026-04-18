@@ -526,17 +526,16 @@ def page_create(request, path=""):
     if path:
         directory = get_object_or_404(Directory, path=path.strip("/"))
 
-    # Check edit permission on target directory
-    if (
-        directory
-        and directory.path
-        and not can_edit_directory(request.user, directory)
-    ):
-        messages.error(
-            request,
-            "You don't have permission to create pages here.",
-        )
-        return redirect(directory.get_absolute_url())
+    # Check permissions on target directory
+    if directory and directory.path:
+        if not can_view_directory(request.user, directory):
+            raise Http404
+        if not can_edit_directory(request.user, directory):
+            messages.error(
+                request,
+                "You don't have permission to create pages here.",
+            )
+            return redirect(directory.get_absolute_url())
 
     # Build breadcrumbs for the target directory
     breadcrumbs = [("Home", reverse("root"))]
@@ -617,6 +616,9 @@ def page_edit(request, path):
     """Edit an existing page."""
     slug = _parse_page_path(path)
     page = get_object_or_404(Page, slug=slug)
+
+    if not can_view_page(request.user, page):
+        raise Http404
 
     if not can_edit_page(request.user, page):
         messages.error(request, "You don't have permission to edit this page.")
@@ -735,6 +737,9 @@ def page_move(request, path):
     slug = _parse_page_path(path)
     page = get_object_or_404(Page, slug=slug)
 
+    if not can_view_page(request.user, page):
+        raise Http404
+
     if not can_edit_page(request.user, page):
         messages.error(request, "You don't have permission to move this page.")
         return redirect(page.get_absolute_url())
@@ -837,6 +842,9 @@ def page_permissions(request, path):
     """Manage permissions for a page."""
     slug = _parse_page_path(path)
     page = get_object_or_404(Page, slug=slug)
+
+    if not can_view_page(request.user, page):
+        raise Http404
 
     if not can_edit_page(request.user, page):
         messages.error(
@@ -1022,6 +1030,9 @@ def page_revert(request, path, rev_num):
     """Revert a page to a previous revision (creates a new revision)."""
     slug = _parse_page_path(path)
     page = get_object_or_404(Page, slug=slug)
+
+    if not can_view_page(request.user, page):
+        raise Http404
 
     if not can_edit_page(request.user, page):
         messages.error(request, "You don't have permission to edit this page.")
