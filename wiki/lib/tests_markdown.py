@@ -9,6 +9,7 @@ from wiki.lib.markdown import (
     _MD_LINK_WIKI_RE,
     _REF_LINK_WIKI_RE,
     WIKI_LINK_RE,
+    _add_nofollow_to_non_public_links,
     _convert_alerts,
     _convert_button_links,
     extract_all_wiki_slugs,
@@ -16,6 +17,7 @@ from wiki.lib.markdown import (
     render_markdown,
     strip_markdown,
 )
+from wiki.pages.models import Page
 
 
 class TestStripMarkdown:
@@ -473,3 +475,107 @@ class TestStripMarkdownButtons:
     def test_strips_button_danger(self):
         result = strip_markdown("[Delete](/x){button-danger}")
         assert "{button-danger}" not in result
+
+
+class TestAddNofollowToNonPublicLinks:
+    """Test _add_nofollow_to_non_public_links adds rel=nofollow correctly."""
+
+    def test_public_page_no_nofollow(self, page):
+        """Links to public pages should not get nofollow."""
+        html = f'<a href="{page.get_absolute_url()}">link</a>'
+        result = _add_nofollow_to_non_public_links(html)
+        assert "nofollow" not in result
+
+    def test_private_page_gets_nofollow(self, private_page):
+        """Links to private pages should get nofollow."""
+        html = f'<a href="{private_page.get_absolute_url()}">link</a>'
+        result = _add_nofollow_to_non_public_links(html)
+        assert 'rel="nofollow"' in result
+
+    def test_page_in_directory_public(self, page_in_directory):
+        """Links to public pages inside directories should not get nofollow."""
+        html = f'<a href="{page_in_directory.get_absolute_url()}">link</a>'
+        result = _add_nofollow_to_non_public_links(html)
+        assert "nofollow" not in result
+
+    def test_page_inheriting_private_gets_nofollow(
+        self, private_directory, user
+    ):
+        """A page inheriting private visibility from its directory gets nofollow."""
+        p = Page.objects.create(
+            title="Hidden",
+            slug="hidden-page",
+            content="secret",
+            directory=private_directory,
+            owner=user,
+            created_by=user,
+            updated_by=user,
+            visibility=Page.Visibility.INHERIT,
+        )
+        html = f'<a href="{p.get_absolute_url()}">link</a>'
+        result = _add_nofollow_to_non_public_links(html)
+        assert 'rel="nofollow"' in result
+
+    def test_private_directory_link_gets_nofollow(self, private_directory):
+        """Links to private directories should get nofollow."""
+        html = f'<a href="{private_directory.get_absolute_url()}">link</a>'
+        result = _add_nofollow_to_non_public_links(html)
+        assert 'rel="nofollow"' in result
+
+    def test_public_directory_no_nofollow(self, sub_directory):
+        """Links to public directories should not get nofollow."""
+        html = f'<a href="{sub_directory.get_absolute_url()}">link</a>'
+        result = _add_nofollow_to_non_public_links(html)
+        assert "nofollow" not in result
+
+    def test_broken_link_gets_nofollow(self, db):
+        """Links to non-existent pages/dirs should get nofollow (will 404)."""
+        html = '<a href="/c/does-not-exist">link</a>'
+        result = _add_nofollow_to_non_public_links(html)
+        assert 'rel="nofollow"' in result
+
+    def test_broken_nested_link_gets_nofollow(self, db):
+        """Broken links to nested paths should also get nofollow."""
+        html = '<a href="/c/some/deep/path/missing">link</a>'
+        result = _add_nofollow_to_non_public_links(html)
+        assert 'rel="nofollow"' in result
+
+    def test_no_internal_links_returns_unchanged(self):
+        """HTML without internal /c/ links should pass through unchanged."""
+        html = '<a href="https://example.com">external</a>'
+        result = _add_nofollow_to_non_public_links(html)
+        assert result == html
+
+    def test_absolute_url_private_page(self, private_page):
+        """Absolute URLs (https://...) to private pages should get nofollow."""
+        url = f"https://wiki.free.law{private_page.get_absolute_url()}"
+        html = f'<a href="{url}">link</a>'
+        result = _add_nofollow_to_non_public_links(html)
+        assert 'rel="nofollow"' in result
+
+    def test_multiple_links_mixed_visibility(self, page, private_page):
+        """Mix of public/private links: only private gets nofollow."""
+        html = (
+            f'<a href="{page.get_absolute_url()}">public</a> '
+            f'<a href="{private_page.get_absolute_url()}">private</a>'
+        )
+        result = _add_nofollow_to_non_public_links(html)
+        assert f'<a href="{page.get_absolute_url()}">' in result
+        assert (
+            f'<a rel="nofollow" href="{private_page.get_absolute_url()}">'
+            in result
+        )
+
+    def test_fragment_anchor_not_false_nofollow(self, page):
+        """Links with #fragment to public pages should NOT get nofollow."""
+        url = f"{page.get_absolute_url()}#some-heading"
+        html = f'<a href="{url}">link</a>'
+        result = _add_nofollow_to_non_public_links(html)
+        assert "nofollow" not in result
+
+    def test_fragment_anchor_private_still_nofollow(self, private_page):
+        """Links with #fragment to private pages should still get nofollow."""
+        url = f"{private_page.get_absolute_url()}#heading"
+        html = f'<a href="{url}">link</a>'
+        result = _add_nofollow_to_non_public_links(html)
+        assert 'rel="nofollow"' in result

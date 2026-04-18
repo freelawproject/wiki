@@ -486,6 +486,22 @@ class TestDirectorySort:
         # "Last edited" should be the active pill
         assert b">Last edited</span>" in r.content
 
+    def test_sort_links_have_nofollow(self, client, page):
+        """Sort links should have rel=nofollow to prevent crawler indexing."""
+        r = client.get(reverse("root"))
+        content = r.content.decode()
+        assert 'href="?sort=updated" rel="nofollow"' in content
+        assert 'href="?sort=created" rel="nofollow"' in content
+        assert 'href="?sort=views" rel="nofollow"' in content
+
+    def test_mobile_search_link_has_nofollow(self, client, sub_directory):
+        """Mobile search link in header should have rel=nofollow."""
+        r = client.get(sub_directory.get_absolute_url())
+        content = r.content.decode()
+        assert 'rel="nofollow"' in content
+        # The search link includes the directory path as a query param
+        assert f"?q=in:{sub_directory.path}+" in content
+
 
 class TestPinnedPages:
     """Test that pinned pages sort to the top of directory listings."""
