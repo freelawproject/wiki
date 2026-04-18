@@ -790,6 +790,9 @@ def page_delete(request, path):
     slug = _parse_page_path(path)
     page = get_object_or_404(Page, slug=slug)
 
+    if not can_view_page(request.user, page):
+        raise Http404
+
     if page.owner != request.user and not is_system_owner(request.user):
         messages.error(
             request, "You don't have permission to delete this page."

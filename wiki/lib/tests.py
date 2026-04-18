@@ -24,7 +24,8 @@ from wiki.lib.permissions import (
     editable_page_ids,
     is_system_owner,
 )
-from wiki.pages.models import Page, PagePermission
+from wiki.pages.models import Page, PagePermission, PageRevision
+from wiki.proposals.models import ChangeProposal
 from wiki.users.models import SystemConfig
 
 
@@ -492,6 +493,170 @@ class TestVisibilityGatesEditViews:
             kwargs={"path": private_dir.path},
         )
         response = client.get(url)
+        assert response.status_code == 404
+
+    def test_page_delete_returns_404_for_non_viewer(
+        self, client, user, other_user, private_directory
+    ):
+        private_directory.editability = "internal"
+        private_directory.save()
+        page = Page.objects.create(
+            title="Secret Delete",
+            slug="secret-page-del",
+            content="Hidden.",
+            directory=private_directory,
+            owner=user,
+            created_by=user,
+            updated_by=user,
+            visibility="inherit",
+            editability="inherit",
+        )
+        client.force_login(other_user)
+        url = reverse("page_delete", kwargs={"path": page.content_path})
+        response = client.get(url)
+        assert response.status_code == 404
+
+    def test_page_revert_returns_404_for_non_viewer(
+        self, client, user, other_user, private_directory
+    ):
+        private_directory.editability = "internal"
+        private_directory.save()
+        page = Page.objects.create(
+            title="Secret Revert",
+            slug="secret-page-rev",
+            content="Hidden.",
+            directory=private_directory,
+            owner=user,
+            created_by=user,
+            updated_by=user,
+            visibility="inherit",
+            editability="inherit",
+        )
+        PageRevision.objects.create(
+            page=page,
+            title=page.title,
+            content=page.content,
+            change_message="v1",
+            revision_number=1,
+            created_by=user,
+        )
+        client.force_login(other_user)
+        url = reverse(
+            "page_revert",
+            kwargs={"path": page.content_path, "rev_num": 1},
+        )
+        response = client.get(url)
+        assert response.status_code == 404
+
+    def test_proposal_list_returns_404_for_non_viewer(
+        self, client, user, other_user, private_directory
+    ):
+        private_directory.editability = "internal"
+        private_directory.save()
+        page = Page.objects.create(
+            title="Secret Proposals",
+            slug="secret-page-prop",
+            content="Hidden.",
+            directory=private_directory,
+            owner=user,
+            created_by=user,
+            updated_by=user,
+            visibility="inherit",
+            editability="inherit",
+        )
+        client.force_login(other_user)
+        url = reverse("proposal_list", kwargs={"path": page.content_path})
+        response = client.get(url)
+        assert response.status_code == 404
+
+    def test_proposal_review_returns_404_for_non_viewer(
+        self, client, user, other_user, private_directory
+    ):
+        private_directory.editability = "internal"
+        private_directory.save()
+        page = Page.objects.create(
+            title="Secret Review",
+            slug="secret-page-review",
+            content="Hidden.",
+            directory=private_directory,
+            owner=user,
+            created_by=user,
+            updated_by=user,
+            visibility="inherit",
+            editability="inherit",
+        )
+        proposal = ChangeProposal.objects.create(
+            page=page,
+            proposed_title=page.title,
+            proposed_content="New content",
+            change_message="test",
+        )
+        client.force_login(other_user)
+        url = reverse(
+            "proposal_review",
+            kwargs={"path": page.content_path, "pk": proposal.pk},
+        )
+        response = client.get(url)
+        assert response.status_code == 404
+
+    def test_proposal_accept_returns_404_for_non_viewer(
+        self, client, user, other_user, private_directory
+    ):
+        private_directory.editability = "internal"
+        private_directory.save()
+        page = Page.objects.create(
+            title="Secret Accept",
+            slug="secret-page-accept",
+            content="Hidden.",
+            directory=private_directory,
+            owner=user,
+            created_by=user,
+            updated_by=user,
+            visibility="inherit",
+            editability="inherit",
+        )
+        proposal = ChangeProposal.objects.create(
+            page=page,
+            proposed_title=page.title,
+            proposed_content="New content",
+            change_message="test",
+        )
+        client.force_login(other_user)
+        url = reverse(
+            "proposal_accept",
+            kwargs={"path": page.content_path, "pk": proposal.pk},
+        )
+        response = client.post(url)
+        assert response.status_code == 404
+
+    def test_proposal_deny_returns_404_for_non_viewer(
+        self, client, user, other_user, private_directory
+    ):
+        private_directory.editability = "internal"
+        private_directory.save()
+        page = Page.objects.create(
+            title="Secret Deny",
+            slug="secret-page-deny",
+            content="Hidden.",
+            directory=private_directory,
+            owner=user,
+            created_by=user,
+            updated_by=user,
+            visibility="inherit",
+            editability="inherit",
+        )
+        proposal = ChangeProposal.objects.create(
+            page=page,
+            proposed_title=page.title,
+            proposed_content="New content",
+            change_message="test",
+        )
+        client.force_login(other_user)
+        url = reverse(
+            "proposal_deny",
+            kwargs={"path": page.content_path, "pk": proposal.pk},
+        )
+        response = client.post(url)
         assert response.status_code == 404
 
 
