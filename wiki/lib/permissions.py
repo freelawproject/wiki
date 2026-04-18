@@ -232,8 +232,15 @@ def viewable_pages_q(user):
 
 
 def can_edit_page(user, page):
-    """Check if user can edit a page."""
+    """Check if user can edit a page.
+
+    Editing requires view access first — a user who cannot see a page
+    must not be able to edit it, regardless of editability settings.
+    """
     if not user.is_authenticated:
+        return False
+
+    if not can_view_page(user, page):
         return False
 
     effective_editability, _ = resolve_effective_value(page, "editability")
@@ -276,8 +283,15 @@ def can_edit_page(user, page):
 
 
 def can_edit_directory(user, directory):
-    """Check if user can edit a directory."""
+    """Check if user can edit a directory.
+
+    Editing requires view access first — a user who cannot see a
+    directory must not be able to edit it, regardless of editability.
+    """
     if not user.is_authenticated:
+        return False
+
+    if not can_view_directory(user, directory):
         return False
 
     effective_editability, _ = resolve_effective_value(
@@ -400,4 +414,11 @@ def editable_page_ids(user):
             )
         )
 
-    return ids
+    # Enforce view access: a user cannot edit pages they cannot see
+    # (e.g. pages in private directories with internal editability).
+    viewable_q = viewable_pages_q(user)
+    return ids & set(
+        Page.objects.filter(viewable_q, id__in=ids).values_list(
+            "id", flat=True
+        )
+    )
