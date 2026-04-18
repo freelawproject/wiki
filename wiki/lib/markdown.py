@@ -340,50 +340,76 @@ _INTERNAL_HREF_RE = re.compile(r'<a\s+href="((?:https?://[^"]*)?/c/[^"]+)"')
 
 
 def _add_nofollow_to_non_public_links(html):
-    """Add rel="nofollow" to internal links pointing to non-public pages.
+    """Add rel="nofollow" to internal links pointing to non-public content.
 
-    Finds <a href="/c/..."> tags, extracts slugs, batch-checks their
-    effective visibility, and adds rel="nofollow" for non-public targets.
+    Finds <a href="/c/..."> tags, resolves them to pages or directories,
+    and adds rel="nofollow" when the target is non-public or doesn't
+    exist (broken link → 404 for crawlers).
     """
     # Inline import to avoid circular dependency (pages/models ↔ lib/markdown)
+    from wiki.directories.models import Directory
     from wiki.pages.models import Page
 
     hrefs = _INTERNAL_HREF_RE.findall(html)
     if not hrefs:
         return html
 
-    # Extract slugs from internal URLs (last path segment after /c/)
-    slug_by_href = {}
+    # Extract content paths from internal URLs (everything after /c/)
+    path_by_href = {}
+    slug_set = set()
     for href in hrefs:
-        # For full URLs, extract just the path portion
         if href.startswith("http"):
-            path = urlparse(href).path
+            url_path = urlparse(href).path
         else:
-            path = href
-        path = path.rstrip("/")
-        slug = path.rsplit("/", 1)[-1]
-        if slug:
-            slug_by_href[href] = slug
+            url_path = href
+        url_path = url_path.rstrip("/")
+        idx = url_path.find("/c/")
+        if idx == -1:
+            continue
+        content_path = url_path[idx + 3 :]
+        if not content_path:
+            continue
+        path_by_href[href] = content_path
+        slug_set.add(content_path.rsplit("/", 1)[-1])
 
-    if not slug_by_href:
+    if not path_by_href:
         return html
 
-    # Batch-load pages for all referenced slugs
-    unique_slugs = set(slug_by_href.values())
-    pages = Page.objects.filter(slug__in=unique_slugs).select_related(
+    # Batch-load pages by slug, then index by content_path
+    pages = Page.objects.filter(slug__in=slug_set).select_related(
         "directory", "directory__parent"
     )
-    page_map = {p.slug: p for p in pages}
+    page_by_path = {p.content_path: p for p in pages}
+
+    # For paths that didn't match a page, check directories
+    unique_paths = set(path_by_href.values())
+    unmatched = unique_paths - set(page_by_path.keys())
+    dir_by_path = {}
+    if unmatched:
+        dirs = Directory.objects.filter(path__in=unmatched).select_related(
+            "parent"
+        )
+        dir_by_path = {d.path: d for d in dirs}
 
     # Determine which hrefs need nofollow
     nofollow_hrefs = set()
-    for href, slug in slug_by_href.items():
-        page = page_map.get(slug)
-        if not page:
+    for href, content_path in path_by_href.items():
+        page = page_by_path.get(content_path)
+        if page:
+            effective_vis, _ = resolve_effective_value(page, "visibility")
+            if effective_vis != "public":
+                nofollow_hrefs.add(href)
             continue
-        effective_vis, _ = resolve_effective_value(page, "visibility")
-        if effective_vis != "public":
-            nofollow_hrefs.add(href)
+
+        directory = dir_by_path.get(content_path)
+        if directory:
+            effective_vis, _ = resolve_effective_value(directory, "visibility")
+            if effective_vis != "public":
+                nofollow_hrefs.add(href)
+            continue
+
+        # Neither page nor directory — broken link leads to 404
+        nofollow_hrefs.add(href)
 
     if not nofollow_hrefs:
         return html
