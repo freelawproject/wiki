@@ -589,12 +589,12 @@ class TestLeadParagraph:
         result = render_markdown(md)
         assert '<p class="lead">This is the intro.</p>' in result
 
-    def test_disallowed_class_stripped(self):
+    def test_unknown_class_preserved_by_nh3(self):
         md = '<p class="evil">Text.</p>'
         result = render_markdown(md)
-        assert "evil" in result  # nh3 keeps unknown classes
+        assert "evil" in result
 
-    def test_lead_with_inline_markdown(self):
-        md = '<p class="lead">Text with **bold** and *italic*.</p>'
+    def test_lead_class_preserved_with_mixed_content(self):
+        md = '<p class="lead">Text with <strong>bold</strong> and <em>italic</em>.</p>'
         result = render_markdown(md)
         assert 'class="lead"' in result
