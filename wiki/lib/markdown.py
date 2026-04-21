@@ -162,6 +162,7 @@ ALLOWED_ATTRIBUTES = {
     "a": {"href", "title"},
     "img": {"src", "alt", "title"},
     "input": {"type", "checked", "disabled"},
+    "p": {"class"},
     "span": {"class"},
     "th": {"align"},
     "td": {"align"},

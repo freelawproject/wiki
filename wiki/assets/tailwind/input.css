@@ -195,6 +195,11 @@
   .wiki-content p {
     @apply my-3;
   }
+  .wiki-content > p.lead:first-child {
+    @apply text-xl font-serif font-semibold leading-relaxed tracking-tight
+           text-gray-800 dark:text-gray-100
+           mt-0 mb-8;
+  }
   .wiki-content ul {
     @apply list-disc ml-6 my-3;
   }

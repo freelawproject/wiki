@@ -16,6 +16,9 @@ module.exports = {
       '../../**/diff_utils.py',
     ],
   },
+  safelist: [
+    'lead',
+  ],
   theme: {
     extend: {
       fontFamily: {
