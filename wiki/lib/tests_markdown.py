@@ -579,3 +579,22 @@ class TestAddNofollowToNonPublicLinks:
         html = f'<a href="{url}">link</a>'
         result = _add_nofollow_to_non_public_links(html)
         assert 'rel="nofollow"' in result
+
+
+class TestLeadParagraph:
+    """Test that <p class="lead"> survives the sanitizer."""
+
+    def test_lead_class_preserved_through_render(self):
+        md = '<p class="lead">This is the intro.</p>\n\nBody text.'
+        result = render_markdown(md)
+        assert '<p class="lead">This is the intro.</p>' in result
+
+    def test_unknown_class_preserved_by_nh3(self):
+        md = '<p class="evil">Text.</p>'
+        result = render_markdown(md)
+        assert "evil" in result
+
+    def test_lead_class_preserved_with_mixed_content(self):
+        md = '<p class="lead">Text with <strong>bold</strong> and <em>italic</em>.</p>'
+        result = render_markdown(md)
+        assert 'class="lead"' in result

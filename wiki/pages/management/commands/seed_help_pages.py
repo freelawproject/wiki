@@ -280,6 +280,24 @@ Here's what they look like:
 [Outline button](https://example.com){button-outline}
 [Danger button](https://example.com){button-danger}
 
+### Lead paragraph
+
+You can style the opening paragraph of a page as a **lead** — a
+larger, bolder introduction that sets the tone before the body
+content begins. Wrap it in a `<p>` tag with the `lead` class as
+the very first thing in the page content:
+
+```html
+<p class="lead">
+This is the opening summary of the page. It appears larger
+and bolder than the rest of the content.
+</p>
+```
+
+The lead styling only applies when it is the first element on the
+page. A `<p class="lead">` placed anywhere else will render as a
+normal paragraph.
+
 ### Code blocks
 
 Use triple backticks with an optional language name for syntax

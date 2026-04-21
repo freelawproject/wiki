@@ -112,7 +112,11 @@
     <div class="page-meta">
       <div class="flex items-center justify-between">
         <span>{{ page.view_count }} view{{ page.view_count|pluralize }}</span>
+        {% if user.is_authenticated %}
+        <a href="{% url 'page_history' path=page.content_path %}" class="hover:underline">Last updated {{ page.updated_at|timesince }} ago</a>
+        {% else %}
         <span>Last updated {{ page.updated_at|timesince }} ago</span>
+        {% endif %}
       </div>
       {% if people %}
       <div class="mt-3 flex items-center gap-1.5 flex-wrap">
