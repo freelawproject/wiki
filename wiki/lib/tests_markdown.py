@@ -208,7 +208,36 @@ class TestWikiLinkRegexes:
         assert WIKI_LINK_RE.findall("(#some-slug)") == []
 
     def test_standalone_matched_normally(self):
-        assert WIKI_LINK_RE.findall("See #some-slug here") == ["some-slug"]
+        matches = [
+            m.group(1) for m in WIKI_LINK_RE.finditer("See #some-slug here")
+        ]
+        assert matches == ["some-slug"]
+
+    def test_standalone_captures_fragment(self):
+        """#slug#section should capture slug in group 1, fragment in group 2."""
+        m = WIKI_LINK_RE.search("See #some-slug#intro here")
+        assert m is not None
+        assert m.group(1) == "some-slug"
+        assert m.group(2) == "intro"
+
+    def test_standalone_without_fragment_group_2_empty(self):
+        m = WIKI_LINK_RE.search("See #some-slug here")
+        assert m is not None
+        assert m.group(1) == "some-slug"
+        assert m.group(2) is None
+
+    def test_md_link_captures_fragment(self):
+        """[text](#slug#section) should capture fragment in group 3."""
+        m = _MD_LINK_WIKI_RE.search("[click](#my-page#section-one)")
+        assert m is not None
+        assert m.group(2) == "my-page"
+        assert m.group(3) == "section-one"
+
+    def test_ref_link_captures_fragment(self):
+        m = _REF_LINK_WIKI_RE.search("[ref]: #my-page#section-one")
+        assert m is not None
+        assert m.group(2) == "my-page"
+        assert m.group(3) == "section-one"
 
     def test_standalone_not_matched_after_slash(self):
         """WIKI_LINK_RE should not match #slug after / (URL fragments)."""
@@ -267,6 +296,81 @@ class TestRefLinkUnknownSlug:
         html = render_markdown(md)
         assert "text-red-500" not in html
         assert 'href="https://example.com/page/#section-two"' in html
+
+
+@pytest.mark.django_db
+class TestWikiLinkFragments:
+    """Wiki links may carry a #fragment anchor that must survive resolution."""
+
+    def test_standalone_fragment_appended_to_url(self, page):
+        html = render_markdown(f"See #{page.slug}#section-two here")
+        assert f"{page.get_absolute_url()}#section-two" in html
+
+    def test_md_link_fragment_appended_to_url(self, page):
+        md = f"[click](#{page.slug}#heading-three)"
+        html = render_markdown(md)
+        assert f"{page.get_absolute_url()}#heading-three" in html
+
+    def test_ref_link_fragment_appended_to_url(self, page):
+        md = f"[click][r]\n\n[r]: #{page.slug}#heading-four"
+        html = render_markdown(md)
+        assert f"{page.get_absolute_url()}#heading-four" in html
+
+    def test_unknown_slug_with_fragment_renders_red_with_fragment(self):
+        html = render_markdown("See #nonexistent#section here")
+        assert "text-red-500" in html
+        assert "#nonexistent#section" in html
+
+    @patch("wiki.lib.markdown.settings")
+    def test_internal_url_fragment_stripped_for_slug_extraction(
+        self, mock_settings
+    ):
+        mock_settings.BASE_URL = "https://wiki.free.law"
+        url = reverse("resolve_path", kwargs={"path": "help/my-page"})
+        slugs = extract_slugs_from_internal_urls(f"See {url}#anchor here")
+        assert "my-page" in slugs
+        assert "my-page#anchor" not in slugs
+
+
+@pytest.mark.django_db
+class TestWikiLinkCodeBlockSkipping:
+    """Wiki link syntax inside code blocks must not be rewritten."""
+
+    def test_fenced_code_block_not_resolved(self, page):
+        md = f"Example:\n\n```\nUse #{page.slug} for links\n```\n"
+        html = render_markdown(md)
+        # The slug inside the code block should render literally
+        assert f"#{page.slug}" in html
+        # It should NOT be rewritten into a link to the page URL
+        assert page.get_absolute_url() not in html
+
+    def test_inline_backticks_not_resolved(self, page):
+        md = f"Write `#{page.slug}` to create a wiki link."
+        html = render_markdown(md)
+        assert f"#{page.slug}" in html
+        assert page.get_absolute_url() not in html
+
+    def test_fenced_code_not_extracted(self):
+        md = "```\nSee #some-slug here\n```\n"
+        assert extract_all_wiki_slugs(md) == set()
+
+    def test_inline_backticks_not_extracted(self):
+        md = "Use `#some-slug` inline."
+        assert extract_all_wiki_slugs(md) == set()
+
+    def test_wiki_slugs_outside_code_still_extracted(self):
+        md = (
+            "Use `#fake-slug` inline and ```\n#another-fake\n``` "
+            "but #real-slug works."
+        )
+        assert extract_all_wiki_slugs(md) == {"real-slug"}
+
+    @patch("wiki.lib.markdown.settings")
+    def test_internal_url_in_code_block_not_extracted(self, mock_settings):
+        mock_settings.BASE_URL = "https://wiki.free.law"
+        url = reverse("resolve_path", kwargs={"path": "help/my-page"})
+        md = f"```\nSee {url} here\n```\n"
+        assert extract_slugs_from_internal_urls(md) == set()
 
 
 class TestConvertAlerts:

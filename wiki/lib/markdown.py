@@ -38,16 +38,28 @@ _BUTTON_LINK_RE = re.compile(
     r"\s*\{button(?:-(outline|danger))?\}",
 )
 
-WIKI_LINK_RE = re.compile(r"(?<!\w)(?<!\()(?<!/)#([a-z0-9]+(?:-[a-z0-9]+)*)")
+# Slug with optional #fragment anchor: page-slug(#section-heading)?
+# Group 1 captures the slug; group 2 captures the optional fragment.
+_SLUG_WITH_FRAGMENT = (
+    r"([a-z0-9]+(?:-[a-z0-9]+)*)(?:#([a-z0-9]+(?:-[a-z0-9]+)*))?"
+)
 
-# Matches [text](#slug) markdown links where #slug is a wiki page reference
-_MD_LINK_WIKI_RE = re.compile(r"\[([^\]]+)\]\(#([a-z0-9]+(?:-[a-z0-9]+)*)\)")
+WIKI_LINK_RE = re.compile(r"(?<!\w)(?<!\()(?<!/)#" + _SLUG_WITH_FRAGMENT)
+
+# Matches [text](#slug) markdown links where #slug is a wiki page reference.
+# Groups: (1) link text, (2) slug, (3) optional fragment.
+_MD_LINK_WIKI_RE = re.compile(r"\[([^\]]+)\]\(#" + _SLUG_WITH_FRAGMENT + r"\)")
 
 # Matches reference-style link definitions: [ref]: #slug
+# Groups: (1) prefix, (2) slug, (3) optional fragment.
 _REF_LINK_WIKI_RE = re.compile(
-    r"^(\[[^\]]+\]:\s*)#([a-z0-9]+(?:-[a-z0-9]+)*)\s*$",
+    r"^(\[[^\]]+\]:\s*)#" + _SLUG_WITH_FRAGMENT + r"\s*$",
     re.MULTILINE,
 )
+
+# Fenced code blocks and inline backticks — wiki link extraction and
+# resolution must skip these so documentation examples aren't rewritten.
+_CODE_REGIONS_RE = re.compile(r"```[\s\S]*?```|`[^`\n]+`")
 
 # Pattern for auto-linking bare URLs (used by markdown2 link-patterns extra)
 _AUTOLINK_RE = re.compile(r"(?<!\()(https?://[^\s<>\)\]\"]+)")
@@ -67,16 +79,29 @@ _INTERNAL_URL_RE = re.compile(
 )
 
 
+def _code_region_ranges(content):
+    """Return (start, end) spans for fenced code blocks and inline backticks."""
+    return [(m.start(), m.end()) for m in _CODE_REGIONS_RE.finditer(content)]
+
+
+def _in_code_region(pos, ranges):
+    return any(start <= pos < end for start, end in ranges)
+
+
 def extract_slugs_from_internal_urls(content):
     """Extract page slugs from internal wiki URLs in content.
 
     Finds URLs like /c/dir/slug or {BASE_URL}/c/dir/slug and returns
-    the set of slugs (last path segment).
+    the set of slugs (last path segment). URL #fragments and code-block
+    regions are skipped.
     """
     base_url = getattr(settings, "BASE_URL", "")
     base_host = urlparse(base_url).hostname or ""
+    code_ranges = _code_region_ranges(content)
     slugs = set()
     for match in _INTERNAL_URL_RE.finditer(content):
+        if _in_code_region(match.start(), code_ranges):
+            continue
         url = (
             match.group(1)
             or match.group(2)
@@ -93,6 +118,8 @@ def extract_slugs_from_internal_urls(content):
             path = parsed.path
         else:
             path = url
+        # Drop #fragment before segment extraction
+        path = path.split("#", 1)[0]
         # Strip /c/ prefix and trailing slash, extract last segment as slug
         path = path.rstrip("/")
         if not path.startswith("/c/"):
@@ -214,10 +241,24 @@ def resolve_wiki_links(content):
     # Inline import to avoid circular dependency (pages/models ↔ lib/markdown)
     from wiki.pages.models import Page, SlugRedirect
 
-    # Collect slugs from all three patterns
-    standalone_slugs = set(WIKI_LINK_RE.findall(content))
-    md_link_slugs = {m.group(2) for m in _MD_LINK_WIKI_RE.finditer(content)}
-    ref_link_slugs = {m.group(2) for m in _REF_LINK_WIKI_RE.finditer(content)}
+    code_ranges = _code_region_ranges(content)
+
+    # Collect slugs from all three patterns, skipping matches inside code
+    standalone_slugs = {
+        m.group(1)
+        for m in WIKI_LINK_RE.finditer(content)
+        if not _in_code_region(m.start(), code_ranges)
+    }
+    md_link_slugs = {
+        m.group(2)
+        for m in _MD_LINK_WIKI_RE.finditer(content)
+        if not _in_code_region(m.start(), code_ranges)
+    }
+    ref_link_slugs = {
+        m.group(2)
+        for m in _REF_LINK_WIKI_RE.finditer(content)
+        if not _in_code_region(m.start(), code_ranges)
+    }
     all_slugs = standalone_slugs | md_link_slugs | ref_link_slugs
 
     if not all_slugs:
@@ -236,27 +277,42 @@ def resolve_wiki_links(content):
         for r in redirects:
             slug_map[r.old_slug] = r.page
 
+    def _append_fragment(url, fragment):
+        return f"{url}#{fragment}" if fragment else url
+
     # 1) Replace [text](#slug) — known slugs get resolved, unknown left as-is
     def replace_md_link(match):
-        text, slug = match.group(1), match.group(2)
+        if _in_code_region(match.start(), code_ranges):
+            return match.group(0)
+        text, slug, fragment = match.group(1), match.group(2), match.group(3)
         if slug in slug_map:
-            return f"[{text}]({slug_map[slug].get_absolute_url()})"
+            url = _append_fragment(slug_map[slug].get_absolute_url(), fragment)
+            return f"[{text}]({url})"
         return match.group(0)
 
     content = _MD_LINK_WIKI_RE.sub(replace_md_link, content)
+    # Code regions can shift if substitutions changed length; recompute.
+    code_ranges = _code_region_ranges(content)
 
     # 2) Replace [ref]: #slug — known slugs get resolved, unknown left as-is
     def replace_ref_link(match):
-        prefix, slug = match.group(1), match.group(2)
+        if _in_code_region(match.start(), code_ranges):
+            return match.group(0)
+        prefix, slug, fragment = match.group(1), match.group(2), match.group(3)
         if slug in slug_map:
-            return f"{prefix}{slug_map[slug].get_absolute_url()}"
+            url = _append_fragment(slug_map[slug].get_absolute_url(), fragment)
+            return f"{prefix}{url}"
         return match.group(0)
 
     content = _REF_LINK_WIKI_RE.sub(replace_ref_link, content)
+    code_ranges = _code_region_ranges(content)
 
     # 3) Replace standalone #slug — known → link, unknown → red text
     def replace_link(match):
+        if _in_code_region(match.start(), code_ranges):
+            return match.group(0)
         slug = match.group(1)
+        fragment = match.group(2)
         # Skip if this #slug sits inside a reference-style definition
         # ([ref]: #slug) — step 2 already handled those.
         line_start = match.string.rfind("\n", 0, match.start()) + 1
@@ -268,10 +324,12 @@ def resolve_wiki_links(content):
             return match.group(0)
         if slug in slug_map:
             page = slug_map[slug]
-            url = page.get_absolute_url()
+            url = _append_fragment(page.get_absolute_url(), fragment)
             return f"[{page.title}]({url})"
-        else:
-            return f'<span class="text-red-500 dark:text-red-400" title="Page not found">#{slug}</span>'
+        return (
+            f'<span class="text-red-500 dark:text-red-400" '
+            f'title="Page not found">{match.group(0)}</span>'
+        )
 
     return WIKI_LINK_RE.sub(replace_link, content)
 
@@ -283,10 +341,21 @@ def extract_all_wiki_slugs(content):
     - Standalone #slug references
     - [text](#slug) markdown links
     - [ref]: #slug reference definitions
+
+    Code-block and inline-backtick regions are skipped so documentation
+    examples of the wiki-link syntax aren't treated as real links.
     """
-    slugs = set(WIKI_LINK_RE.findall(content))
-    slugs |= {m.group(2) for m in _MD_LINK_WIKI_RE.finditer(content)}
-    slugs |= {m.group(2) for m in _REF_LINK_WIKI_RE.finditer(content)}
+    code_ranges = _code_region_ranges(content)
+    slugs = set()
+    for m in WIKI_LINK_RE.finditer(content):
+        if not _in_code_region(m.start(), code_ranges):
+            slugs.add(m.group(1))
+    for m in _MD_LINK_WIKI_RE.finditer(content):
+        if not _in_code_region(m.start(), code_ranges):
+            slugs.add(m.group(2))
+    for m in _REF_LINK_WIKI_RE.finditer(content):
+        if not _in_code_region(m.start(), code_ranges):
+            slugs.add(m.group(2))
     return slugs
 
 
