@@ -372,12 +372,20 @@ var initMarkdownEditor = (function() {
         var cur = cm.getCursor();
         var ln = cm.getLine(cur.line);
         var hp = ln.slice(0, cur.ch).lastIndexOf('#');
-        cm.replaceRange('#' + path, { line: cur.line, ch: hp }, cur);
+        // Tag the origin so the `change` handler can skip the autocomplete
+        // refresh it would otherwise trigger right after we inserted a full
+        // path (which would re-open the dropdown on top of the selection).
+        cm.replaceRange(
+          '#' + path,
+          { line: cur.line, ch: hp },
+          cur,
+          'autocomplete-select'
+        );
         dd.classList.add('hidden');
         window._slugDdIndex = -1;
       }
 
-      editor.codemirror.on('inputRead', function(cm, change) {
+      function refreshAutocomplete(cm) {
         var cursor = cm.getCursor();
         var line = cm.getLine(cursor.line);
         var before = line.slice(0, cursor.ch);
@@ -436,6 +444,17 @@ var initMarkdownEditor = (function() {
               });
             });
         }, 200);
+      }
+
+      // `change` covers every user-driven edit (insert, delete, paste, cut).
+      // Using it instead of `inputRead` means backspacing over a token
+      // re-queries or hides the popup, so the suggestion list can't get
+      // stuck showing results for text that's no longer there. Skip our
+      // own autocomplete-select inserts to avoid reopening the dropdown
+      // on top of the selection.
+      editor.codemirror.on('change', function(cm, change) {
+        if (change.origin === 'autocomplete-select') return;
+        refreshAutocomplete(cm);
       });
 
       editor.codemirror.on('keydown', function(cm, e) {
