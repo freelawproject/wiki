@@ -205,50 +205,80 @@ class TestWikiLinkRegexes:
 
     def test_standalone_not_matched_in_parens(self):
         """WIKI_LINK_RE should not match #slug inside parentheses."""
-        assert WIKI_LINK_RE.findall("(#some-slug)") == []
+        assert list(WIKI_LINK_RE.finditer("(#some-slug)")) == []
 
     def test_standalone_matched_normally(self):
         matches = [
-            m.group(1) for m in WIKI_LINK_RE.finditer("See #some-slug here")
+            m.group("slug")
+            for m in WIKI_LINK_RE.finditer("See #some-slug here")
         ]
         assert matches == ["some-slug"]
 
     def test_standalone_captures_fragment(self):
-        """#slug#section should capture slug in group 1, fragment in group 2."""
         m = WIKI_LINK_RE.search("See #some-slug#intro here")
         assert m is not None
-        assert m.group(1) == "some-slug"
-        assert m.group(2) == "intro"
+        assert m.group("dir") is None
+        assert m.group("slug") == "some-slug"
+        assert m.group("fragment") == "intro"
 
-    def test_standalone_without_fragment_group_2_empty(self):
+    def test_standalone_without_fragment(self):
         m = WIKI_LINK_RE.search("See #some-slug here")
         assert m is not None
-        assert m.group(1) == "some-slug"
-        assert m.group(2) is None
+        assert m.group("slug") == "some-slug"
+        assert m.group("fragment") is None
+
+    def test_standalone_captures_qualified_path(self):
+        m = WIKI_LINK_RE.search("See #hr/onboarding here")
+        assert m is not None
+        assert m.group("dir") == "hr"
+        assert m.group("slug") == "onboarding"
+
+    def test_standalone_captures_nested_qualified_path(self):
+        m = WIKI_LINK_RE.search("See #hr/docs/ci#setup here")
+        assert m is not None
+        assert m.group("dir") == "hr/docs"
+        assert m.group("slug") == "ci"
+        assert m.group("fragment") == "setup"
 
     def test_md_link_captures_fragment(self):
-        """[text](#slug#section) should capture fragment in group 3."""
         m = _MD_LINK_WIKI_RE.search("[click](#my-page#section-one)")
         assert m is not None
-        assert m.group(2) == "my-page"
-        assert m.group(3) == "section-one"
+        assert m.group("slug") == "my-page"
+        assert m.group("fragment") == "section-one"
+
+    def test_md_link_captures_qualified_path(self):
+        m = _MD_LINK_WIKI_RE.search("[click](#hr/onboarding)")
+        assert m is not None
+        assert m.group("dir") == "hr"
+        assert m.group("slug") == "onboarding"
 
     def test_ref_link_captures_fragment(self):
         m = _REF_LINK_WIKI_RE.search("[ref]: #my-page#section-one")
         assert m is not None
-        assert m.group(2) == "my-page"
-        assert m.group(3) == "section-one"
+        assert m.group("slug") == "my-page"
+        assert m.group("fragment") == "section-one"
+
+    def test_ref_link_captures_qualified_path(self):
+        m = _REF_LINK_WIKI_RE.search("[ref]: #hr/onboarding")
+        assert m is not None
+        assert m.group("dir") == "hr"
+        assert m.group("slug") == "onboarding"
 
     def test_standalone_not_matched_after_slash(self):
         """WIKI_LINK_RE should not match #slug after / (URL fragments)."""
-        assert WIKI_LINK_RE.findall("https://example.com/page/#section") == []
-        assert WIKI_LINK_RE.findall("https://example.com/page/#a-b") == []
+        assert (
+            list(WIKI_LINK_RE.finditer("https://example.com/page/#section"))
+            == []
+        )
+        assert (
+            list(WIKI_LINK_RE.finditer("https://example.com/page/#a-b")) == []
+        )
 
     def test_md_link_regex_matches(self):
         m = _MD_LINK_WIKI_RE.search("[click here](#my-page)")
         assert m is not None
-        assert m.group(1) == "click here"
-        assert m.group(2) == "my-page"
+        assert m.group("text") == "click here"
+        assert m.group("slug") == "my-page"
 
     def test_md_link_regex_no_match_for_url(self):
         assert _MD_LINK_WIKI_RE.search("[text](https://example.com)") is None
@@ -256,7 +286,7 @@ class TestWikiLinkRegexes:
     def test_ref_link_regex_matches(self):
         m = _REF_LINK_WIKI_RE.search("[ref]: #my-page")
         assert m is not None
-        assert m.group(2) == "my-page"
+        assert m.group("slug") == "my-page"
 
     def test_ref_link_regex_no_match_for_url(self):
         assert _REF_LINK_WIKI_RE.search("[ref]: https://example.com") is None

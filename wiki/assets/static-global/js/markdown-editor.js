@@ -3,7 +3,7 @@
  * @-mention + #wiki-link autocomplete).
  *
  * Reads config from a <script type="application/json" id="editor-config">
- * block with: { csrfToken, pageSlug?, urls: { presignUpload, confirmUpload,
+ * block with: { csrfToken, pagePath?, urls: { presignUpload, confirmUpload,
  *   fileUpload, markdownGuide, preview, userSearch, pageSearch } }
  *
  * Expects these DOM elements (optional ones are gracefully skipped):
@@ -19,7 +19,7 @@
 var initMarkdownEditor = (function() {
   return function initMarkdownEditor(config) {
     var csrfToken = config.csrfToken;
-    var pageSlug = config.pageSlug || '';
+    var pagePath = config.pagePath || '';
     var directUpload = config.directUpload || false;
 
     // ── File upload (defined early so toolbar action can reference it) ──
@@ -355,7 +355,7 @@ var initMarkdownEditor = (function() {
       window._slugDdIndex = -1;
 
       function highlightSlugItem(dd, index) {
-        var items = dd.querySelectorAll('[data-slug]');
+        var items = dd.querySelectorAll('[data-path]');
         items.forEach(function(el, i) {
           if (i === index) {
             el.classList.add('bg-gray-100', 'dark:bg-gray-700');
@@ -368,11 +368,11 @@ var initMarkdownEditor = (function() {
         }
       }
 
-      function selectSlugItem(cm, dd, slug) {
+      function selectSlugItem(cm, dd, path) {
         var cur = cm.getCursor();
         var ln = cm.getLine(cur.line);
         var hp = ln.slice(0, cur.ch).lastIndexOf('#');
-        cm.replaceRange('#' + slug, { line: cur.line, ch: hp }, cur);
+        cm.replaceRange('#' + path, { line: cur.line, ch: hp }, cur);
         dd.classList.add('hidden');
         window._slugDdIndex = -1;
       }
@@ -396,19 +396,22 @@ var initMarkdownEditor = (function() {
         mentionDrop.classList.add('hidden');
         activeCmMatch = null;
 
-        // Check #wiki-link
+        // Check #wiki-link — matches both bare (#slug) and qualified (#dir/slug)
+        // forms-in-progress. The server searches by title, so we forward only
+        // the last path segment as the query.
         var slugDd = document.getElementById('slug-dropdown');
         if (!slugDd) return;
-        var hashMatch = before.match(/#([a-z0-9-]*)$/);
-        if (!hashMatch || hashMatch[1].length < 2) {
+        var hashMatch = before.match(/#([a-z0-9/-]*)$/);
+        var searchTerm = hashMatch ? hashMatch[1].split('/').pop() : '';
+        if (!hashMatch || searchTerm.length < 2) {
           slugDd.classList.add('hidden');
           window._slugDdIndex = -1;
           return;
         }
         clearTimeout(window._wikiTimer);
         window._wikiTimer = setTimeout(function() {
-          var searchUrl = config.urls.pageSearch + '?q=' + encodeURIComponent(hashMatch[1]);
-          if (pageSlug) searchUrl += '&exclude=' + encodeURIComponent(pageSlug);
+          var searchUrl = config.urls.pageSearch + '?q=' + encodeURIComponent(searchTerm);
+          if (pagePath) searchUrl += '&exclude=' + encodeURIComponent(pagePath);
           fetch(searchUrl)
             .then(function(r) { return r.text(); }).then(function(html) {
               if (!html.trim()) { slugDd.classList.add('hidden'); window._slugDdIndex = -1; return; }
@@ -416,15 +419,15 @@ var initMarkdownEditor = (function() {
               window._slugDdIndex = 0;
               var coords = cm.cursorCoords(true, 'page');
               slugDd.style.left = coords.left + 'px'; slugDd.style.top = (coords.bottom + 4) + 'px';
-              var items = slugDd.querySelectorAll('[data-slug]');
+              var items = slugDd.querySelectorAll('[data-path]');
               highlightSlugItem(slugDd, 0);
               items.forEach(function(el) {
                 el.addEventListener('mousedown', function(e) {
                   e.preventDefault();
-                  selectSlugItem(cm, slugDd, el.dataset.slug);
+                  selectSlugItem(cm, slugDd, el.dataset.path);
                 });
                 el.addEventListener('mouseenter', function() {
-                  var allItems = slugDd.querySelectorAll('[data-slug]');
+                  var allItems = slugDd.querySelectorAll('[data-path]');
                   for (var j = 0; j < allItems.length; j++) {
                     if (allItems[j] === el) { window._slugDdIndex = j; break; }
                   }
@@ -450,7 +453,7 @@ var initMarkdownEditor = (function() {
 
         // Arrow key navigation and Enter/Tab selection for #wiki-link dropdown
         if (slugDdVisible) {
-          var items = slugDd.querySelectorAll('[data-slug]');
+          var items = slugDd.querySelectorAll('[data-path]');
           if (!items.length) return;
           if (e.key === 'ArrowDown') {
             e.preventDefault();
@@ -464,7 +467,7 @@ var initMarkdownEditor = (function() {
             e.preventDefault();
             var idx = window._slugDdIndex || 0;
             if (items[idx]) {
-              selectSlugItem(cm, slugDd, items[idx].dataset.slug);
+              selectSlugItem(cm, slugDd, items[idx].dataset.path);
             }
           }
         }

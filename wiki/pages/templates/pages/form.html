@@ -206,7 +206,7 @@
 {
   "csrfToken": "{{ csrf_token }}",
   "isEditing": {{ editing|yesno:"true,false" }},
-  "pageSlug": "{{ page.slug|default:"" }}",
+  "pagePath": "{{ page.content_path|default:"" }}",
   "dirSegments": {{ dir_segments_json|safe }},
   "urls": {
     "dirInherit": "{% url 'dir_inherit_meta' %}",

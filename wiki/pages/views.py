@@ -10,6 +10,7 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
 from django.core.paginator import Paginator
 from django.db import transaction
+from django.db.models import Q
 from django.http import FileResponse, Http404, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -27,6 +28,11 @@ from wiki.lib.edit_lock import (
 )
 from wiki.lib.inheritance import resolve_effective_value
 from wiki.lib.markdown import render_markdown
+from wiki.lib.page_utils import (
+    get_page_from_path,
+    page_at_path,
+    slug_redirect_at_path,
+)
 from wiki.lib.path_utils import page_path_conflicts_with_directory
 from wiki.lib.permissions import (
     can_edit_directory,
@@ -96,11 +102,6 @@ def _link_uploads_to_page(page, user):
     keep_ids = referenced_ids | revision_ids
     stale = FileUpload.objects.filter(page=page).exclude(id__in=keep_ids)
     stale.update(page=None)
-
-
-def _parse_page_path(path: str) -> str:
-    """Return the page slug from a URL path."""
-    return path.strip("/").split("/")[-1]
 
 
 def _build_dir_segments(directory):
@@ -289,11 +290,11 @@ def _parse_directory_titles(post_data):
 
 
 def resolve_path(request, path):
-    """Unified catch-all: resolve a path as directory or page.
+    """Unified catch-all: resolve a path as page or directory.
 
-    1. Check if path matches a Directory → directory view
-    2. Take last segment as slug, check Page → page view
-    3. Check SlugRedirect → redirect
+    1. Page at exact (directory_path, slug) → page view
+    2. Directory at exact path → directory view
+    3. SlugRedirect at (directory, old_slug) → redirect
     4. 404
     """
     # Inline import to avoid circular dependency (directories/views imports pages/views)
@@ -301,54 +302,34 @@ def resolve_path(request, path):
 
     clean_path = path.strip("/")
 
-    # 1. Is it a directory?
+    # 1. Literal page match
+    page = page_at_path(clean_path)
+    if page is not None:
+        return _render_page_detail(request, page)
+
+    # 2. Literal directory match
     if Directory.objects.filter(path=clean_path).exists():
         return directory_detail(request, path)
 
-    # 2. Try as a page (last segment = slug)
-    slug = clean_path.split("/")[-1]
+    # 3. Slug redirect match
+    redirect_obj = slug_redirect_at_path(clean_path)
+    if redirect_obj is not None:
+        return redirect(redirect_obj.page.get_absolute_url())
 
-    page = (
-        Page.objects.filter(slug=slug)
-        .select_related("directory", "owner")
-        .first()
-    )
-
-    # 3. Check slug redirects
-    if page is None:
-        redirect_obj = (
-            SlugRedirect.objects.filter(old_slug=slug)
-            .select_related("page")
-            .first()
-        )
-        if redirect_obj:
-            return redirect(redirect_obj.page.get_absolute_url())
-        raise Http404
-
-    return _render_page_detail(request, page)
+    raise Http404
 
 
 def page_detail(request, path):
     """Display a wiki page. Handles slug redirects and view counting."""
-    slug = _parse_page_path(path)
+    page = page_at_path(path)
+    if page is not None:
+        return _render_page_detail(request, page)
 
-    page = (
-        Page.objects.filter(slug=slug)
-        .select_related("directory", "owner")
-        .first()
-    )
+    redirect_obj = slug_redirect_at_path(path)
+    if redirect_obj is not None:
+        return redirect(redirect_obj.page.get_absolute_url())
 
-    if page is None:
-        redirect_obj = (
-            SlugRedirect.objects.filter(old_slug=slug)
-            .select_related("page")
-            .first()
-        )
-        if redirect_obj:
-            return redirect(redirect_obj.page.get_absolute_url())
-        raise Http404
-
-    return _render_page_detail(request, page)
+    raise Http404
 
 
 def _get_page_people(page):
@@ -614,8 +595,7 @@ def page_create(request, path=""):
 @login_required
 def page_edit(request, path):
     """Edit an existing page."""
-    slug = _parse_page_path(path)
-    page = get_object_or_404(Page, slug=slug)
+    page = get_page_from_path(path)
 
     if not can_view_page(request.user, page):
         raise Http404
@@ -653,6 +633,7 @@ def page_edit(request, path):
         acquire_lock_for_page(page, request.user)
 
     old_slug = page.slug
+    old_directory = page.directory
 
     # On POST, resolve the directory from the location picker so that
     # "inherit" is a valid choice when the user changed directories.
@@ -690,6 +671,7 @@ def page_edit(request, path):
             _link_uploads_to_page(page, request.user)
             if page.slug != old_slug:
                 SlugRedirect.objects.update_or_create(
+                    directory=old_directory,
                     old_slug=old_slug,
                     defaults={"page": page},
                 )
@@ -734,8 +716,7 @@ def page_edit(request, path):
 @login_required
 def page_move(request, path):
     """Move a page to a different directory."""
-    slug = _parse_page_path(path)
-    page = get_object_or_404(Page, slug=slug)
+    page = get_page_from_path(path)
 
     if not can_view_page(request.user, page):
         raise Http404
@@ -787,8 +768,7 @@ def page_move(request, path):
 @login_required
 def page_delete(request, path):
     """Delete a page (owner/admin only)."""
-    slug = _parse_page_path(path)
-    page = get_object_or_404(Page, slug=slug)
+    page = get_page_from_path(path)
 
     if not can_view_page(request.user, page):
         raise Http404
@@ -843,8 +823,7 @@ def page_delete(request, path):
 @login_required
 def page_permissions(request, path):
     """Manage permissions for a page."""
-    slug = _parse_page_path(path)
-    page = get_object_or_404(Page, slug=slug)
+    page = get_page_from_path(path)
 
     if not can_view_page(request.user, page):
         raise Http404
@@ -956,8 +935,7 @@ def page_permissions(request, path):
 
 def page_backlinks(request, path):
     """Show pages that link to this page."""
-    slug = _parse_page_path(path)
-    page = get_object_or_404(Page, slug=slug)
+    page = get_page_from_path(path)
 
     if not can_view_page(request.user, page):
         raise Http404
@@ -983,8 +961,7 @@ def page_backlinks(request, path):
 @login_required
 def page_history(request, path):
     """Show revision history for a page."""
-    slug = _parse_page_path(path)
-    page = get_object_or_404(Page, slug=slug)
+    page = get_page_from_path(path)
 
     if not can_view_page(request.user, page):
         raise Http404
@@ -1004,8 +981,7 @@ def page_history(request, path):
 @login_required
 def page_diff(request, path, v1, v2):
     """Show diff between two versions."""
-    slug = _parse_page_path(path)
-    page = get_object_or_404(Page, slug=slug)
+    page = get_page_from_path(path)
 
     if not can_view_page(request.user, page):
         raise Http404
@@ -1031,8 +1007,7 @@ def page_diff(request, path, v1, v2):
 @login_required
 def page_revert(request, path, rev_num):
     """Revert a page to a previous revision (creates a new revision)."""
-    slug = _parse_page_path(path)
-    page = get_object_or_404(Page, slug=slug)
+    page = get_page_from_path(path)
 
     if not can_view_page(request.user, page):
         raise Http404
@@ -1385,9 +1360,16 @@ def page_search_htmx(request):
     # that walk the directory tree. Without it each can_view_page() call
     # would trigger extra queries.
     qs = Page.objects.filter(title__icontains=q).select_related("directory")
-    exclude_slug = request.GET.get("exclude", "").strip()
-    if exclude_slug:
-        qs = qs.exclude(slug=exclude_slug)
+    exclude_path = request.GET.get("exclude", "").strip()
+    if exclude_path:
+        if "/" in exclude_path:
+            exclude_dir, exclude_slug = exclude_path.rsplit("/", 1)
+            qs = qs.exclude(directory__path=exclude_dir, slug=exclude_slug)
+        else:
+            qs = qs.exclude(
+                Q(directory__isnull=True) | Q(directory__path=""),
+                slug=exclude_path,
+            )
 
     # SECURITY: filter results by permission so private pages are never
     # revealed in autocomplete to users who lack access.
@@ -1401,10 +1383,21 @@ def page_search_htmx(request):
     html = ""
     for p in results:
         # SECURITY: escape() prevents stored XSS via page titles/slugs.
+        # data-path is the qualified form inserted into the editor; dir
+        # subtext lets users disambiguate pages that share a title.
+        dir_label = (
+            p.directory.path if p.directory and p.directory.path else ""
+        )
+        subtext = (
+            f'<span class="text-xs text-gray-500 dark:text-gray-400 ml-2">'
+            f"/{escape(dir_label)}</span>"
+            if dir_label
+            else ""
+        )
         html += (
             f'<div class="px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700'
-            f' cursor-pointer" data-slug="{escape(p.slug)}">'
-            f"{escape(p.title)}</div>"
+            f' cursor-pointer" data-path="{escape(p.content_path)}">'
+            f"{escape(p.title)}{subtext}</div>"
         )
 
     return HttpResponse(html)
@@ -1458,10 +1451,7 @@ def recent_changes(request, username=None):
 @login_required
 def toggle_pin(request, path):
     """Toggle the is_pinned flag on a page (requires directory edit)."""
-    slug = _parse_page_path(path)
-    page = get_object_or_404(
-        Page.objects.select_related("directory"), slug=slug
-    )
+    page = get_page_from_path(path)
 
     directory = page.directory
     if not directory:
@@ -1477,14 +1467,8 @@ def toggle_pin(request, path):
 
 def page_raw_markdown(request, path):
     """Return raw markdown content for a page (respects permissions)."""
-    slug = path.split("/")[-1]
-
-    page = (
-        Page.objects.filter(slug=slug)
-        .select_related("directory", "owner")
-        .first()
-    )
-    if not page:
+    page = page_at_path(path)
+    if page is None:
         raise Http404
 
     if not can_view_page(request.user, page):

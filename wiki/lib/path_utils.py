@@ -43,19 +43,19 @@ def directory_path_conflicts_with_page(dir_path):
     return Page.objects.filter(slug=slug, directory__path=parent_path).exists()
 
 
-def compute_page_slug(title, exclude_pk=None):
-    """Generate a unique slug for a page, avoiding both page and directory collisions.
+def compute_page_slug(title, directory=None, exclude_pk=None):
+    """Generate a unique slug for a page within its directory.
 
-    This mirrors the logic in Page.save() but also checks for directory
-    path conflicts.  The caller must still pass the directory separately
-    when checking ``page_path_conflicts_with_directory``.
+    Slug uniqueness is scoped to ``directory``, so only siblings in the
+    same directory can collide.
 
     Args:
         title: The page title to slugify.
-        exclude_pk: PK to exclude from the page uniqueness check (for updates).
+        directory: The Directory the page lives in (or None for root).
+        exclude_pk: PK to exclude from the uniqueness check (for updates).
 
     Returns:
-        A slug string that is unique among pages.
+        A slug string unique among pages in ``directory``.
     """
     # Inline import to avoid circular dependency (pages/models → path_utils)
     from wiki.pages.models import Page
@@ -63,7 +63,11 @@ def compute_page_slug(title, exclude_pk=None):
     base_slug = slugify(title)
     new_slug = base_slug
     counter = 1
-    while Page.objects.filter(slug=new_slug).exclude(pk=exclude_pk).exists():
+    while (
+        Page.objects.filter(directory=directory, slug=new_slug)
+        .exclude(pk=exclude_pk)
+        .exists()
+    ):
         counter += 1
         new_slug = f"{base_slug}-{counter}"
     return new_slug
