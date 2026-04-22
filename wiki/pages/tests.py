@@ -670,9 +670,11 @@ class TestPreviewEndpoint:
         assert r.status_code == 200
         assert b"<h2" in r.content
 
-    def test_preview_works_without_login(self, client, db):
+    def test_preview_requires_login(self, client, db):
+        """Anon access is rejected — rendering resolves #dir/slug and
+        would leak the existence of private pages via URL paths."""
         r = client.post(reverse("page_preview"), {"content": "test"})
-        assert r.status_code == 200
+        assert r.status_code == 302  # redirected to login
 
 
 class TestFileUpload:
@@ -924,7 +926,7 @@ class TestPageSearchAutocomplete:
     def test_search_excludes_current_page(self, client, user, page):
         client.force_login(user)
         r = client.get(
-            f"{reverse('page_search')}?q=getting&exclude={page.slug}"
+            f"{reverse('page_search')}?q=getting&exclude={page.content_path}"
         )
         assert r.status_code == 200
         assert b"getting-started" not in r.content
@@ -1211,7 +1213,7 @@ class TestSeedHelpPages:
     def test_help_page_detail_loads(self, client, owner_user):
         call_command("seed_help_pages")
         r = client.get(
-            reverse("resolve_path", kwargs={"path": "markdown-syntax"})
+            reverse("resolve_path", kwargs={"path": "help/markdown-syntax"})
         )
         assert r.status_code == 200
         assert b"Markdown Syntax" in r.content
@@ -1693,7 +1695,7 @@ class TestCheckMentionPermissions:
         client.force_login(user)
         r = client.post(
             reverse("check_mention_perms"),
-            json.dumps({"page_slug": page.slug, "usernames": ["bob"]}),
+            json.dumps({"page_path": page.content_path, "usernames": ["bob"]}),
             content_type="application/json",
         )
         data = json.loads(r.content)
@@ -1707,7 +1709,7 @@ class TestCheckMentionPermissions:
             reverse("check_mention_perms"),
             json.dumps(
                 {
-                    "page_slug": private_page.slug,
+                    "page_path": private_page.content_path,
                     "usernames": ["bob"],
                 }
             ),
@@ -1825,16 +1827,16 @@ class TestCheckPagePermissions:
             reverse("check_page_perms"),
             json.dumps(
                 {
-                    "page_slug": page.slug,
+                    "page_path": page.content_path,
                     "usernames": [],
-                    "linked_slugs": [private_page.slug],
+                    "linked_paths": [private_page.content_path],
                 }
             ),
             content_type="application/json",
         )
         data = json.loads(r.content)
         assert len(data["restrictive_links"]) == 1
-        assert data["restrictive_links"][0]["slug"] == "secret-notes"
+        assert data["restrictive_links"][0]["path"] == "secret-notes"
 
     def test_linked_public_page_not_flagged(self, client, user, page):
         """A public page linking to another public page isn't flagged."""
@@ -1852,9 +1854,9 @@ class TestCheckPagePermissions:
             reverse("check_page_perms"),
             json.dumps(
                 {
-                    "page_slug": page.slug,
+                    "page_path": page.content_path,
                     "usernames": [],
-                    "linked_slugs": ["other-public"],
+                    "linked_paths": ["other-public"],
                 }
             ),
             content_type="application/json",
@@ -1869,9 +1871,9 @@ class TestCheckPagePermissions:
             reverse("check_page_perms"),
             json.dumps(
                 {
-                    "page_slug": page.slug,
+                    "page_path": page.content_path,
                     "usernames": [],
-                    "linked_slugs": ["no-such-page"],
+                    "linked_paths": ["no-such-page"],
                 }
             ),
             content_type="application/json",
@@ -1888,9 +1890,9 @@ class TestCheckPagePermissions:
             reverse("check_page_perms"),
             json.dumps(
                 {
-                    "page_slug": private_page.slug,
+                    "page_path": private_page.content_path,
                     "usernames": ["bob"],
-                    "linked_slugs": [],
+                    "linked_paths": [],
                 }
             ),
             content_type="application/json",
@@ -1906,7 +1908,7 @@ class TestCheckPagePermissions:
             reverse("check_mention_perms"),
             json.dumps(
                 {
-                    "page_slug": page.slug,
+                    "page_path": page.content_path,
                     "usernames": [],
                 }
             ),
@@ -3276,3 +3278,256 @@ class TestImageOptimization:
         assert count == 1
         upload.refresh_from_db()
         assert upload.optimization_gain is not None
+
+
+# ── Directory-scoped slugs ──────────────────────────────
+
+
+@pytest.mark.django_db
+class TestDirectoryScopedSlugs:
+    """Two pages may share a slug across different directories, and wiki-link
+    resolution, URL resolution, and collision rewrites must all behave."""
+
+    def _make_page(self, user, title, directory=None, content=""):
+        p = Page.objects.create(
+            title=title,
+            content=content,
+            directory=directory,
+            owner=user,
+            created_by=user,
+            updated_by=user,
+        )
+        PageRevision.objects.create(
+            page=p,
+            title=p.title,
+            content=p.content,
+            change_message="seed",
+            revision_number=1,
+            created_by=user,
+        )
+        return p
+
+    def test_two_pages_same_slug_different_dirs_coexist(
+        self, user, sub_directory, nested_directory
+    ):
+        a = self._make_page(user, "Overview", directory=sub_directory)
+        b = self._make_page(user, "Overview", directory=nested_directory)
+        assert a.slug == "overview"
+        assert b.slug == "overview"
+
+    def test_url_resolves_each_page_at_qualified_path(
+        self, client, user, sub_directory, nested_directory
+    ):
+        self._make_page(user, "Overview", directory=sub_directory)
+        self._make_page(user, "Overview", directory=nested_directory)
+        r = client.get(
+            reverse("resolve_path", kwargs={"path": "engineering/overview"})
+        )
+        assert r.status_code == 200
+        r = client.get(
+            reverse(
+                "resolve_path", kwargs={"path": "engineering/devops/overview"}
+            )
+        )
+        assert r.status_code == 200
+
+    def test_bare_path_404s_when_no_root_page(
+        self, client, user, sub_directory
+    ):
+        """With dir-scoped slugs, /c/overview only resolves to a root page."""
+        self._make_page(user, "Overview", directory=sub_directory)
+        r = client.get(reverse("resolve_path", kwargs={"path": "overview"}))
+        assert r.status_code == 404
+
+    def test_qualified_wiki_link_resolves(
+        self, user, sub_directory, nested_directory
+    ):
+        a = self._make_page(user, "Overview", directory=sub_directory)
+        self._make_page(user, "Overview", directory=nested_directory)
+        linker = self._make_page(
+            user,
+            "Linker",
+            content=f"See #{a.content_path} for context.",
+        )
+        html = render_markdown(linker.content)
+        assert a.get_absolute_url() in html
+
+    def test_bare_wiki_link_resolves_to_oldest_match(
+        self, user, sub_directory, nested_directory
+    ):
+        a = self._make_page(user, "Overview", directory=sub_directory)
+        b = self._make_page(user, "Overview", directory=nested_directory)
+        assert a.created_at < b.created_at
+        html = render_markdown("See #overview for context.")
+        assert a.get_absolute_url() in html
+        assert b.get_absolute_url() not in html
+
+    def test_collision_rewrite_qualifies_existing_links(
+        self, user, sub_directory, nested_directory
+    ):
+        """Creating a page with a colliding slug rewrites existing bare
+        references to the older page so they stay unambiguous."""
+        a = self._make_page(user, "Overview", directory=sub_directory)
+        linker = self._make_page(
+            user,
+            "Linker",
+            content=(
+                "Main: #overview\n\n"
+                "Inline: [here](#overview) with fragment [sec](#overview#sec)\n\n"
+                "Ref: [r]\n\n[r]: #overview\n"
+            ),
+        )
+        # Baseline: PageLink points at A, content has bare links.
+        assert PageLink.objects.filter(from_page=linker, to_page=a).exists()
+        assert "#overview" in linker.content
+
+        # Introduce a colliding page in a different directory.
+        self._make_page(user, "Overview", directory=nested_directory)
+
+        linker.refresh_from_db()
+        expected = f"#{a.content_path}"
+        assert "#overview\n" not in linker.content
+        assert expected in linker.content
+        # Fragment preserved
+        assert f"{expected}#sec" in linker.content
+        # PageLink to A still holds after rewrite
+        assert PageLink.objects.filter(from_page=linker, to_page=a).exists()
+
+    def test_collision_rewrite_leaves_code_blocks_alone(
+        self, user, sub_directory, nested_directory
+    ):
+        a = self._make_page(user, "Overview", directory=sub_directory)
+        linker = self._make_page(
+            user,
+            "Docs",
+            content=(
+                "Use `#overview` inline.\n\n"
+                "```\nExample: #overview\n```\n\n"
+                "Real link: #overview\n"
+            ),
+        )
+        # Force PageLink setup before collision
+        assert PageLink.objects.filter(from_page=linker, to_page=a).exists()
+
+        self._make_page(user, "Overview", directory=nested_directory)
+
+        linker.refresh_from_db()
+        # Code-block contents untouched
+        assert "Use `#overview`" in linker.content
+        assert "Example: #overview" in linker.content
+        # Real link qualified
+        assert f"Real link: #{a.content_path}" in linker.content
+
+    def test_slug_redirect_scoped_to_directory(
+        self, client, user, sub_directory, nested_directory
+    ):
+        """A SlugRedirect only fires within its own (directory, slug) scope."""
+        a = self._make_page(user, "Overview", directory=sub_directory)
+        SlugRedirect.objects.create(
+            directory=sub_directory, old_slug="old-name", page=a
+        )
+        # Within sub_directory, old-name redirects to a.
+        r = client.get(
+            reverse("resolve_path", kwargs={"path": "engineering/old-name"})
+        )
+        assert r.status_code == 302
+        assert r.url == a.get_absolute_url()
+        # From a different directory, the same old slug doesn't resolve.
+        r = client.get(
+            reverse(
+                "resolve_path",
+                kwargs={"path": "engineering/devops/old-name"},
+            )
+        )
+        assert r.status_code == 404
+
+    def test_collision_rewrite_on_slug_rename(
+        self, user, sub_directory, nested_directory
+    ):
+        """Renaming a page so its slug collides with a sibling in another
+        directory triggers the same qualify-bare-links pass as creation."""
+        a = self._make_page(user, "Overview", directory=sub_directory)
+        b = self._make_page(user, "Other", directory=nested_directory)
+        linker = self._make_page(user, "Linker", content="See #overview.")
+        assert b.slug == "other"
+        # Rename B so the slug regenerates to "overview" — now colliding
+        # with A (a is in /engineering, b in /engineering/devops, so the
+        # per-directory unique constraint isn't violated).
+        b.title = "Overview"
+        b.save()
+        assert b.slug == "overview"
+        linker.refresh_from_db()
+        assert linker.content == f"See #{a.content_path}."
+
+    def test_collision_rewrite_with_nested_sibling_path(
+        self, user, sub_directory, nested_directory
+    ):
+        """The qualified form inserted for a nested sibling uses the
+        full directory path, not just the last segment."""
+        a = self._make_page(user, "Overview", directory=nested_directory)
+        linker = self._make_page(user, "Linker", content="Read #overview.")
+        assert PageLink.objects.filter(from_page=linker, to_page=a).exists()
+        # Create a root-level collision
+        self._make_page(user, "Overview", directory=sub_directory)
+        linker.refresh_from_db()
+        # Qualified form uses the full "engineering/devops/overview" path,
+        # not just "devops/overview".
+        assert linker.content == "Read #engineering/devops/overview."
+
+    def test_skip_collision_rewrite_kwarg_bypasses_handler(
+        self, user, sub_directory, nested_directory
+    ):
+        """The _skip_collision_rewrite kwarg on save() prevents fan-out."""
+        a = self._make_page(user, "Overview", directory=sub_directory)
+        linker = self._make_page(user, "Linker", content="Read #overview.")
+        assert PageLink.objects.filter(from_page=linker, to_page=a).exists()
+        # Create B with the flag set — rewrite must NOT fire.
+        b = Page(
+            title="Overview",
+            directory=nested_directory,
+            owner=user,
+            created_by=user,
+            updated_by=user,
+        )
+        b.save(_skip_collision_rewrite=True)
+        linker.refresh_from_db()
+        # Bare form preserved (no qualification happened)
+        assert linker.content == "Read #overview."
+
+    def test_move_to_colliding_dir_shows_error_not_500(
+        self, client, user, sub_directory, nested_directory
+    ):
+        """Moving a page into a directory that already has a same-slug
+        sibling surfaces a user-facing error, not an IntegrityError."""
+        a = self._make_page(user, "Overview", directory=sub_directory)
+        b = self._make_page(user, "Overview", directory=nested_directory)
+        assert a.slug == b.slug == "overview"
+        client.force_login(user)
+        # Try to move B into sub_directory — A already occupies that slot.
+        r = client.post(
+            reverse("page_move", kwargs={"path": b.content_path}),
+            data={"directory": sub_directory.pk},
+        )
+        assert r.status_code == 200  # form re-rendered with error
+        assert b"already exists in the destination" in r.content
+        b.refresh_from_db()
+        assert b.directory_id == nested_directory.pk  # unchanged
+
+    def test_seed_help_pages_tolerates_user_slug_collision(
+        self, user, sub_directory
+    ):
+        """A user page sharing a help slug in another directory must not
+        crash seed_help_pages via MultipleObjectsReturned."""
+        from django.core.management import call_command
+
+        self._make_page(
+            user, "Markdown Syntax", directory=sub_directory
+        )  # slug = markdown-syntax
+        # Should be idempotent even with the colliding user page present
+        call_command("seed_help_pages")
+        call_command("seed_help_pages")
+        # Help page landed in /help, not /engineering
+        help_page = Page.objects.get(
+            directory__path="help", slug="markdown-syntax"
+        )
+        assert help_page.title == "Markdown Syntax"

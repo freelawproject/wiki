@@ -10,6 +10,7 @@ from urllib.parse import urlparse
 import markdown2
 import nh3
 from django.conf import settings
+from django.db.models import Q
 from django.urls import Resolver404, resolve
 
 from wiki.directories.models import Directory
@@ -38,16 +39,34 @@ _BUTTON_LINK_RE = re.compile(
     r"\s*\{button(?:-(outline|danger))?\}",
 )
 
-WIKI_LINK_RE = re.compile(r"(?<!\w)(?<!\()(?<!/)#([a-z0-9]+(?:-[a-z0-9]+)*)")
+_SLUG_CHARS = r"[a-z0-9]+(?:-[a-z0-9]+)*"
 
-# Matches [text](#slug) markdown links where #slug is a wiki page reference
-_MD_LINK_WIKI_RE = re.compile(r"\[([^\]]+)\]\(#([a-z0-9]+(?:-[a-z0-9]+)*)\)")
+# Captures a wiki-link target: an optional directory path, the page slug,
+# and an optional #fragment anchor. Used as a building block in the three
+# anchored regexes below (standalone, md-link, ref-link).
+#   #slug                      → dir=None,     slug=slug,     fragment=None
+#   #hr/onboarding             → dir="hr",     slug="onboarding"
+#   #hr/docs/ci#setup          → dir="hr/docs", slug="ci", fragment="setup"
+_WIKI_LINK_TARGET_RE = (
+    rf"(?:(?P<dir>{_SLUG_CHARS}(?:/{_SLUG_CHARS})*)/)?"
+    rf"(?P<slug>{_SLUG_CHARS})"
+    rf"(?:#(?P<fragment>{_SLUG_CHARS}))?"
+)
 
-# Matches reference-style link definitions: [ref]: #slug
+WIKI_LINK_RE = re.compile(r"(?<!\w)(?<!\()(?<!/)#" + _WIKI_LINK_TARGET_RE)
+
+_MD_LINK_WIKI_RE = re.compile(
+    r"\[(?P<text>[^\]]+)\]\(#" + _WIKI_LINK_TARGET_RE + r"\)"
+)
+
 _REF_LINK_WIKI_RE = re.compile(
-    r"^(\[[^\]]+\]:\s*)#([a-z0-9]+(?:-[a-z0-9]+)*)\s*$",
+    r"^(?P<prefix>\[[^\]]+\]:\s*)#" + _WIKI_LINK_TARGET_RE + r"\s*$",
     re.MULTILINE,
 )
+
+# Fenced code blocks and inline backticks — wiki link extraction and
+# resolution must skip these so documentation examples aren't rewritten.
+_CODE_REGIONS_RE = re.compile(r"```[\s\S]*?```|`[^`\n]+`")
 
 # Pattern for auto-linking bare URLs (used by markdown2 link-patterns extra)
 _AUTOLINK_RE = re.compile(r"(?<!\()(https?://[^\s<>\)\]\"]+)")
@@ -67,16 +86,41 @@ _INTERNAL_URL_RE = re.compile(
 )
 
 
-def extract_slugs_from_internal_urls(content):
-    """Extract page slugs from internal wiki URLs in content.
+def _code_region_ranges(content):
+    """Return (start, end) spans for fenced code blocks and inline backticks."""
+    return [(m.start(), m.end()) for m in _CODE_REGIONS_RE.finditer(content)]
 
-    Finds URLs like /c/dir/slug or {BASE_URL}/c/dir/slug and returns
-    the set of slugs (last path segment).
+
+def _in_code_region(pos, ranges):
+    return any(start <= pos < end for start, end in ranges)
+
+
+def extract_references_from_internal_urls(content):
+    """Extract (dir_path, slug) references from internal wiki URLs.
+
+    Finds URLs like /c/dir/slug or {BASE_URL}/c/dir/slug and returns a
+    set of (directory_path, slug) tuples. URL #fragments and code-block
+    regions are skipped.
     """
     base_url = getattr(settings, "BASE_URL", "")
     base_host = urlparse(base_url).hostname or ""
-    slugs = set()
+    code_ranges = _code_region_ranges(content)
+    refs = set()
+    action_suffixes = (
+        "/edit",
+        "/move",
+        "/delete",
+        "/history",
+        "/backlinks",
+        "/permissions",
+        "/diff",
+        "/revert",
+        "/subscribe",
+        "/feedback",
+    )
     for match in _INTERNAL_URL_RE.finditer(content):
+        if _in_code_region(match.start(), code_ranges):
+            continue
         url = (
             match.group(1)
             or match.group(2)
@@ -93,30 +137,31 @@ def extract_slugs_from_internal_urls(content):
             path = parsed.path
         else:
             path = url
-        # Strip /c/ prefix and trailing slash, extract last segment as slug
+        # Drop #fragment before segment extraction
+        path = path.split("#", 1)[0]
         path = path.rstrip("/")
         if not path.startswith("/c/"):
             continue
         content_path = path[3:]  # remove "/c/"
-        # Skip action URLs like .../edit/, .../history/, etc.
-        action_suffixes = (
-            "/edit",
-            "/move",
-            "/delete",
-            "/history",
-            "/backlinks",
-            "/permissions",
-            "/diff",
-            "/revert",
-            "/subscribe",
-            "/feedback",
-        )
         if any(content_path.endswith(s) for s in action_suffixes):
             continue
-        slug = content_path.rsplit("/", 1)[-1]
+        if "/" in content_path:
+            dir_path, slug = content_path.rsplit("/", 1)
+        else:
+            dir_path, slug = "", content_path
         if slug:
-            slugs.add(slug)
-    return slugs
+            refs.add((dir_path, slug))
+    return refs
+
+
+def extract_slugs_from_internal_urls(content):
+    """Return bare slugs referenced by internal wiki URLs.
+
+    Convenience wrapper over ``extract_references_from_internal_urls``.
+    """
+    return {
+        slug for _dir, slug in extract_references_from_internal_urls(content)
+    }
 
 
 ALLOWED_TAGS = {
@@ -199,66 +244,172 @@ def _sanitize(html):
     )
 
 
+def _iter_references(content, code_ranges):
+    """Yield (dir_path, slug) tuples for every wiki link across all syntaxes.
+
+    Walks all three regexes (standalone, md-link, ref-link). Matches inside
+    fenced code blocks or inline backticks are skipped. ``dir_path`` is the
+    full directory path, or ``""`` for bare references.
+    """
+    for regex in (WIKI_LINK_RE, _MD_LINK_WIKI_RE, _REF_LINK_WIKI_RE):
+        for m in regex.finditer(content):
+            if _in_code_region(m.start(), code_ranges):
+                continue
+            yield m.group("dir") or "", m.group("slug")
+
+
+def resolve_references(references, exclude_pk=None):
+    """Resolve a set of ``(dir_path, slug)`` tuples to ``Page`` objects.
+
+    Returns a dict ``{(dir_path, slug): Page}``. Qualified refs (non-empty
+    ``dir_path``) match on ``(directory.path, slug)`` exactly. Bare refs
+    (``dir_path == ""``) use a ``created_at`` tiebreaker — the oldest
+    active page with that slug wins, across any directory. ``SlugRedirect``
+    is consulted as a fallback for anything that didn't match directly.
+
+    Shared by ``resolve_wiki_links`` (link rendering) and
+    ``Page._update_page_links`` (PageLink graph maintenance), so both
+    layers agree on what each textual reference points to.
+
+    If ``exclude_pk`` is given, the matching page is skipped — useful for
+    link-tracking where self-references shouldn't be recorded.
+    """
+    # Inline import to avoid circular dependency (pages/models ↔ lib/markdown)
+    from wiki.pages.models import Page, SlugRedirect
+
+    qualified_refs = {(d, s) for d, s in references if d}
+    bare_slugs = {s for d, s in references if not d}
+
+    page_qs = Page.objects.all()
+    redirect_qs = SlugRedirect.objects.all()
+    if exclude_pk is not None:
+        page_qs = page_qs.exclude(pk=exclude_pk)
+        redirect_qs = redirect_qs.exclude(page_id=exclude_pk)
+
+    resolved = {}
+
+    if qualified_refs:
+        q = Q()
+        for d, s in qualified_refs:
+            q |= Q(directory__path=d, slug=s)
+        for p in page_qs.filter(q).select_related("directory"):
+            resolved[(p.directory.path, p.slug)] = p
+        missing = qualified_refs - set(resolved.keys())
+        if missing:
+            rq = Q()
+            for d, s in missing:
+                rq |= Q(directory__path=d, old_slug=s)
+            for r in redirect_qs.filter(rq).select_related(
+                "page__directory", "directory"
+            ):
+                resolved[(r.directory.path, r.old_slug)] = r.page
+
+    if bare_slugs:
+        seen = set()
+        for p in (
+            page_qs.filter(slug__in=bare_slugs)
+            .order_by("slug", "created_at")
+            .select_related("directory")
+        ):
+            if p.slug not in seen:
+                seen.add(p.slug)
+                resolved[("", p.slug)] = p
+        missing = bare_slugs - seen
+        if missing:
+            for r in (
+                redirect_qs.filter(old_slug__in=missing)
+                .order_by("old_slug", "page__created_at")
+                .select_related("page__directory")
+            ):
+                if r.old_slug not in seen:
+                    seen.add(r.old_slug)
+                    resolved[("", r.old_slug)] = r.page
+
+    return resolved
+
+
+def _build_link_resolver(content, code_ranges):
+    """Return ``resolve(dir_path, slug) -> Page | None`` for ``content``.
+
+    Thin wrapper around ``resolve_references`` that extracts the refs
+    from ``content`` first.
+    """
+    references = set(_iter_references(content, code_ranges))
+    resolved = resolve_references(references)
+
+    def resolve(dir_path, slug):
+        return resolved.get((dir_path, slug))
+
+    return resolve
+
+
+def _append_fragment(url, fragment):
+    return f"{url}#{fragment}" if fragment else url
+
+
 def resolve_wiki_links(content):
-    """Replace #slug references with proper markdown links.
+    """Replace #slug and #dir/slug references with proper markdown links.
 
     Handles three syntaxes:
     - Standalone: #slug → [Title](/dir/path/slug)
     - Inline link: [text](#slug) → [text](/dir/path/slug)
     - Reference link: [ref]: #slug → [ref]: /dir/path/slug
 
-    Known slugs are resolved to page URLs. Unknown standalone slugs
-    become red links. Unknown slugs in [text](#slug) and reference
-    definitions are left as-is (they may be heading anchors).
+    Qualified (#dir/slug) forms resolve unambiguously via directory path.
+    Bare (#slug) forms resolve via the oldest matching page (legacy
+    shorthand). Known refs become links; unknown standalone refs render
+    as red text; unknown md/ref refs are left as-is (may be heading
+    anchors).
     """
-    # Inline import to avoid circular dependency (pages/models ↔ lib/markdown)
-    from wiki.pages.models import Page, SlugRedirect
-
-    # Collect slugs from all three patterns
-    standalone_slugs = set(WIKI_LINK_RE.findall(content))
-    md_link_slugs = {m.group(2) for m in _MD_LINK_WIKI_RE.finditer(content)}
-    ref_link_slugs = {m.group(2) for m in _REF_LINK_WIKI_RE.finditer(content)}
-    all_slugs = standalone_slugs | md_link_slugs | ref_link_slugs
-
-    if not all_slugs:
+    code_ranges = _code_region_ranges(content)
+    # Bail fast if there are no wiki-link-shaped tokens at all
+    if not any(True for _ in _iter_references(content, code_ranges)):
         return content
 
-    # Build a slug → page mapping
-    pages = Page.objects.filter(slug__in=all_slugs).select_related("directory")
-    slug_map = {p.slug: p for p in pages}
+    resolve = _build_link_resolver(content, code_ranges)
 
-    # Check redirects for slugs not found directly
-    missing = all_slugs - set(slug_map.keys())
-    if missing:
-        redirects = SlugRedirect.objects.filter(
-            old_slug__in=missing
-        ).select_related("page__directory")
-        for r in redirects:
-            slug_map[r.old_slug] = r.page
-
-    # 1) Replace [text](#slug) — known slugs get resolved, unknown left as-is
     def replace_md_link(match):
-        text, slug = match.group(1), match.group(2)
-        if slug in slug_map:
-            return f"[{text}]({slug_map[slug].get_absolute_url()})"
+        if _in_code_region(match.start(), code_ranges):
+            return match.group(0)
+        text = match.group("text")
+        dir_path = match.group("dir") or ""
+        slug = match.group("slug")
+        fragment = match.group("fragment")
+        page = resolve(dir_path, slug)
+        if page is not None:
+            url = _append_fragment(page.get_absolute_url(), fragment)
+            return f"[{text}]({url})"
         return match.group(0)
 
     content = _MD_LINK_WIKI_RE.sub(replace_md_link, content)
+    # Each sub can change content length, so code-region offsets shift —
+    # recompute before the next callback that consults them.
+    code_ranges_after_md = _code_region_ranges(content)
 
-    # 2) Replace [ref]: #slug — known slugs get resolved, unknown left as-is
     def replace_ref_link(match):
-        prefix, slug = match.group(1), match.group(2)
-        if slug in slug_map:
-            return f"{prefix}{slug_map[slug].get_absolute_url()}"
+        if _in_code_region(match.start(), code_ranges_after_md):
+            return match.group(0)
+        prefix = match.group("prefix")
+        dir_path = match.group("dir") or ""
+        slug = match.group("slug")
+        fragment = match.group("fragment")
+        page = resolve(dir_path, slug)
+        if page is not None:
+            url = _append_fragment(page.get_absolute_url(), fragment)
+            return f"{prefix}{url}"
         return match.group(0)
 
     content = _REF_LINK_WIKI_RE.sub(replace_ref_link, content)
+    code_ranges_after_ref = _code_region_ranges(content)
 
-    # 3) Replace standalone #slug — known → link, unknown → red text
     def replace_link(match):
-        slug = match.group(1)
-        # Skip if this #slug sits inside a reference-style definition
-        # ([ref]: #slug) — step 2 already handled those.
+        if _in_code_region(match.start(), code_ranges_after_ref):
+            return match.group(0)
+        dir_path = match.group("dir") or ""
+        slug = match.group("slug")
+        fragment = match.group("fragment")
+        # Skip if this sits inside a reference-style definition — replace_ref_link
+        # already handled those.
         line_start = match.string.rfind("\n", 0, match.start()) + 1
         line_end = match.string.find("\n", match.end())
         if line_end == -1:
@@ -266,28 +417,102 @@ def resolve_wiki_links(content):
         line = match.string[line_start:line_end]
         if _REF_LINK_WIKI_RE.match(line):
             return match.group(0)
-        if slug in slug_map:
-            page = slug_map[slug]
-            url = page.get_absolute_url()
+        page = resolve(dir_path, slug)
+        if page is not None:
+            url = _append_fragment(page.get_absolute_url(), fragment)
             return f"[{page.title}]({url})"
-        else:
-            return f'<span class="text-red-500 dark:text-red-400" title="Page not found">#{slug}</span>'
+        return (
+            f'<span class="text-red-500 dark:text-red-400" '
+            f'title="Page not found">{match.group(0)}</span>'
+        )
 
     return WIKI_LINK_RE.sub(replace_link, content)
 
 
-def extract_all_wiki_slugs(content):
-    """Extract page slugs from all wiki link syntaxes in raw content.
+def extract_all_wiki_references(content):
+    """Extract (dir_path, slug) references from all wiki link syntaxes.
 
-    Finds slugs from:
-    - Standalone #slug references
-    - [text](#slug) markdown links
-    - [ref]: #slug reference definitions
+    Finds references from:
+    - Standalone #slug and #dir/slug
+    - [text](#slug) / [text](#dir/slug)
+    - [ref]: #slug / [ref]: #dir/slug
+
+    Returns a set of (dir_path, slug) tuples. dir_path is "" for bare
+    references. Code-block and inline-backtick regions are skipped.
     """
-    slugs = set(WIKI_LINK_RE.findall(content))
-    slugs |= {m.group(2) for m in _MD_LINK_WIKI_RE.finditer(content)}
-    slugs |= {m.group(2) for m in _REF_LINK_WIKI_RE.finditer(content)}
-    return slugs
+    code_ranges = _code_region_ranges(content)
+    return set(_iter_references(content, code_ranges))
+
+
+def extract_all_wiki_slugs(content):
+    """Return the set of bare slugs referenced by any wiki link syntax.
+
+    This is a convenience wrapper over ``extract_all_wiki_references``
+    that drops the directory component — useful when callers want a
+    coarse "does this page mention slug X anywhere" check. For link
+    resolution, prefer ``extract_all_wiki_references``.
+    """
+    return {slug for _dir, slug in extract_all_wiki_references(content)}
+
+
+def qualify_bare_links(content, target_slug, qualified_path):
+    """Rewrite bare ``#<target_slug>`` references to ``#<qualified_path>``.
+
+    Used when a save introduces a slug collision: links elsewhere in the
+    wiki that used the bare form to point at a now-ambiguous slug get
+    rewritten in-place to their qualified form. Fragments are preserved.
+    ``qualified_path`` is the full directory-plus-slug path (e.g.,
+    ``"hr/overview"``). Rewrites happen in standalone ``#slug``,
+    ``[text](#slug)``, and ``[ref]: #slug`` forms; matches inside code
+    regions are skipped.
+    """
+    code_ranges = _code_region_ranges(content)
+
+    def _should_rewrite(match):
+        if _in_code_region(match.start(), code_ranges):
+            return False
+        if match.group("dir"):
+            return False
+        return match.group("slug") == target_slug
+
+    def _new_ref(match):
+        fragment = match.group("fragment")
+        new = f"#{qualified_path}"
+        if fragment:
+            new += f"#{fragment}"
+        return new
+
+    # Rewrite reference-style definitions first so the standalone pass
+    # doesn't mistake them for bare references.
+    def replace_ref(match):
+        if not _should_rewrite(match):
+            return match.group(0)
+        return f"{match.group('prefix')}{_new_ref(match)}"
+
+    content = _REF_LINK_WIKI_RE.sub(replace_ref, content)
+    code_ranges = _code_region_ranges(content)
+
+    def replace_md(match):
+        if not _should_rewrite(match):
+            return match.group(0)
+        return f"[{match.group('text')}]({_new_ref(match)})"
+
+    content = _MD_LINK_WIKI_RE.sub(replace_md, content)
+    code_ranges = _code_region_ranges(content)
+
+    def replace_standalone(match):
+        if not _should_rewrite(match):
+            return match.group(0)
+        # Skip lines that are ref-style definitions (handled above).
+        line_start = match.string.rfind("\n", 0, match.start()) + 1
+        line_end = match.string.find("\n", match.end())
+        if line_end == -1:
+            line_end = len(match.string)
+        if _REF_LINK_WIKI_RE.match(match.string[line_start:line_end]):
+            return match.group(0)
+        return _new_ref(match)
+
+    return WIKI_LINK_RE.sub(replace_standalone, content)
 
 
 # ── Markdown stripping (plain-text extraction) ──────────────────────

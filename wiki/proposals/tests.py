@@ -45,7 +45,9 @@ class TestFeedbackPage:
     def test_feedback_page_loads_for_viewer(self, client, other_user, page):
         """A user who can view but not edit sees the feedback form."""
         client.force_login(other_user)
-        r = client.get(reverse("page_feedback", kwargs={"path": page.slug}))
+        r = client.get(
+            reverse("page_feedback", kwargs={"path": page.content_path})
+        )
         assert r.status_code == 200
         assert b"Feedback" in r.content
 
@@ -53,13 +55,17 @@ class TestFeedbackPage:
         """An editor/owner can access the feedback page to propose
         changes (e.g. for review before editing directly)."""
         client.force_login(user)
-        r = client.get(reverse("page_feedback", kwargs={"path": page.slug}))
+        r = client.get(
+            reverse("page_feedback", kwargs={"path": page.content_path})
+        )
         assert r.status_code == 200
 
     def test_propose_form_prefilled(self, client, other_user, page):
         """The propose form is pre-filled with the current page content."""
         client.force_login(other_user)
-        r = client.get(reverse("page_feedback", kwargs={"path": page.slug}))
+        r = client.get(
+            reverse("page_feedback", kwargs={"path": page.content_path})
+        )
         content = r.content.decode()
         assert page.title in content
         assert page.content in content
@@ -68,7 +74,7 @@ class TestFeedbackPage:
         """A viewer can submit a proposal via the feedback page."""
         client.force_login(other_user)
         r = client.post(
-            reverse("page_feedback", kwargs={"path": page.slug}),
+            reverse("page_feedback", kwargs={"path": page.content_path}),
             {
                 "submit_proposal": "1",
                 "proposed_title": "Getting Started v2",
@@ -86,7 +92,7 @@ class TestFeedbackPage:
         """Submitting a proposal emails the page owner."""
         client.force_login(other_user)
         client.post(
-            reverse("page_feedback", kwargs={"path": page.slug}),
+            reverse("page_feedback", kwargs={"path": page.content_path}),
             {
                 "submit_proposal": "1",
                 "proposed_title": page.title,
@@ -101,7 +107,7 @@ class TestFeedbackPage:
     def test_anon_can_propose_on_public_page(self, client, page):
         """An anonymous user can propose changes on a public page."""
         r = client.post(
-            reverse("page_feedback", kwargs={"path": page.slug}),
+            reverse("page_feedback", kwargs={"path": page.content_path}),
             {
                 "submit_proposal": "1",
                 "proposed_title": page.title,
@@ -118,7 +124,9 @@ class TestFeedbackPage:
     def test_anon_cannot_propose_on_private_page(self, client, private_page):
         """An anonymous user gets 404 for a private page."""
         r = client.get(
-            reverse("page_feedback", kwargs={"path": private_page.slug})
+            reverse(
+                "page_feedback", kwargs={"path": private_page.content_path}
+            )
         )
         assert r.status_code == 404
 
@@ -130,7 +138,9 @@ class TestProposalList:
     def test_list_requires_edit_permission(self, client, other_user, page):
         """Non-editors can't see the proposals list."""
         client.force_login(other_user)
-        r = client.get(reverse("proposal_list", kwargs={"path": page.slug}))
+        r = client.get(
+            reverse("proposal_list", kwargs={"path": page.content_path})
+        )
         assert r.status_code == 302  # redirect with error
 
     def test_owner_sees_proposal_list(self, client, user, page):
@@ -143,7 +153,9 @@ class TestProposalList:
             change_message="Improvement",
         )
         client.force_login(user)
-        r = client.get(reverse("proposal_list", kwargs={"path": page.slug}))
+        r = client.get(
+            reverse("proposal_list", kwargs={"path": page.content_path})
+        )
         assert r.status_code == 200
         assert b"Improvement" in r.content
 
@@ -168,7 +180,9 @@ class TestProposalList:
             reviewed_by=user,
         )
         client.force_login(user)
-        r = client.get(reverse("proposal_list", kwargs={"path": page.slug}))
+        r = client.get(
+            reverse("proposal_list", kwargs={"path": page.content_path})
+        )
         content = r.content.decode()
         assert "Pending change" in content
         assert "Accepted change" in content
@@ -483,6 +497,8 @@ class TestFLPEditableFeedback:
         feedback page to propose changes."""
         client.force_login(other_user)
         r = client.get(
-            reverse("page_feedback", kwargs={"path": editable_page.slug})
+            reverse(
+                "page_feedback", kwargs={"path": editable_page.content_path}
+            )
         )
         assert r.status_code == 200

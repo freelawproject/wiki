@@ -567,7 +567,9 @@ class TestPinnedPages:
     ):
         """Page editors without directory edit permission cannot pin."""
         client.force_login(other_user)
-        r = client.post(reverse("page_toggle_pin", kwargs={"path": page.slug}))
+        r = client.post(
+            reverse("page_toggle_pin", kwargs={"path": page.content_path})
+        )
         assert r.status_code == 404
 
     def test_toggle_pin_works(self, client, owner_user, root_directory, page):
@@ -575,14 +577,18 @@ class TestPinnedPages:
         page.save(update_fields=["directory"])
         client.force_login(owner_user)
         assert not page.is_pinned
-        r = client.post(reverse("page_toggle_pin", kwargs={"path": page.slug}))
+        r = client.post(
+            reverse("page_toggle_pin", kwargs={"path": page.content_path})
+        )
         assert r.status_code == 200
         assert r.json()["is_pinned"] is True
         page.refresh_from_db()
         assert page.is_pinned
 
         # Toggle off
-        r = client.post(reverse("page_toggle_pin", kwargs={"path": page.slug}))
+        r = client.post(
+            reverse("page_toggle_pin", kwargs={"path": page.content_path})
+        )
         assert r.status_code == 200
         assert r.json()["is_pinned"] is False
         page.refresh_from_db()

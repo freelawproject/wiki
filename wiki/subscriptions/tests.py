@@ -376,7 +376,9 @@ class TestUserJourneyScenarios:
 class TestToggleSubscription:
     def test_subscribe_to_page(self, client, user, page):
         client.force_login(user)
-        r = client.post(reverse("page_subscribe", kwargs={"path": page.slug}))
+        r = client.post(
+            reverse("page_subscribe", kwargs={"path": page.content_path})
+        )
         assert r.status_code == 302
         assert PageSubscription.objects.filter(
             user=user, page=page, status=S
@@ -385,7 +387,9 @@ class TestToggleSubscription:
     def test_unsubscribe_from_page(self, client, user, page):
         PageSubscription.objects.create(user=user, page=page)
         client.force_login(user)
-        r = client.post(reverse("page_subscribe", kwargs={"path": page.slug}))
+        r = client.post(
+            reverse("page_subscribe", kwargs={"path": page.content_path})
+        )
         assert r.status_code == 302
         assert PageSubscription.objects.filter(
             user=user, page=page, status=U
@@ -394,7 +398,7 @@ class TestToggleSubscription:
     def test_htmx_subscribe_returns_button(self, client, user, page):
         client.force_login(user)
         r = client.post(
-            reverse("page_subscribe", kwargs={"path": page.slug}),
+            reverse("page_subscribe", kwargs={"path": page.content_path}),
             HTTP_HX_REQUEST="true",
         )
         assert r.status_code == 200
@@ -404,19 +408,23 @@ class TestToggleSubscription:
         PageSubscription.objects.create(user=user, page=page)
         client.force_login(user)
         r = client.post(
-            reverse("page_subscribe", kwargs={"path": page.slug}),
+            reverse("page_subscribe", kwargs={"path": page.content_path}),
             HTTP_HX_REQUEST="true",
         )
         assert b"Subscribe" in r.content
 
     def test_requires_login(self, client, page):
-        r = client.post(reverse("page_subscribe", kwargs={"path": page.slug}))
+        r = client.post(
+            reverse("page_subscribe", kwargs={"path": page.content_path})
+        )
         assert r.status_code == 302
         assert reverse("login") in r.url
 
     def test_get_returns_404(self, client, user, page):
         client.force_login(user)
-        r = client.get(reverse("page_subscribe", kwargs={"path": page.slug}))
+        r = client.get(
+            reverse("page_subscribe", kwargs={"path": page.content_path})
+        )
         assert r.status_code == 404
 
     def test_unsub_page_when_dir_subscribed(
@@ -923,7 +931,7 @@ class TestRevertNotifiesSubscribers:
         # Create revision 2 by editing
         client.force_login(user)
         client.post(
-            reverse("page_edit", kwargs={"path": page.slug}),
+            reverse("page_edit", kwargs={"path": page.content_path}),
             {
                 "title": page.title,
                 "content": "Edited content",
@@ -952,7 +960,7 @@ class TestEditNotifiesSubscribers:
         PageSubscription.objects.create(user=other_user, page=page)
         client.force_login(user)
         client.post(
-            reverse("page_edit", kwargs={"path": page.slug}),
+            reverse("page_edit", kwargs={"path": page.content_path}),
             {
                 "title": page.title,
                 "content": "New content",

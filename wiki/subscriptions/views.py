@@ -9,6 +9,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 
 from wiki.directories.models import Directory
+from wiki.lib.page_utils import get_page_from_path
 from wiki.lib.permissions import can_view_directory, can_view_page
 from wiki.pages.models import Page
 
@@ -29,9 +30,7 @@ def toggle_subscription(request, path):
     if request.method != "POST":
         raise Http404
 
-    segments = path.strip("/").split("/")
-    slug = segments[-1]
-    page = get_object_or_404(Page, slug=slug)
+    page = get_page_from_path(path)
 
     if not can_view_page(request.user, page):
         raise Http404

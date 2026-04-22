@@ -502,3 +502,169 @@ class TestPageCreateFromRoot:
         # Location picker should still show "Staff"
         chips = browser_page.locator("#location-chips")
         expect(chips).to_contain_text("Staff")
+
+
+@pytest.fixture
+def wiki_link_pages(browser_user, dir_tree):
+    """A pair of pages whose titles share a prefix, for autocomplete tests.
+
+    'Staff Guide' lives in /staff (from dir_tree), 'Stations' at root.
+    A query for "sta" matches both; "stat" matches only Stations.
+    """
+    staff_dir = Directory.objects.get(path="staff")
+    staff_guide = WikiPage.objects.create(
+        title="Staff Guide",
+        slug="staff-guide",
+        content="Internal info.",
+        directory=staff_dir,
+        owner=browser_user,
+        created_by=browser_user,
+        updated_by=browser_user,
+    )
+    PageRevision.objects.create(
+        page=staff_guide,
+        title=staff_guide.title,
+        content=staff_guide.content,
+        change_message="Initial",
+        revision_number=1,
+        created_by=browser_user,
+    )
+    stations = WikiPage.objects.create(
+        title="Stations",
+        slug="stations",
+        content="Public list.",
+        owner=browser_user,
+        created_by=browser_user,
+        updated_by=browser_user,
+    )
+    PageRevision.objects.create(
+        page=stations,
+        title=stations.title,
+        content=stations.content,
+        change_message="Initial",
+        revision_number=1,
+        created_by=browser_user,
+    )
+    return staff_guide, stations
+
+
+def _focus_editor(browser_page):
+    """Focus the CodeMirror editor on the page-create form."""
+    cm = browser_page.locator(".CodeMirror textarea").first
+    cm.focus()
+    return cm
+
+
+@pytest.mark.django_db(transaction=True)
+class TestWikiLinkAutocomplete:
+    """The #wiki-link dropdown must react to every user edit, not just
+    insertions, and must not reopen itself after the user picks a suggestion."""
+
+    def test_backspace_hides_dropdown_when_query_too_short(
+        self, browser_page, live_server, browser_user, wiki_link_pages
+    ):
+        """Typing #sta shows matches; backspacing to #s should hide the
+        dropdown (query under the 2-char threshold). Regression guard
+        against the bug where deletion didn't fire the refresh at all."""
+        _force_login(browser_page, live_server, browser_user)
+        browser_page.goto(f"{live_server.url}{reverse('page_create')}")
+        _focus_editor(browser_page)
+        dropdown = browser_page.locator("#slug-dropdown")
+
+        with browser_page.expect_response("**/api/page-search/**"):
+            browser_page.keyboard.type("#sta")
+        dropdown.locator("[data-path]").first.wait_for(state="visible")
+
+        browser_page.keyboard.press("Backspace")
+        browser_page.keyboard.press("Backspace")
+        expect(dropdown).to_be_hidden()
+
+    def test_backspace_refreshes_results_when_query_still_valid(
+        self, browser_page, live_server, browser_user, wiki_link_pages
+    ):
+        """Typing #stat matches only 'Stations'; backspacing to #sta should
+        fire a new search and include 'Staff Guide' in the results. Regression
+        guard against the dropdown showing stale matches from the longer query."""
+        _force_login(browser_page, live_server, browser_user)
+        browser_page.goto(f"{live_server.url}{reverse('page_create')}")
+        _focus_editor(browser_page)
+        dropdown = browser_page.locator("#slug-dropdown")
+
+        with browser_page.expect_response("**/api/page-search/**"):
+            browser_page.keyboard.type("#stat")
+        dropdown.locator("[data-path]").first.wait_for(state="visible")
+        # Only "Stations" matches "stat"
+        expect(dropdown).to_contain_text("Stations")
+        expect(dropdown).not_to_contain_text("Staff Guide")
+
+        # Backspace one char — query is now "sta", should re-query and
+        # pick up the broader match set.
+        with browser_page.expect_response("**/api/page-search/**"):
+            browser_page.keyboard.press("Backspace")
+        expect(dropdown).to_contain_text("Staff Guide")
+        expect(dropdown).to_contain_text("Stations")
+
+    def test_selection_does_not_reopen_dropdown(
+        self, browser_page, live_server, browser_user, wiki_link_pages
+    ):
+        """Picking an item inserts the qualified path and closes the
+        dropdown. Regression guard against the `change` handler reopening
+        the dropdown right after the programmatic insert."""
+        _force_login(browser_page, live_server, browser_user)
+        browser_page.goto(f"{live_server.url}{reverse('page_create')}")
+        _focus_editor(browser_page)
+        dropdown = browser_page.locator("#slug-dropdown")
+
+        with browser_page.expect_response("**/api/page-search/**"):
+            browser_page.keyboard.type("#staf")
+        dropdown.locator("[data-path]").first.wait_for(state="visible")
+
+        # Enter picks the highlighted item (first by default)
+        browser_page.keyboard.press("Enter")
+        expect(dropdown).to_be_hidden()
+        # Give any lingering change handler a chance to fire
+        browser_page.wait_for_timeout(250)
+        expect(dropdown).to_be_hidden()
+
+    def test_selection_inserts_qualified_path(
+        self, browser_page, live_server, browser_user, wiki_link_pages
+    ):
+        """Picker inserts the full #dir/slug, not just #slug — so
+        references stay unambiguous even once sibling slugs collide."""
+        _force_login(browser_page, live_server, browser_user)
+        browser_page.goto(f"{live_server.url}{reverse('page_create')}")
+        _focus_editor(browser_page)
+        dropdown = browser_page.locator("#slug-dropdown")
+
+        with browser_page.expect_response("**/api/page-search/**"):
+            browser_page.keyboard.type("#staff g")
+        # The search uses the segment after the last '/' — "staff g" is one
+        # segment and matches "Staff Guide". Wait for results.
+        dropdown.locator("[data-path]").first.wait_for(state="visible")
+        browser_page.keyboard.press("Enter")
+
+        # The editor should now contain the qualified path
+        body = browser_page.locator(".CodeMirror").first.text_content()
+        assert "#staff/staff-guide" in body
+
+    def test_escape_hides_dropdown(
+        self, browser_page, live_server, browser_user, wiki_link_pages
+    ):
+        """Escape closes the dropdown even with a matching query, and
+        typing another character re-opens it (not stuck dismissed)."""
+        _force_login(browser_page, live_server, browser_user)
+        browser_page.goto(f"{live_server.url}{reverse('page_create')}")
+        _focus_editor(browser_page)
+        dropdown = browser_page.locator("#slug-dropdown")
+
+        with browser_page.expect_response("**/api/page-search/**"):
+            browser_page.keyboard.type("#sta")
+        dropdown.locator("[data-path]").first.wait_for(state="visible")
+
+        browser_page.keyboard.press("Escape")
+        expect(dropdown).to_be_hidden()
+
+        # Typing more chars should reopen the dropdown
+        with browser_page.expect_response("**/api/page-search/**"):
+            browser_page.keyboard.type("f")
+        dropdown.locator("[data-path]").first.wait_for(state="visible")

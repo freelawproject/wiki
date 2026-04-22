@@ -379,59 +379,73 @@ browser will warn you before leaving.
         "content": """\
 ## Linking Between Wiki Pages
 
-The wiki supports a special syntax for linking to other pages
-using their slug.
+The wiki supports a special syntax for linking to other pages using
+their path (or just their slug, when unambiguous).
 
 ### Wiki link syntax
 
-Type `#` followed by a page slug:
+Type `#` followed by a page's path (directory + slug):
 
 ```
-See #markdown-syntax for formatting help.
+See #help/markdown-syntax for formatting help.
 ```
 
-This renders as a clickable link with the page's title.
+The directory portion is optional when the slug is unique across the
+wiki — plain `#markdown-syntax` also works when only one page has
+that slug. Whatever form you use, the link renders as a clickable
+link with the page's title.
+
+### Link to a specific section
+
+Append `#section-id` to link into a heading on the target page:
+
+```
+See #help/markdown-syntax#code-blocks for the fenced-code rules.
+```
 
 ### How it works
 
-1. When you save a page, the wiki finds all `#slug` references
-2. Known slugs are converted to titled links: `[Markdown Syntax](/c/help/markdown-syntax)`
-3. Unknown slugs appear as red links, indicating the page doesn't
+1. When you save a page, the wiki finds all `#...` references
+2. Known paths are converted to titled links: `[Markdown Syntax](/c/help/markdown-syntax)`
+3. Unknown paths appear as red links, indicating the page doesn't
    exist yet
 
-### Finding a page's slug
+### Finding a page's path
 
-The slug is the URL-friendly version of the title. It appears in
-the page's URL. For example:
+The path is the directory plus slug, matching the URL. For example:
 
 - **Title**: "Getting Started Guide"
-- **Slug**: `getting-started-guide`
+- **Path**: `help/getting-started-guide`
 - **URL**: `/c/help/getting-started-guide`
 
 ### Slug redirects
 
-When a page's title changes, the slug changes too. The old slug
-is preserved as a redirect, so existing `#old-slug` links
-continue to work.
+When a page's title changes, the slug changes too. The old
+(directory, slug) combination is preserved as a redirect, so
+existing `#old-slug` links continue to work.
 
 ### Autocomplete
 
 In the editor, typing `#` followed by two or more characters
-triggers an autocomplete dropdown. Select a page from the list
-to insert the correct slug.
+triggers an autocomplete dropdown. Select a page from the list to
+insert its full path — so new links are always unambiguous even if
+someone later creates a second page with the same slug elsewhere.
 
 ### Backlinks ("What links here")
 
 Every page tracks which other pages link to it. Click
-**Actions → What links here** to see all incoming wiki links.
-This is useful for understanding how a page fits into the broader
-wiki — and the wiki uses this information to prevent you from
-deleting a page that other pages link to.
+**Actions → What links here** to see all incoming wiki links,
+regardless of whether the source used the bare `#slug` or the
+qualified `#dir/slug` form. This is useful for understanding how a
+page fits into the broader wiki — and the wiki uses this
+information to prevent you from deleting a page that other pages
+link to.
 
 ### Tips
 
-- Slugs are always lowercase with hyphens: `my-page-title`
-- You can link to pages in any directory — slugs are globally unique
+- Slugs are lowercase with hyphens: `my-page-title`
+- Two pages in different directories can share a slug — use the
+  qualified `#dir/slug` form when that happens
 - Red links are a good way to plan pages that don't exist yet
 """,
     },
@@ -1610,7 +1624,11 @@ class Command(BaseCommand):
 
         if options["recreate"]:
             help_slugs = [p["slug"] for p in HELP_PAGES]
-            deleted, _ = Page.all_objects.filter(slug__in=help_slugs).delete()
+            # Scope deletion to the help directory so a user page in another
+            # directory that happens to share a help-page slug isn't wiped.
+            deleted, _ = Page.all_objects.filter(
+                directory=help_dir, slug__in=help_slugs
+            ).delete()
             self.stdout.write(f"Deleted {deleted} existing help page(s).")
 
         created = 0
@@ -1674,12 +1692,15 @@ class Command(BaseCommand):
     def _upsert_page(self, data, help_dir, owner):
         """Create or update a help page. Returns (page, was_created)."""
         is_pinned = data.get("is_pinned", False)
+        # Scope the lookup to help_dir — under directory-scoped slugs a
+        # user could have a page with the same slug in another directory,
+        # and a bare-slug lookup would raise MultipleObjectsReturned.
         page, created = Page.objects.get_or_create(
+            directory=help_dir,
             slug=data["slug"],
             defaults={
                 "title": data["title"],
                 "content": data["content"],
-                "directory": help_dir,
                 "owner": owner,
                 "visibility": Page.Visibility.PUBLIC,
                 "is_pinned": is_pinned,

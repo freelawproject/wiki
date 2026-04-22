@@ -4,7 +4,7 @@
   );
   var csrfToken = config.csrfToken;
   var isEditing = config.isEditing;
-  var pageSlug = config.pageSlug;
+  var pagePath = config.pagePath;
   var pageForm = document.getElementById('page-form');
 
   // ── Dynamic HTML title ─────────────────────────────────────
@@ -291,7 +291,7 @@
   var editorConfig = JSON.parse(
     document.getElementById('editor-config').textContent
   );
-  editorConfig.pageSlug = pageSlug;
+  editorConfig.pagePath = pagePath;
   var editor = initMarkdownEditor(editorConfig);
 
   // ── @-mention in change message input ───────────────────
@@ -350,35 +350,38 @@
 
   function extractAllReferences() {
     var mentionRe = /@([a-zA-Z][a-zA-Z0-9._-]*)/g;
-    var linkRe = /#([a-z0-9](?:[a-z0-9-]*[a-z0-9])?)/g;
+    // Captures the full wiki-link target — bare slug ("overview") or
+    // qualified path ("hr/docs/overview"). Must mirror the Python regex
+    // in wiki/lib/markdown.py (_QUALIFIED_SLUG_RE minus the #fragment).
+    var linkRe = /(?:^|[^\w(\/])#((?:[a-z0-9]+(?:-[a-z0-9]+)*)(?:\/[a-z0-9]+(?:-[a-z0-9]+)*)*)/g;
     var mentions = new Set();
-    var linkedSlugs = new Set();
+    var linkedPaths = new Set();
     var m;
     var content = editor.value();
     while ((m = mentionRe.exec(content)) !== null) mentions.add(m[1]);
     mentionRe.lastIndex = 0;
     var msg = cmInput.value;
     while ((m = mentionRe.exec(msg)) !== null) mentions.add(m[1]);
-    while ((m = linkRe.exec(content)) !== null) linkedSlugs.add(m[1]);
+    while ((m = linkRe.exec(content)) !== null) linkedPaths.add(m[1]);
     linkRe.lastIndex = 0;
-    while ((m = linkRe.exec(msg)) !== null) linkedSlugs.add(m[1]);
-    return { mentions: Array.from(mentions), linked_slugs: Array.from(linkedSlugs) };
+    while ((m = linkRe.exec(msg)) !== null) linkedPaths.add(m[1]);
+    return { mentions: Array.from(mentions), linked_paths: Array.from(linkedPaths) };
   }
 
   pageForm.addEventListener('submit', function(e) {
     if (pendingSubmit) return; // Already checked, let it through
 
     // Only check for non-public pages when editing
-    if (!isEditing || !pageSlug) return;
+    if (!isEditing || !pagePath) return;
 
     var refs = extractAllReferences();
-    if (!refs.mentions.length && !refs.linked_slugs.length) return;
+    if (!refs.mentions.length && !refs.linked_paths.length) return;
 
     e.preventDefault();
     fetch(config.urls.checkPagePerms, {
       method: 'POST',
       headers: { 'X-CSRFToken': csrfToken, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ page_slug: pageSlug, usernames: refs.mentions, linked_slugs: refs.linked_slugs }),
+      body: JSON.stringify({ page_path: pagePath, usernames: refs.mentions, linked_paths: refs.linked_paths }),
     }).then(function(r) { return r.json(); }).then(function(data) {
       var hasUsers = data.users_without_access && data.users_without_access.length;
       var hasLinks = data.restrictive_links && data.restrictive_links.length;

@@ -140,9 +140,9 @@ class Page(models.Model):
         ]
         constraints = [
             models.UniqueConstraint(
-                fields=["slug"],
+                fields=["directory", "slug"],
                 condition=models.Q(is_deleted=False),
-                name="unique_active_slug",
+                name="unique_active_slug_per_directory",
             ),
         ]
 
@@ -150,6 +150,16 @@ class Page(models.Model):
         return self.title
 
     def save(self, *args, **kwargs):
+        """Persist the page, auto-generate/rescope the slug, and fan out
+        bookkeeping (search vector, link graph, collision rewrites).
+
+        ``_skip_collision_rewrite=True`` suppresses the qualify-bare-links
+        pass. It's set by the collision handler when it recursively saves
+        the *linking* pages, so those saves don't re-trigger another round
+        of rewrites against the page that started it all.
+        """
+        skip_collision_rewrite = kwargs.pop("_skip_collision_rewrite", False)
+
         needs_slug = False
         if not self.slug:
             # New page without a slug: generate from title
@@ -169,8 +179,10 @@ class Page(models.Model):
             new_slug = slugify(self.title)
             base_slug = new_slug
             counter = 1
-            # Check active pages only (deleted slugs are free to reuse)
-            while Page.objects.filter(slug=new_slug).exclude(
+            # Uniqueness is scoped per directory — only collide with siblings
+            while Page.objects.filter(
+                directory=self.directory, slug=new_slug
+            ).exclude(
                 pk=self.pk
             ).exists() or page_path_conflicts_with_directory(
                 new_slug, self.directory
@@ -182,6 +194,59 @@ class Page(models.Model):
         super().save(*args, **kwargs)
         self._update_search_vector()
         self._update_page_links(**kwargs)
+        if not skip_collision_rewrite:
+            self._qualify_bare_links_on_collision()
+
+    def _qualify_bare_links_on_collision(self):
+        """If this page's slug collides with others, qualify bare links to them.
+
+        When saving introduces or continues a slug collision (another active
+        page shares ``self.slug`` in a different directory), walk every page
+        that links to those sibling pages and rewrite their bare ``#slug``
+        references to the sibling's qualified ``#dir/slug`` form. This keeps
+        historical links pointing at the intended page even as the bare form
+        becomes ambiguous.
+        """
+        from wiki.lib.markdown import qualify_bare_links
+
+        siblings = list(
+            Page.objects.filter(slug=self.slug)
+            .exclude(pk=self.pk)
+            .select_related("directory")
+        )
+        if not siblings:
+            return
+
+        for sibling in siblings:
+            sibling_path = sibling.content_path
+            linking_pages = list(
+                Page.objects.filter(outgoing_links__to_page=sibling)
+                .exclude(pk=self.pk)
+                .exclude(pk=sibling.pk)
+                .distinct()
+            )
+            for linking_page in linking_pages:
+                new_content = qualify_bare_links(
+                    linking_page.content, sibling.slug, sibling_path
+                )
+                if new_content == linking_page.content:
+                    continue
+                linking_page.content = new_content
+                # Atomic: the content update and its revision row must
+                # succeed or fail together, or history loses track of
+                # why the content changed.
+                with transaction.atomic():
+                    linking_page.save(
+                        update_fields=["content", "updated_at"],
+                        _skip_collision_rewrite=True,
+                    )
+                    linking_page.create_revision(
+                        user=None,
+                        change_message=(
+                            f"Qualify wiki links to #{sibling.slug} "
+                            f"after slug collision"
+                        ),
+                    )
 
     def soft_delete(self, user):
         """Soft-delete this page instead of permanently removing it."""
@@ -193,48 +258,35 @@ class Page(models.Model):
         self.save(update_fields=["is_deleted", "deleted_at", "deleted_by"])
 
     def _update_page_links(self, **kwargs):
-        """Rebuild PageLink rows based on #slug and internal URL references."""
+        """Rebuild PageLink rows from wiki-link and internal-URL references."""
         update_fields = kwargs.get("update_fields")
         if update_fields and "content" not in update_fields:
             return
 
         # Inline import to avoid circular dependency (pages/models ↔ lib/markdown)
         from wiki.lib.markdown import (
-            extract_all_wiki_slugs,
-            extract_slugs_from_internal_urls,
+            extract_all_wiki_references,
+            extract_references_from_internal_urls,
+            resolve_references,
         )
 
-        slugs = extract_all_wiki_slugs(self.content)
-        slugs |= extract_slugs_from_internal_urls(self.content)
+        references = extract_all_wiki_references(self.content)
+        references |= extract_references_from_internal_urls(self.content)
 
-        if not slugs:
+        if not references:
             PageLink.objects.filter(from_page=self).delete()
             return
 
-        # Resolve slugs to pages
-        pages_by_slug = {
-            p.slug: p
-            for p in Page.objects.filter(slug__in=slugs).exclude(pk=self.pk)
-        }
-
-        # Check redirects for unresolved slugs
-        missing = slugs - set(pages_by_slug.keys())
-        if missing:
-            for r in SlugRedirect.objects.filter(
-                old_slug__in=missing
-            ).select_related("page"):
-                if r.page_id != self.pk:
-                    pages_by_slug[r.old_slug] = r.page
-
-        target_pages = set(pages_by_slug.values())
+        resolved = resolve_references(references, exclude_pk=self.pk)
+        target_ids = {p.pk for p in resolved.values()}
 
         with transaction.atomic():
             PageLink.objects.filter(from_page=self).delete()
-            if target_pages:
+            if target_ids:
                 PageLink.objects.bulk_create(
                     [
-                        PageLink(from_page=self, to_page=tp)
-                        for tp in target_pages
+                        PageLink(from_page=self, to_page_id=tp_id)
+                        for tp_id in target_ids
                     ],
                     ignore_conflicts=True,
                 )
@@ -413,12 +465,27 @@ class PendingUpload(models.Model):
 
 
 class SlugRedirect(models.Model):
-    """Maps old slugs to current pages to preserve wiki links."""
+    """Maps old (directory, slug) pairs to current pages to preserve wiki links."""
 
-    old_slug = models.SlugField(max_length=255, unique=True)
+    directory = models.ForeignKey(
+        "directories.Directory",
+        on_delete=models.CASCADE,
+        related_name="slug_redirects",
+        null=True,
+        blank=True,
+    )
+    old_slug = models.SlugField(max_length=255)
     page = models.ForeignKey(
         Page, on_delete=models.CASCADE, related_name="slug_redirects"
     )
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["directory", "old_slug"],
+                name="unique_slug_redirect_per_directory",
+            ),
+        ]
 
     def __str__(self):
         return f"{self.old_slug} → {self.page.slug}"
