@@ -11,3 +11,11 @@ ratelimit_upload = ratelimit(
     key="user_or_ip", rate="20/m", method=["POST"], block=True
 )
 ratelimit_search = ratelimit(key="user_or_ip", rate="30/m", block=True)
+# Caps how fast a single user can create or move pages. Directory-scoped
+# slugs let multiple pages share a name across dirs, so mass-creating
+# colliding slugs could force expensive synchronous link-rewrites on
+# every existing page that referenced the sibling — the rate limit puts
+# an upper bound on the blast radius.
+ratelimit_page_write = ratelimit(
+    key="user_or_ip", rate="30/m", method=["POST"], block=True
+)

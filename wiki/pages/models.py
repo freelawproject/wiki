@@ -4,7 +4,6 @@ from django.conf import settings
 from django.contrib.postgres.indexes import GinIndex
 from django.contrib.postgres.search import SearchVector, SearchVectorField
 from django.db import models, transaction
-from django.db.models import Q
 from django.utils.text import slugify
 
 from wiki.lib.path_utils import page_path_conflicts_with_directory
@@ -151,6 +150,14 @@ class Page(models.Model):
         return self.title
 
     def save(self, *args, **kwargs):
+        """Persist the page, auto-generate/rescope the slug, and fan out
+        bookkeeping (search vector, link graph, collision rewrites).
+
+        ``_skip_collision_rewrite=True`` suppresses the qualify-bare-links
+        pass. It's set by the collision handler when it recursively saves
+        the *linking* pages, so those saves don't re-trigger another round
+        of rewrites against the page that started it all.
+        """
         skip_collision_rewrite = kwargs.pop("_skip_collision_rewrite", False)
 
         needs_slug = False
@@ -225,17 +232,21 @@ class Page(models.Model):
                 if new_content == linking_page.content:
                     continue
                 linking_page.content = new_content
-                linking_page.save(
-                    update_fields=["content", "updated_at"],
-                    _skip_collision_rewrite=True,
-                )
-                linking_page.create_revision(
-                    user=None,
-                    change_message=(
-                        f"Qualify wiki links to #{sibling.slug} "
-                        f"after slug collision"
-                    ),
-                )
+                # Atomic: the content update and its revision row must
+                # succeed or fail together, or history loses track of
+                # why the content changed.
+                with transaction.atomic():
+                    linking_page.save(
+                        update_fields=["content", "updated_at"],
+                        _skip_collision_rewrite=True,
+                    )
+                    linking_page.create_revision(
+                        user=None,
+                        change_message=(
+                            f"Qualify wiki links to #{sibling.slug} "
+                            f"after slug collision"
+                        ),
+                    )
 
     def soft_delete(self, user):
         """Soft-delete this page instead of permanently removing it."""
@@ -247,7 +258,7 @@ class Page(models.Model):
         self.save(update_fields=["is_deleted", "deleted_at", "deleted_by"])
 
     def _update_page_links(self, **kwargs):
-        """Rebuild PageLink rows based on wiki-link and internal URL references."""
+        """Rebuild PageLink rows from wiki-link and internal-URL references."""
         update_fields = kwargs.get("update_fields")
         if update_fields and "content" not in update_fields:
             return
@@ -256,6 +267,7 @@ class Page(models.Model):
         from wiki.lib.markdown import (
             extract_all_wiki_references,
             extract_references_from_internal_urls,
+            resolve_references,
         )
 
         references = extract_all_wiki_references(self.content)
@@ -265,65 +277,8 @@ class Page(models.Model):
             PageLink.objects.filter(from_page=self).delete()
             return
 
-        qualified_refs = {(d, s) for d, s in references if d}
-        bare_slugs = {s for d, s in references if not d}
-
-        target_ids = set()
-
-        # Resolve qualified (dir_path, slug) references
-        if qualified_refs:
-            q = Q()
-            for dir_path, slug in qualified_refs:
-                q |= Q(directory__path=dir_path, slug=slug)
-            for pk in (
-                Page.objects.filter(q)
-                .exclude(pk=self.pk)
-                .values_list("pk", flat=True)
-            ):
-                target_ids.add(pk)
-            # SlugRedirect fallback for qualified refs
-            resolved_keys = set()
-            for p in (
-                Page.objects.filter(q)
-                .exclude(pk=self.pk)
-                .select_related("directory")
-            ):
-                resolved_keys.add((p.directory.path, p.slug))
-            missing = qualified_refs - resolved_keys
-            if missing:
-                rq = Q()
-                for dir_path, slug in missing:
-                    rq |= Q(directory__path=dir_path, old_slug=slug)
-                for r in (
-                    SlugRedirect.objects.filter(rq)
-                    .exclude(page_id=self.pk)
-                    .values_list("page_id", flat=True)
-                ):
-                    target_ids.add(r)
-
-        # Resolve bare slug references (oldest match wins)
-        if bare_slugs:
-            seen_slugs = set()
-            for pk, slug in (
-                Page.objects.filter(slug__in=bare_slugs)
-                .exclude(pk=self.pk)
-                .order_by("slug", "created_at")
-                .values_list("pk", "slug")
-            ):
-                if slug not in seen_slugs:
-                    seen_slugs.add(slug)
-                    target_ids.add(pk)
-            missing = bare_slugs - seen_slugs
-            if missing:
-                for pk, slug in (
-                    SlugRedirect.objects.filter(old_slug__in=missing)
-                    .exclude(page_id=self.pk)
-                    .order_by("old_slug", "page__created_at")
-                    .values_list("page_id", "old_slug")
-                ):
-                    if slug not in seen_slugs:
-                        seen_slugs.add(slug)
-                        target_ids.add(pk)
+        resolved = resolve_references(references, exclude_pk=self.pk)
+        target_ids = {p.pk for p in resolved.values()}
 
         with transaction.atomic():
             PageLink.objects.filter(from_page=self).delete()

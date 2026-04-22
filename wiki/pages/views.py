@@ -42,7 +42,11 @@ from wiki.lib.permissions import (
     is_system_owner,
     viewable_pages_q,
 )
-from wiki.lib.ratelimiter import ratelimit_search, ratelimit_upload
+from wiki.lib.ratelimiter import (
+    ratelimit_page_write,
+    ratelimit_search,
+    ratelimit_upload,
+)
 from wiki.lib.seo import (
     build_article_jsonld,
     build_breadcrumbs_jsonld,
@@ -501,6 +505,7 @@ def _render_page_detail(request, page):
 
 
 @login_required
+@ratelimit_page_write
 def page_create(request, path=""):
     """Create a new page, optionally within a directory."""
     directory = None
@@ -593,6 +598,7 @@ def page_create(request, path=""):
 
 
 @login_required
+@ratelimit_page_write
 def page_edit(request, path):
     """Edit an existing page."""
     page = get_page_from_path(path)
@@ -714,6 +720,7 @@ def page_edit(request, path):
 
 
 @login_required
+@ratelimit_page_write
 def page_move(request, path):
     """Move a page to a different directory."""
     page = get_page_from_path(path)
@@ -741,6 +748,25 @@ def page_move(request, path):
                 request,
                 "A directory already exists at that path. "
                 "Rename the page or choose a different directory.",
+            )
+            return render(
+                request,
+                "pages/move.html",
+                {"form": form, "page": page},
+            )
+
+        # Under dir-scoped slugs, the destination might already have a
+        # page with the same slug — saving would raise IntegrityError.
+        # Surface it as a form error instead of a 500.
+        if (
+            Page.objects.filter(directory=new_directory, slug=page.slug)
+            .exclude(pk=page.pk)
+            .exists()
+        ):
+            messages.error(
+                request,
+                "A page with this slug already exists in the destination "
+                "directory. Rename the page before moving it.",
             )
             return render(
                 request,
@@ -1059,13 +1085,13 @@ def check_page_permissions(request):
     """Check mentioned users' access and linked pages' visibility.
 
     POST JSON: {
-        page_slug: "...",
+        page_path: "dir/slug" or "slug",
         usernames: ["mike", "bob"],
-        linked_slugs: ["internal-doc", "secret-page"]
+        linked_paths: ["dir/internal-doc", "secret-page"]
     }
     Returns: {
         users_without_access: [{username, display_name}],
-        restrictive_links: [{slug, title, visibility, permissions_url}]
+        restrictive_links: [{path, title, visibility, permissions_url}]
     }
     """
     try:
@@ -1073,13 +1099,13 @@ def check_page_permissions(request):
     except (json.JSONDecodeError, ValueError):
         return JsonResponse({"error": "Invalid JSON"}, status=400)
 
-    page_slug = data.get("page_slug", "")
+    page_path = data.get("page_path", "")
     usernames = data.get("usernames", [])
-    linked_slugs = data.get("linked_slugs", [])
+    linked_paths = data.get("linked_paths", [])
 
     # Check mentioned users
     users_without_access = []
-    page = Page.objects.filter(slug=page_slug).first()
+    page = page_at_path(page_path) if page_path else None
 
     page_eff_vis = None
     if page:
@@ -1099,12 +1125,12 @@ def check_page_permissions(request):
     # Check linked pages
     restrictive_links = []
     _openness = {"private": 0, "internal": 1, "public": 2}
-    if linked_slugs and page:
+    if linked_paths and page:
         current_vis, _ = resolve_effective_value(page, "visibility")
-        for slug in set(linked_slugs):
-            if slug == page_slug:
+        for link_path in set(linked_paths):
+            if link_path == page_path:
                 continue
-            linked = Page.objects.filter(slug=slug).first()
+            linked = page_at_path(link_path)
             if not linked:
                 continue
             linked_vis, _ = resolve_effective_value(linked, "visibility")
@@ -1112,7 +1138,7 @@ def check_page_permissions(request):
             if _openness.get(current_vis, 0) > _openness.get(linked_vis, 0):
                 restrictive_links.append(
                     {
-                        "slug": linked.slug,
+                        "path": linked.content_path,
                         "title": linked.title,
                         "visibility": linked.visibility,
                         "permissions_url": reverse(
@@ -1135,8 +1161,15 @@ check_mention_permissions = check_page_permissions
 
 
 @require_POST
+@login_required
 def page_preview_htmx(request):
-    """Return rendered markdown preview for HTMX requests."""
+    """Return rendered markdown preview for HTMX requests.
+
+    Gated on auth: rendering resolves ``#dir/slug`` references and emits
+    the target URL path even for pages the anonymous crawler wouldn't
+    otherwise be able to see, so unauthenticated preview would confirm
+    the existence of private pages via URL leakage.
+    """
     content = request.POST.get("content", "")
     rendered = render_markdown(content)
     return HttpResponse(rendered)

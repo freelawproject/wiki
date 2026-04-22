@@ -1624,7 +1624,11 @@ class Command(BaseCommand):
 
         if options["recreate"]:
             help_slugs = [p["slug"] for p in HELP_PAGES]
-            deleted, _ = Page.all_objects.filter(slug__in=help_slugs).delete()
+            # Scope deletion to the help directory so a user page in another
+            # directory that happens to share a help-page slug isn't wiped.
+            deleted, _ = Page.all_objects.filter(
+                directory=help_dir, slug__in=help_slugs
+            ).delete()
             self.stdout.write(f"Deleted {deleted} existing help page(s).")
 
         created = 0
@@ -1688,12 +1692,15 @@ class Command(BaseCommand):
     def _upsert_page(self, data, help_dir, owner):
         """Create or update a help page. Returns (page, was_created)."""
         is_pinned = data.get("is_pinned", False)
+        # Scope the lookup to help_dir — under directory-scoped slugs a
+        # user could have a page with the same slug in another directory,
+        # and a bare-slug lookup would raise MultipleObjectsReturned.
         page, created = Page.objects.get_or_create(
+            directory=help_dir,
             slug=data["slug"],
             defaults={
                 "title": data["title"],
                 "content": data["content"],
-                "directory": help_dir,
                 "owner": owner,
                 "visibility": Page.Visibility.PUBLIC,
                 "is_pinned": is_pinned,

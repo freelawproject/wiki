@@ -22,7 +22,7 @@ class TestSubmitComment:
         """A viewer can submit a comment via the feedback page."""
         client.force_login(other_user)
         r = client.post(
-            reverse("page_feedback", kwargs={"path": page.slug}),
+            reverse("page_feedback", kwargs={"path": page.content_path}),
             {
                 "submit_comment": "1",
                 "message": "This page needs updating.",
@@ -38,7 +38,7 @@ class TestSubmitComment:
         """Submitting a comment emails the page owner."""
         client.force_login(other_user)
         client.post(
-            reverse("page_feedback", kwargs={"path": page.slug}),
+            reverse("page_feedback", kwargs={"path": page.content_path}),
             {
                 "submit_comment": "1",
                 "message": "Please fix the intro.",
@@ -51,7 +51,7 @@ class TestSubmitComment:
     def test_anon_can_comment_on_public_page(self, client, page):
         """An anonymous user can leave a comment with optional email."""
         r = client.post(
-            reverse("page_feedback", kwargs={"path": page.slug}),
+            reverse("page_feedback", kwargs={"path": page.content_path}),
             {
                 "submit_comment": "1",
                 "message": "Anon feedback here.",
@@ -66,7 +66,9 @@ class TestSubmitComment:
     def test_anon_cannot_comment_on_private_page(self, client, private_page):
         """An anonymous user gets 404 for a private page."""
         r = client.get(
-            reverse("page_feedback", kwargs={"path": private_page.slug})
+            reverse(
+                "page_feedback", kwargs={"path": private_page.content_path}
+            )
         )
         assert r.status_code == 404
 
@@ -74,7 +76,7 @@ class TestSubmitComment:
         """Editors/owners can leave feedback via the propose workflow."""
         client.force_login(user)
         r = client.post(
-            reverse("page_feedback", kwargs={"path": page.slug}),
+            reverse("page_feedback", kwargs={"path": page.content_path}),
             {
                 "submit_comment": "1",
                 "message": "Owner leaving a comment.",
@@ -363,14 +365,18 @@ class TestNavbarBadge:
         """Review icon with badge appears when pending items exist."""
         PageComment.objects.create(page=page, message="Need fix")
         client.force_login(user)
-        r = client.get(reverse("resolve_path", kwargs={"path": page.slug}))
+        r = client.get(
+            reverse("resolve_path", kwargs={"path": page.content_path})
+        )
         assert b"Review queue" in r.content
         assert b"bg-red-500" in r.content
 
     def test_review_link_hidden_when_none(self, client, user, page):
         """Review icon is hidden when no pending items."""
         client.force_login(user)
-        r = client.get(reverse("resolve_path", kwargs={"path": page.slug}))
+        r = client.get(
+            reverse("resolve_path", kwargs={"path": page.content_path})
+        )
         assert b"Review queue" not in r.content
 
 
@@ -383,7 +389,9 @@ class TestPageDetailCommentCount:
         PageComment.objects.create(page=page, message="Comment 1")
         PageComment.objects.create(page=page, message="Comment 2")
         client.force_login(user)
-        r = client.get(reverse("resolve_path", kwargs={"path": page.slug}))
+        r = client.get(
+            reverse("resolve_path", kwargs={"path": page.content_path})
+        )
         assert b"Feedback (2)" in r.content
 
     def test_combined_count(self, client, user, other_user, page):
@@ -397,5 +405,7 @@ class TestPageDetailCommentCount:
             change_message="fix",
         )
         client.force_login(user)
-        r = client.get(reverse("resolve_path", kwargs={"path": page.slug}))
+        r = client.get(
+            reverse("resolve_path", kwargs={"path": page.content_path})
+        )
         assert b"Feedback (2)" in r.content
