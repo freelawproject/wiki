@@ -25,6 +25,8 @@ from django.contrib.auth.models import User
 from django.core.files.base import ContentFile
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
+from django.urls import reverse
+from django.utils import timezone
 
 from wiki.directories.models import Directory
 from wiki.pages.models import FileUpload, Page, PageRevision
@@ -344,7 +346,11 @@ class Command(BaseCommand):
                 original_filename=filename, uploaded_by=owner
             ).first()
             if existing:
-                mapping[url] = f"/files/{existing.pk}/{filename}"
+                file_url = reverse(
+                    "file_serve",
+                    kwargs={"file_id": existing.pk, "filename": filename},
+                )
+                mapping[url] = file_url
                 self.stdout.write(f"  Image reused: {filename}")
                 continue
 
@@ -367,8 +373,12 @@ class Command(BaseCommand):
                     content_type=ct,
                 )
                 upload.file.save(filename, ContentFile(data), save=True)
-                mapping[url] = f"/files/{upload.pk}/{filename}"
-                self.stdout.write(f"  Saved: /files/{upload.pk}/{filename}")
+                file_url = reverse(
+                    "file_serve",
+                    kwargs={"file_id": upload.pk, "filename": filename},
+                )
+                mapping[url] = file_url
+                self.stdout.write(f"  Saved: {file_url}")
             except Exception as exc:
                 self.stderr.write(
                     self.style.WARNING(
@@ -454,11 +464,13 @@ class Command(BaseCommand):
 
         changed["change_message"] = "Updated by import_api_docs"
         changed["updated_by"] = owner
-        Page.objects.filter(pk=page.pk).update(**changed)
-        page.refresh_from_db()
-        page._update_search_vector()
-        page._update_page_links()
-        page.create_revision(owner, "Updated by import_api_docs")
+        changed["updated_at"] = timezone.now()
+        with transaction.atomic():
+            Page.objects.filter(pk=page.pk).update(**changed)
+            page.refresh_from_db()
+            page._update_search_vector()
+            page._update_page_links()
+            page.create_revision(owner, "Updated by import_api_docs")
         self.stdout.write(f"  Updated: {page.title}")
         return page, "updated"
 
@@ -479,15 +491,9 @@ class Command(BaseCommand):
                 if url not in body:
                     continue
                 dir_path, slug = parse_wiki_path(meta["wiki_path"])
-                page = (
-                    Page.objects.filter(
-                        directory__path=dir_path, slug=slug
-                    ).first()
-                    if dir_path
-                    else Page.objects.filter(
-                        directory__isnull=True, slug=slug
-                    ).first()
-                )
+                page = Page.objects.filter(
+                    directory__path=dir_path, slug=slug
+                ).first()
                 if page:
                     upload.page = page
                     upload.save(update_fields=["page"])
