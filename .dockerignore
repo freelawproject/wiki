@@ -9,6 +9,7 @@
 !manage.py
 !package.json
 !package-lock.json
+!wiki-exports
 
 # But no matter what, ignore these things.
 wiki/assets/media
