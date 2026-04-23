@@ -31,8 +31,8 @@ class DirectoryMoveForm(forms.Form):
             visible_pks = [d.pk for d in qs if can_view_directory(user, d)]
             qs = qs.filter(pk__in=visible_pks)
         self.fields["parent"].queryset = qs
-        self.fields["parent"].label_from_instance = (
-            lambda d: f"/{d.path}" if d.path else "/ (Root)"
+        self.fields["parent"].label_from_instance = lambda d: (
+            f"/{d.path}" if d.path else "/ (Root)"
         )
 
     @staticmethod
