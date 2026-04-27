@@ -74,6 +74,36 @@ class TestSubstituteDataVariables:
         data = {"num": 7}
         assert substitute_data_variables(content, data) == "7"
 
+    def test_integer_value_formatted_with_commas(self):
+        content = "[[ num ]]"
+        data = {"num": 1000}
+        assert substitute_data_variables(content, data) == "1,000"
+
+    def test_large_integer_value_formatted_with_commas(self):
+        content = "[[ num ]]"
+        data = {"num": 1234567}
+        assert substitute_data_variables(content, data) == "1,234,567"
+
+    def test_negative_integer_formatted_with_commas(self):
+        content = "[[ num ]]"
+        data = {"num": -1234567}
+        assert substitute_data_variables(content, data) == "-1,234,567"
+
+    def test_float_value_formatted_with_commas(self):
+        content = "[[ num ]]"
+        data = {"num": 1234.5}
+        assert substitute_data_variables(content, data) == "1,234.5"
+
+    def test_boolean_value_not_formatted(self):
+        content = "[[ flag ]]"
+        data = {"flag": True}
+        assert substitute_data_variables(content, data) == "True"
+
+    def test_string_digits_not_formatted(self):
+        content = "[[ num ]]"
+        data = {"num": "1000"}
+        assert substitute_data_variables(content, data) == "1000"
+
     def test_multiple_placeholders(self):
         content = "[[ a ]] and [[ b ]]"
         data = {"a": "1", "b": "2"}
