@@ -17,6 +17,7 @@ from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
 from django.conf import settings
+from django.contrib.humanize.templatetags.humanize import intcomma
 
 logger = logging.getLogger(__name__)
 
@@ -104,6 +105,20 @@ def _do_fetch(url):
     return json.loads(body)
 
 
+def _format_value(value):
+    """Render a JSON value as a string for placeholder substitution.
+
+    Numbers are formatted with comma thousands separators (1000 → "1,000")
+    so big counts pulled from external APIs read nicely. Booleans are kept
+    as plain str() output even though bool subclasses int.
+    """
+    if isinstance(value, bool):
+        return str(value)
+    if isinstance(value, (int, float)):
+        return intcomma(value, use_l10n=False)
+    return str(value)
+
+
 def substitute_data_variables(content, data):
     """Replace ``[[ key ]]`` placeholders with values from *data*.
 
@@ -138,7 +153,7 @@ def substitute_data_variables(content, data):
                 return match.group(0)  # leave as-is
         if value is None:
             return match.group(0)
-        return str(value)
+        return _format_value(value)
 
     content = DATA_VAR_RE.sub(_replace, content)
 
