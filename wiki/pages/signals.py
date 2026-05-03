@@ -55,9 +55,12 @@ def capture_old_path(sender, instance, **kwargs):
         instance._old_content_path = None
         instance._old_directory = None
         return
-    old = Page.all_objects.filter(pk=instance.pk).only(
-        "slug", "directory_id"
-    ).select_related("directory").first()
+    old = (
+        Page.all_objects.filter(pk=instance.pk)
+        .only("slug", "directory_id")
+        .select_related("directory")
+        .first()
+    )
     if old is None:
         instance._old_content_path = None
         instance._old_directory = None

@@ -35,9 +35,7 @@ class Command(BaseCommand):
 
     def handle(self, *args, paths, dry_run, **options):
         if dry_run:
-            target = (
-                settings.CLOUDFRONT_DISTRIBUTION_ID or "(unset)"
-            )
+            target = settings.CLOUDFRONT_DISTRIBUTION_ID or "(unset)"
             self.stdout.write(
                 f"Would invalidate {paths} on distribution {target}"
             )
@@ -51,7 +49,9 @@ class Command(BaseCommand):
 
         try:
             invalidate_paths(paths)
-        except Exception as exc:  # pragma: no cover — invalidate_paths swallows boto errors
+        except (
+            Exception
+        ) as exc:  # pragma: no cover — invalidate_paths swallows boto errors
             self.stderr.write(f"Invalidation failed: {exc}")
             sys.exit(1)
 

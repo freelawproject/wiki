@@ -78,9 +78,7 @@ def test_directory_move_invalidates_old_parent(
 
 
 @pytest.mark.django_db(transaction=True)
-def test_no_op_directory_save_skips_wildcards(
-    mock_invalidate, sub_directory
-):
+def test_no_op_directory_save_skips_wildcards(mock_invalidate, sub_directory):
     """Saving without a path change should not include wildcards."""
     mock_invalidate.reset_mock()
     sub_directory.description = "Updated."
@@ -90,9 +88,7 @@ def test_no_op_directory_save_skips_wildcards(
 
 
 @pytest.mark.django_db(transaction=True)
-def test_root_directory_save_invalidates_root(
-    mock_invalidate, root_directory
-):
+def test_root_directory_save_invalidates_root(mock_invalidate, root_directory):
     root_directory.description = "Welcome."
     root_directory.save()
     paths = mock_invalidate.call_args.args[0]
