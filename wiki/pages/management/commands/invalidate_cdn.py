@@ -1,12 +1,12 @@
-"""Invalidate CloudFront paths after a deploy or by request.
-
-Used by ``.github/workflows/deploy.yml`` after a successful deploy so
-templates/static-asset/Python changes can't serve stale HTML out of
-the CDN. Also useful for ad-hoc invalidations from a shell.
+"""Invalidate CloudFront paths from a shell.
 
 Defaults to wiping every cached path (``/*``). The free monthly quota
-is 1000 invalidation paths, and ``/*`` counts as one — so a daily
-deploy uses ~30 of those a month.
+is 1000 invalidation paths, and ``/*`` counts as one.
+
+Note: post-deploy invalidation is handled directly in
+``.github/workflows/deploy.yml`` via the AWS CLI, since the deploy
+job doesn't have a Python runtime — the workflow doesn't call this
+command. This command is for ad-hoc invalidations.
 """
 
 import sys
