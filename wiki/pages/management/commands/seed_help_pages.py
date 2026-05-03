@@ -1292,6 +1292,42 @@ shows the page title, who made the change, when, and the change
 message. The feed is paginated (50 per page) and can be filtered
 to a specific user by clicking their name.
 
+### CDN caching
+
+Public pages are served through a CloudFront CDN to anyone who
+isn't signed in. CDN-cached responses live for up to 30 days, but
+the cache is **automatically invalidated** whenever content changes:
+
+- Editing, creating, deleting, moving, or renaming a page or
+  directory invalidates the affected URLs.
+- Each successful deploy issues a site-wide invalidation, in case
+  templates or rendering logic changed in ways that don't show up
+  as page edits.
+
+**For signed-in users**, the CDN is bypassed entirely — every
+request goes straight to the origin. So the page you see when
+you're logged in is always fresh.
+
+**For anonymous viewers**, edits propagate within ~30 seconds plus
+the time it takes CloudFront to apply the invalidation (usually
+under a minute, occasionally several minutes). If you need to
+verify how an edit looks to the public, sign out (or open an
+incognito window) — the next request you make will fetch the
+post-edit version once the invalidation lands.
+
+If you ever need to force a manual invalidation (e.g. you suspect
+the cache is stuck), run:
+
+```
+python manage.py invalidate_cdn          # whole site
+python manage.py invalidate_cdn /c/foo   # specific paths
+```
+
+The view counter shown at the bottom of each page is **not**
+served from the CDN cache — it's fetched fresh by JavaScript on
+each load, so the number stays accurate even when the surrounding
+HTML is cached.
+
 ### Best practices for admins
 
 - **Use groups** for team-based access rather than granting
