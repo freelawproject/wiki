@@ -7,7 +7,6 @@ from django.template.loader import render_to_string
 from django.urls import reverse
 
 from wiki.directories.models import Directory
-from wiki.lib.cache_headers import cache_for_anonymous
 from wiki.lib.inheritance import resolve_all_directory_settings
 from wiki.lib.seo import extract_description
 from wiki.lib.sitemap import (
@@ -23,7 +22,6 @@ def ratelimited(request, exception=None):
     return HttpResponse(html, status=429)
 
 
-@cache_for_anonymous
 def robots_txt(request):
     """Serve robots.txt with crawl directives."""
     sitemap_url = f"{settings.BASE_URL}{reverse('django.contrib.sitemaps.views.sitemap')}"
@@ -129,7 +127,6 @@ def _llms_txt_entry(page, base_url):
     return entry
 
 
-@cache_for_anonymous
 def llms_txt(request):
     """Serve llms.txt — an index of public wiki pages for LLM crawlers.
 

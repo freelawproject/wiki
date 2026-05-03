@@ -955,14 +955,12 @@ def _directory_history_inner(request, directory):
     )
 
 
-@cache_for_anonymous
 def directory_history(request, path):
     """Show revision history for a directory."""
     directory = get_object_or_404(Directory, path=path.strip("/"))
     return _directory_history_inner(request, directory)
 
 
-@cache_for_anonymous
 def directory_history_root(request):
     """Show revision history for the root directory."""
     root = get_object_or_404(Directory, path="")
@@ -1027,14 +1025,12 @@ def _directory_diff_inner(request, directory, v1, v2):
     )
 
 
-@cache_for_anonymous
 def directory_diff(request, path, v1, v2):
     """Show diff between two directory revisions."""
     directory = get_object_or_404(Directory, path=path.strip("/"))
     return _directory_diff_inner(request, directory, v1, v2)
 
 
-@cache_for_anonymous
 def directory_diff_root(request, v1, v2):
     """Show diff between two root directory revisions."""
     root = get_object_or_404(Directory, path="")

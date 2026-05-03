@@ -4,7 +4,6 @@ from django.contrib.sitemaps.views import sitemap
 from django.urls import include, path
 
 from wiki.directories.views import root_view
-from wiki.lib.cache_headers import cache_for_anonymous
 from wiki.lib.monitoring import health_check, heartbeat, sentry_fail
 from wiki.lib.sitemap import DirectorySitemap, PageSitemap
 from wiki.lib.views import llms_txt, robots_txt
@@ -25,7 +24,7 @@ urlpatterns = [
     path("llms.txt", llms_txt, name="llms_txt"),
     path(
         "sitemap.xml",
-        cache_for_anonymous(sitemap),
+        sitemap,
         {"sitemaps": sitemaps},
         name="django.contrib.sitemaps.views.sitemap",
     ),

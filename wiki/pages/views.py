@@ -960,7 +960,6 @@ def page_permissions(request, path):
     )
 
 
-@cache_for_anonymous
 def page_backlinks(request, path):
     """Show pages that link to this page."""
     page = get_page_from_path(path)
