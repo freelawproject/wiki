@@ -16,6 +16,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils.html import escape
 from django.utils.text import get_valid_filename
+from django.views.decorators.cache import never_cache
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 
@@ -960,6 +961,7 @@ def page_permissions(request, path):
     )
 
 
+@never_cache
 def page_backlinks(request, path):
     """Show pages that link to this page."""
     page = get_page_from_path(path)
