@@ -11,6 +11,11 @@ ratelimit_upload = ratelimit(
     key="user_or_ip", rate="20/m", method=["POST"], block=True
 )
 ratelimit_search = ratelimit(key="user_or_ip", rate="30/m", block=True)
+# View tallies are JS-fired from page loads — multiple tabs / prefetches
+# from a single IP are normal, so the limit is generous.
+ratelimit_view_count = ratelimit(
+    key="ip", rate="120/m", method=["POST"], block=True
+)
 # Caps how fast a single user can create or move pages. Directory-scoped
 # slugs let multiple pages share a name across dirs, so mass-creating
 # colliding slugs could force expensive synchronous link-rewrites on

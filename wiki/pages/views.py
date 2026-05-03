@@ -16,6 +16,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils.html import escape
 from django.utils.text import get_valid_filename
+from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 
 from wiki.comments.models import PageComment
@@ -46,6 +47,7 @@ from wiki.lib.ratelimiter import (
     ratelimit_page_write,
     ratelimit_search,
     ratelimit_upload,
+    ratelimit_view_count,
 )
 from wiki.lib.seo import (
     build_article_jsonld,
@@ -422,9 +424,6 @@ def _render_page_detail(request, page):
     """Render the page detail view (shared by resolve_path and page_detail)."""
     if not can_view_page(request.user, page):
         raise Http404
-
-    # Record page view tally
-    PageViewTally.objects.create(page=page)
 
     content = page.content
     if page.data_source_url:
@@ -1158,6 +1157,34 @@ def check_page_permissions(request):
 
 # Keep old name as alias for backwards compatibility
 check_mention_permissions = check_page_permissions
+
+
+@csrf_exempt
+@require_POST
+@ratelimit_view_count
+def record_page_view(request):
+    """Record a page-view tally and return the page's current view count.
+
+    Called from JS so views are tallied even when the page itself is served
+    from a CDN cache. The endpoint is csrf_exempt because cached HTML carries
+    a stale CSRF token; it's safe because the only side effect is appending a
+    tally row. ``Page.view_count`` is treated as the source of truth — it
+    converges via the periodic ``sync_page_view_counts`` task, so a small
+    amount of fuzziness in the returned value is expected and fine.
+    """
+    try:
+        data = json.loads(request.body)
+        page_id = int(data["page_id"])
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+        return JsonResponse({"error": "Invalid payload"}, status=400)
+
+    page = Page.objects.filter(id=page_id).first()
+    # Same response for missing and forbidden — don't leak existence.
+    if not page or not can_view_page(request.user, page):
+        return JsonResponse({"error": "Not found"}, status=404)
+
+    PageViewTally.objects.create(page=page)
+    return JsonResponse({"count": page.view_count})
 
 
 @require_POST
