@@ -18,6 +18,7 @@ actually happen.
 from django.db import transaction
 from django.db.models.signals import post_save, pre_save
 from django.dispatch import receiver
+from django.urls import reverse
 
 from wiki.lib.cloudfront import invalidate_paths
 
@@ -31,8 +32,9 @@ def _parent_listing_paths(directory):
     CloudFront caches them as separate keys — we have to invalidate both.
     """
     if directory and directory.path:
-        return [f"/c/{directory.path}", f"/c/{directory.path}/"]
-    return ["/"]
+        base = reverse("resolve_path", kwargs={"path": directory.path})
+        return [base, f"{base}/"]
+    return [reverse("root")]
 
 
 def _page_url_variants(content_path):
@@ -41,7 +43,8 @@ def _page_url_variants(content_path):
     A page lives at ``/c/<path>``; some links/sitemaps emit it that way,
     others append a slash. Cache both.
     """
-    return [f"/c/{content_path}", f"/c/{content_path}/"]
+    base = reverse("resolve_path", kwargs={"path": content_path})
+    return [base, f"{base}/"]
 
 
 @receiver(pre_save, sender=Page)

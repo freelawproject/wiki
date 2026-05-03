@@ -15,6 +15,7 @@ don't burn CloudFront invalidation paths.
 from django.db import transaction
 from django.db.models.signals import post_save, pre_save
 from django.dispatch import receiver
+from django.urls import reverse
 
 from wiki.lib.cloudfront import invalidate_paths
 
@@ -28,8 +29,21 @@ def _listing_paths(path):
     and both forms are cacheable. Invalidate both.
     """
     if path:
-        return [f"/c/{path}", f"/c/{path}/"]
-    return ["/"]
+        base = reverse("resolve_path", kwargs={"path": path})
+        return [base, f"{base}/"]
+    return [reverse("root")]
+
+
+def _parent_path_lookup(parent_id):
+    """Return the path of the directory with the given id, or "" for root/None."""
+    if parent_id is None:
+        return ""
+    return (
+        Directory.objects.filter(pk=parent_id)
+        .values_list("path", flat=True)
+        .first()
+        or ""
+    )
 
 
 def _wildcard_paths(path):
@@ -39,8 +53,9 @@ def _wildcard_paths(path):
     itself, so we emit the directory's own URL alongside the wildcard.
     """
     if path:
-        return [f"/c/{path}", f"/c/{path}/*"]
-    return ["/*"]
+        base = reverse("resolve_path", kwargs={"path": path})
+        return [base, f"{base}/*"]
+    return [f"{reverse('root')}*"]
 
 
 @receiver(pre_save, sender=Directory)
@@ -86,15 +101,3 @@ def invalidate_on_directory_save(sender, instance, **kwargs):
         paths.update(_listing_paths(old_parent_path))
 
     transaction.on_commit(lambda: invalidate_paths(paths))
-
-
-def _parent_path_lookup(parent_id):
-    """Return the path of the directory with the given id, or "" for root/None."""
-    if parent_id is None:
-        return ""
-    return (
-        Directory.objects.filter(pk=parent_id)
-        .values_list("path", flat=True)
-        .first()
-        or ""
-    )
