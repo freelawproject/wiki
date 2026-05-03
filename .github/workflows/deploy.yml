@@ -164,11 +164,14 @@ jobs:
         run: kubectl rollout status -n ${{ env.EKS_NAMESPACE }} deployment/wiki-daemon
 
   invalidate-cdn:
-    needs: [deploy-web, deploy-daemon]
+    needs: [deploy-web]
     runs-on: ubuntu-latest
-    # Only invalidate if both deploys succeeded — invalidating after a
-    # failed deploy would push stale-but-rolled-back HTML into more caches.
-    if: ${{ needs.deploy-web.result == 'success' && needs.deploy-daemon.result == 'success' }}
+    # Only invalidate if the web tier deployed successfully — invalidating
+    # after a failed deploy would push stale-but-rolled-back HTML into
+    # more caches. The daemon doesn't affect what gets served to viewers,
+    # so we don't gate on it (and `skip-daemon-deploy` is a real workflow
+    # input we'd otherwise ignore).
+    if: ${{ needs.deploy-web.result == 'success' }}
     steps:
       - name: Skip if distribution ID is unset
         id: check
