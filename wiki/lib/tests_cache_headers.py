@@ -199,6 +199,36 @@ def test_anonymous_root_response_has_public_cache_control(client):
 
 
 @pytest.mark.django_db
+def test_stale_sessionid_cookie_yields_private_no_store(client):
+    """Regression: cache middleware must run AFTER SessionMiddleware on
+    the response chain.
+
+    If an anonymous request arrives with a ``sessionid`` cookie that
+    doesn't match a real session, Django's ``SessionMiddleware`` emits
+    a delete-sessionid ``Set-Cookie`` on the response. That Set-Cookie
+    is per-visitor state — caching the response would replay the
+    delete-cookie (and the HTML around it) to other anonymous visitors.
+
+    For the cache middleware to see that Set-Cookie, its response phase
+    must run LAST, which means it must sit at the TOP of MIDDLEWARE.
+    Before this fix, it sat below ``SessionMiddleware``, so the delete
+    cookie was attached AFTER the cache middleware had already stamped
+    ``public, s-maxage=2592000``. CloudFront would then cache it.
+    """
+    client.cookies["sessionid"] = "stale-fake-session-key-aaaaaa"
+    response = client.get("/")
+    # Sanity check: SessionMiddleware did emit a delete-cookie.
+    assert "sessionid" in response.cookies, (
+        "test setup assumption broken: SessionMiddleware did not emit a "
+        "delete-sessionid cookie for a stale incoming sessionid"
+    )
+    assert response.headers.get("Cache-Control") == PRIVATE_CACHE_CONTROL, (
+        f"Cacheable response with a Set-Cookie attached! Got: "
+        f"{response.headers.get('Cache-Control')}"
+    )
+
+
+@pytest.mark.django_db
 def test_messages_framework_does_not_poison_cache(client, page):
     """End-to-end leak test:
 
