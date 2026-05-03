@@ -24,7 +24,7 @@
   {% block head %}{% endblock %}
 </head>
 
-<body class="min-h-screen flex flex-col" hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'>
+<body class="min-h-screen flex flex-col"{% if user.is_authenticated %} hx-headers='{"X-CSRFToken": "{{ csrf_token }}"}'{% endif %}>
   {% block header %}<c-header />{% endblock %}
 
   {% block messages %}
