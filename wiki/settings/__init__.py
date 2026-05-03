@@ -5,5 +5,6 @@ from .project.logging import *
 from .project.security import *
 from .project.testing import *
 from .third_party.aws import *
+from .third_party.cloudfront import *
 from .third_party.sentry import *
 from .third_party.waffle import *

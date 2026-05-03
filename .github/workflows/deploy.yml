@@ -163,6 +163,50 @@ jobs:
       - name: Watch wiki-daemon rollout status
         run: kubectl rollout status -n ${{ env.EKS_NAMESPACE }} deployment/wiki-daemon
 
+  invalidate-cdn:
+    needs: [deploy-web]
+    runs-on: ubuntu-latest
+    # Only invalidate if the web tier deployed successfully — invalidating
+    # after a failed deploy would push stale-but-rolled-back HTML into
+    # more caches. The daemon doesn't affect what gets served to viewers,
+    # so we don't gate on it (and `skip-daemon-deploy` is a real workflow
+    # input we'd otherwise ignore).
+    if: ${{ needs.deploy-web.result == 'success' }}
+    steps:
+      - name: Skip if distribution ID is unset
+        id: check
+        run: |
+          if [ -z "${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }}" ]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "CLOUDFRONT_DISTRIBUTION_ID secret is unset — skipping invalidation."
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Configure AWS credentials
+        if: steps.check.outputs.configured == 'true'
+        uses: aws-actions/configure-aws-credentials@v5
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Invalidate CloudFront cache
+        if: steps.check.outputs.configured == 'true'
+        # Failure here is non-fatal — the deploy already happened. The CDN
+        # entries will TTL out on their own (and the next edit invalidates
+        # them properly via post_save signals).
+        continue-on-error: true
+        # Distribution ID is interpolated via env var rather than directly
+        # into the shell to avoid command injection if the secret ever
+        # contains shell metacharacters.
+        env:
+          DIST_ID: ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }}
+        run: |
+          aws cloudfront create-invalidation \
+            --distribution-id "$DIST_ID" \
+            --paths "/*"
+
   complete-deploy:
     needs:
       [

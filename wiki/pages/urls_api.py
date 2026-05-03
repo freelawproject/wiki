@@ -11,6 +11,7 @@ urlpatterns = [
     path("upload/presign/", views.presign_upload, name="presign_upload"),
     path("upload/confirm/", views.confirm_upload, name="confirm_upload"),
     path("page-search/", views.page_search_htmx, name="page_search"),
+    path("page-view/", views.record_page_view, name="record_page_view"),
     path(
         "dir-search/",
         dir_views.directory_search_htmx,

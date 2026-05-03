@@ -103,6 +103,17 @@ TEMPLATES = [
 ]
 
 MIDDLEWARE = [
+    # Must sit at the TOP of MIDDLEWARE so its response phase runs LAST
+    # — i.e. after every other middleware that may attach a Set-Cookie
+    # to the response. Concretely: SessionMiddleware (which can emit a
+    # delete-sessionid Set-Cookie when an anonymous request arrives
+    # with a stale cookie), AuthenticationMiddleware (listed for
+    # completeness — it doesn't emit cookies but populates request.user
+    # which the cache middleware reads in its response phase),
+    # CsrfViewMiddleware, MessageMiddleware, and WaffleMiddleware. The
+    # cache middleware needs to see the final set of cookies to decide
+    # whether the response is safe to cache at the CDN.
+    "wiki.lib.cache_headers.AnonymousCacheHeadersMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.middleware.security.SecurityMiddleware",

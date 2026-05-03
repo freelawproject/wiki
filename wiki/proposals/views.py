@@ -4,6 +4,7 @@ from django.db import transaction
 from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
+from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_POST
 
 from wiki.comments.forms import CommentForm
@@ -20,6 +21,7 @@ from .models import ChangeProposal
 from .tasks import notify_owner_of_proposal, notify_proposer_of_decision
 
 
+@never_cache
 def page_feedback(request, path):
     """Unified feedback page: comment or propose changes."""
     page = get_page_from_path(path)

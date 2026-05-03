@@ -8,7 +8,9 @@ from django.http import Http404, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils.text import slugify
+from django.views.decorators.cache import never_cache
 
+from wiki.lib.cache_headers import cache_for_anonymous
 from wiki.lib.edit_lock import (
     acquire_lock_for_directory,
     get_active_lock_for_directory,
@@ -104,6 +106,7 @@ def _sort_directories(dirs, sort):
     return sorted(dirs, key=lambda d: d.title.lower())
 
 
+@cache_for_anonymous
 def root_view(request):
     """Root directory view — shows top-level directories and pages."""
     root, _ = Directory.objects.get_or_create(
@@ -237,6 +240,7 @@ def directory_edit_root(request):
     )
 
 
+@cache_for_anonymous
 def directory_detail(request, path):
     """Display a directory's contents."""
     directory = Directory.objects.filter(path=path.strip("/")).first()
@@ -952,12 +956,14 @@ def _directory_history_inner(request, directory):
     )
 
 
+@never_cache
 def directory_history(request, path):
     """Show revision history for a directory."""
     directory = get_object_or_404(Directory, path=path.strip("/"))
     return _directory_history_inner(request, directory)
 
 
+@never_cache
 def directory_history_root(request):
     """Show revision history for the root directory."""
     root = get_object_or_404(Directory, path="")
@@ -1022,12 +1028,14 @@ def _directory_diff_inner(request, directory, v1, v2):
     )
 
 
+@never_cache
 def directory_diff(request, path, v1, v2):
     """Show diff between two directory revisions."""
     directory = get_object_or_404(Directory, path=path.strip("/"))
     return _directory_diff_inner(request, directory, v1, v2)
 
 
+@never_cache
 def directory_diff_root(request, v1, v2):
     """Show diff between two root directory revisions."""
     root = get_object_or_404(Directory, path="")

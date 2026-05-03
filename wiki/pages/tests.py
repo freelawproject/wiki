@@ -229,10 +229,16 @@ class TestPageDetail:
         r = client.get(private_page.get_absolute_url())
         assert r.status_code == 200
 
-    def test_records_page_view_tally(self, client, page):
-        assert PageViewTally.objects.count() == 0
+    def test_get_does_not_record_tally(self, client, page):
+        # Tally creation moved to JS-fired POST so views still count
+        # when the page is served from a CDN cache.
         client.get(page.get_absolute_url())
-        assert PageViewTally.objects.count() == 1
+        assert PageViewTally.objects.count() == 0
+
+    def test_detail_includes_view_tally_config(self, client, page):
+        r = client.get(page.get_absolute_url())
+        assert b'id="view-tally-config"' in r.content
+        assert b'id="page-view-count"' in r.content
 
     def test_breadcrumbs_on_page(self, client, page):
         r = client.get(page.get_absolute_url())
@@ -675,6 +681,69 @@ class TestPreviewEndpoint:
         would leak the existence of private pages via URL paths."""
         r = client.post(reverse("page_preview"), {"content": "test"})
         assert r.status_code == 302  # redirected to login
+
+
+class TestRecordPageView:
+    """JS-fired endpoint that tallies page views for CDN-cached pages."""
+
+    def _post(self, client, body):
+        return client.post(
+            reverse("record_page_view"),
+            data=json.dumps(body),
+            content_type="application/json",
+        )
+
+    def test_creates_tally_and_returns_count(self, client, page):
+        page.view_count = 42
+        page.save(update_fields=["view_count"])
+        assert PageViewTally.objects.count() == 0
+        r = self._post(client, {"page_id": page.id})
+        assert r.status_code == 200
+        assert r.json() == {"count": 42}
+        assert PageViewTally.objects.filter(page=page).count() == 1
+
+    def test_works_for_anonymous_user(self, client, page):
+        # CDN-served pages will mostly be hit by anon users.
+        r = self._post(client, {"page_id": page.id})
+        assert r.status_code == 200
+        assert PageViewTally.objects.filter(page=page).count() == 1
+
+    def test_unknown_page_returns_404(self, client, db):
+        r = self._post(client, {"page_id": 99_999})
+        assert r.status_code == 404
+        assert PageViewTally.objects.count() == 0
+
+    def test_private_page_rejected_for_non_viewer(self, client, private_page):
+        # Anonymous can't view; treat like a 404 to avoid leaking existence.
+        r = self._post(client, {"page_id": private_page.id})
+        assert r.status_code == 404
+        assert PageViewTally.objects.count() == 0
+
+    def test_private_page_tallied_for_owner(self, client, user, private_page):
+        client.force_login(user)
+        r = self._post(client, {"page_id": private_page.id})
+        assert r.status_code == 200
+        assert PageViewTally.objects.filter(page=private_page).count() == 1
+
+    def test_invalid_payload_returns_400(self, client, db):
+        r = client.post(
+            reverse("record_page_view"),
+            data="not json",
+            content_type="application/json",
+        )
+        assert r.status_code == 400
+
+    def test_missing_page_id_returns_400(self, client, db):
+        r = self._post(client, {})
+        assert r.status_code == 400
+
+    def test_non_integer_page_id_returns_400(self, client, db):
+        r = self._post(client, {"page_id": "abc"})
+        assert r.status_code == 400
+
+    def test_get_not_allowed(self, client, db):
+        r = client.get(reverse("record_page_view"))
+        assert r.status_code == 405
 
 
 class TestFileUpload:
