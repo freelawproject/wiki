@@ -4,6 +4,9 @@ from unittest.mock import patch
 
 import pytest
 from django.db import transaction
+from django.urls import reverse
+
+from wiki.pages.models import Page
 
 
 @pytest.fixture
@@ -16,8 +19,6 @@ def mock_invalidate():
 def test_create_page_invalidates_url_and_parent(
     mock_invalidate, user, sub_directory
 ):
-    from wiki.pages.models import Page
-
     p = Page.objects.create(
         title="New",
         content="x",
@@ -31,14 +32,12 @@ def test_create_page_invalidates_url_and_parent(
     assert p.get_absolute_url() in paths
     assert f"{p.get_absolute_url()}/" in paths
     # Both slash-forms of the parent directory listing.
-    assert "/c/engineering" in paths
-    assert "/c/engineering/" in paths
+    assert sub_directory.get_absolute_url() in paths
+    assert f"{sub_directory.get_absolute_url()}/" in paths
 
 
 @pytest.mark.django_db(transaction=True)
 def test_root_page_invalidates_root_listing(mock_invalidate, user):
-    from wiki.pages.models import Page
-
     Page.objects.create(
         title="Root Page",
         content="x",
@@ -47,17 +46,18 @@ def test_root_page_invalidates_root_listing(mock_invalidate, user):
         updated_by=user,
     )
     paths = mock_invalidate.call_args.args[0]
-    assert "/" in paths
+    assert reverse("root") in paths
 
 
 @pytest.mark.django_db(transaction=True)
 def test_slug_change_invalidates_old_url(mock_invalidate, page):
+    old_url = page.get_absolute_url()
     page.title = "Renamed Page"
     page.save()  # title change rebuilds the slug
     paths = mock_invalidate.call_args.args[0]
     # Old URL — both slash-forms.
-    assert "/c/getting-started" in paths
-    assert "/c/getting-started/" in paths
+    assert old_url in paths
+    assert f"{old_url}/" in paths
     # New URL — both slash-forms.
     assert page.get_absolute_url() in paths
     assert f"{page.get_absolute_url()}/" in paths
@@ -67,17 +67,18 @@ def test_slug_change_invalidates_old_url(mock_invalidate, page):
 def test_directory_move_invalidates_both_listings(
     mock_invalidate, page, sub_directory
 ):
+    old_url = page.get_absolute_url()
     page.directory = sub_directory
     page.save()
     paths = mock_invalidate.call_args.args[0]
     # Old (root) parent listing.
-    assert "/" in paths
+    assert reverse("root") in paths
     # New parent listing — both slash-forms.
-    assert "/c/engineering" in paths
-    assert "/c/engineering/" in paths
+    assert sub_directory.get_absolute_url() in paths
+    assert f"{sub_directory.get_absolute_url()}/" in paths
     # Old URL — both slash-forms.
-    assert "/c/getting-started" in paths
-    assert "/c/getting-started/" in paths
+    assert old_url in paths
+    assert f"{old_url}/" in paths
 
 
 @pytest.mark.django_db(transaction=True)
@@ -94,8 +95,6 @@ def test_rolled_back_save_does_not_invalidate(
     mock_invalidate, user, sub_directory
 ):
     """transaction.on_commit must hold the invalidation until commit."""
-    from wiki.pages.models import Page
-
     try:
         with transaction.atomic():
             Page.objects.create(
@@ -122,8 +121,6 @@ def test_atomic_save_defers_invalidation_until_commit(
     but IS called after the block exits cleanly. Prevents a regression that
     moves invalidation out of ``transaction.on_commit``.
     """
-    from wiki.pages.models import Page
-
     with transaction.atomic():
         Page.objects.create(
             title="Saved",
@@ -151,5 +148,5 @@ def test_no_op_save_skips_old_path(mock_invalidate, page):
     assert paths == {
         page.get_absolute_url(),
         f"{page.get_absolute_url()}/",
-        "/",
+        reverse("root"),
     }

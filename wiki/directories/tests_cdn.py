@@ -3,6 +3,7 @@
 from unittest.mock import patch
 
 import pytest
+from django.urls import reverse
 
 from wiki.directories.models import Directory
 
@@ -26,10 +27,10 @@ def test_create_directory_invalidates_listing(
     )
     paths = mock_invalidate.call_args.args[0]
     # Both slash-forms of the new directory listing.
-    assert "/c/ops" in paths
-    assert "/c/ops/" in paths
+    assert d.get_absolute_url() in paths
+    assert f"{d.get_absolute_url()}/" in paths
     # Parent (root) listing.
-    assert "/" in paths
+    assert root_directory.get_absolute_url() in paths
     assert d.path == "ops"
 
 
@@ -43,13 +44,14 @@ def test_directory_rename_invalidates_wildcards_and_self(
     (per AWS docs: ``/c/foo/*`` matches ``/c/foo/x`` but not ``/c/foo``).
     Both forms must be in the invalidation set.
     """
+    old_url = sub_directory.get_absolute_url()
     sub_directory.path = "platform"
     sub_directory.save()
     paths = mock_invalidate.call_args.args[0]
-    assert "/c/engineering/*" in paths
-    assert "/c/engineering" in paths
-    assert "/c/platform/*" in paths
-    assert "/c/platform" in paths
+    assert f"{old_url}/*" in paths
+    assert old_url in paths
+    assert f"{sub_directory.get_absolute_url()}/*" in paths
+    assert sub_directory.get_absolute_url() in paths
 
 
 @pytest.mark.django_db(transaction=True)
@@ -70,9 +72,9 @@ def test_directory_move_invalidates_old_parent(
 
     paths = mock_invalidate.call_args.args[0]
     # New parent listing.
-    assert "/c/orgs/" in paths
+    assert f"{new_parent.get_absolute_url()}/" in paths
     # OLD parent listing — root, in this case.
-    assert "/" in paths
+    assert root_directory.get_absolute_url() in paths
 
 
 @pytest.mark.django_db(transaction=True)
@@ -89,7 +91,7 @@ def test_directory_save_always_invalidates_wildcard(
     sub_directory.description = "Updated."
     sub_directory.save()
     paths = mock_invalidate.call_args.args[0]
-    assert "/c/engineering/*" in paths
+    assert f"{sub_directory.get_absolute_url()}/*" in paths
 
 
 @pytest.mark.django_db(transaction=True)
@@ -108,7 +110,7 @@ def test_visibility_flip_invalidates_descendant_wildcard(
     sub_directory.visibility = Directory.Visibility.PRIVATE
     sub_directory.save()
     paths = mock_invalidate.call_args.args[0]
-    assert "/c/engineering/*" in paths
+    assert f"{sub_directory.get_absolute_url()}/*" in paths
 
 
 @pytest.mark.django_db(transaction=True)
@@ -116,4 +118,4 @@ def test_root_directory_save_invalidates_root(mock_invalidate, root_directory):
     root_directory.description = "Welcome."
     root_directory.save()
     paths = mock_invalidate.call_args.args[0]
-    assert "/" in paths
+    assert reverse("root") in paths
