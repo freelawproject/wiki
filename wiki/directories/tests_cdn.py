@@ -4,6 +4,8 @@ from unittest.mock import patch
 
 import pytest
 
+from wiki.directories.models import Directory
+
 
 @pytest.fixture
 def mock_invalidate():
@@ -15,8 +17,6 @@ def mock_invalidate():
 def test_create_directory_invalidates_listing(
     mock_invalidate, user, root_directory
 ):
-    from wiki.directories.models import Directory
-
     d = Directory.objects.create(
         path="ops",
         title="Ops",
@@ -58,8 +58,6 @@ def test_directory_move_invalidates_old_parent(
 ):
     """Moving a directory must drop the old parent's listing too — its
     child count just changed."""
-    from wiki.directories.models import Directory
-
     # Create a new parent and move sub_directory under it.
     new_parent = Directory.objects.create(
         path="orgs", title="Orgs", parent=root_directory
@@ -78,13 +76,39 @@ def test_directory_move_invalidates_old_parent(
 
 
 @pytest.mark.django_db(transaction=True)
-def test_no_op_directory_save_skips_wildcards(mock_invalidate, sub_directory):
-    """Saving without a path change should not include wildcards."""
+def test_directory_save_always_invalidates_wildcard(
+    mock_invalidate, sub_directory
+):
+    """Every directory save fires the descendant wildcard.
+
+    Directory-level fields (e.g. ``visibility``) cascade to inheriting
+    pages whose rows aren't re-saved, so we must always drop their
+    cached HTML.
+    """
     mock_invalidate.reset_mock()
     sub_directory.description = "Updated."
     sub_directory.save()
     paths = mock_invalidate.call_args.args[0]
-    assert not any("*" in p for p in paths)
+    assert "/c/engineering/*" in paths
+
+
+@pytest.mark.django_db(transaction=True)
+def test_visibility_flip_invalidates_descendant_wildcard(
+    mock_invalidate, sub_directory
+):
+    """Flipping visibility public -> private must drop descendant
+    pages from the CDN, even though their rows aren't re-saved.
+
+    Regression test for the privacy leak where inheriting pages stayed
+    cached at the edge for up to 30 days after a directory was made
+    private.
+    """
+    assert sub_directory.visibility == Directory.Visibility.PUBLIC
+    mock_invalidate.reset_mock()
+    sub_directory.visibility = Directory.Visibility.PRIVATE
+    sub_directory.save()
+    paths = mock_invalidate.call_args.args[0]
+    assert "/c/engineering/*" in paths
 
 
 @pytest.mark.django_db(transaction=True)

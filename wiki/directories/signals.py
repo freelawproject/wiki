@@ -1,9 +1,12 @@
 """CDN cache invalidation when directories change.
 
-Saving a directory invalidates its own listing URL. A rename also
-invalidates ``/c/<old>/*`` and ``/c/<new>/*`` wildcards so every
-descendant page URL gets re-fetched (a parent rename changes every
-child's URL even though the child rows aren't re-saved).
+Saving a directory invalidates its own listing URL and the descendant
+wildcard ``/c/<path>/*`` unconditionally. The wildcard always fires
+because directory-level fields (e.g. ``visibility``) cascade to
+descendant pages with ``visibility='inherit'`` — those page rows aren't
+re-saved when the directory changes, so ``Page.post_save`` won't drop
+their cached HTML. A rename additionally invalidates ``/c/<old>/*`` so
+descendants at the previous path drop too.
 
 Invalidations fire via ``transaction.on_commit`` so rolled-back saves
 don't burn CloudFront invalidation paths.
@@ -63,15 +66,18 @@ def capture_old_state(sender, instance, **kwargs):
 def invalidate_on_directory_save(sender, instance, **kwargs):
     paths = set(_listing_paths(instance.path))
 
+    # Descendant wildcard always fires — directory-level fields like
+    # `visibility` cascade to inheriting pages whose rows aren't re-saved.
+    paths.update(_wildcard_paths(instance.path))
+
     # Parent listing also needs to drop — child counts may have changed.
     parent_path = _parent_path_lookup(instance.parent_id)
     paths.update(_listing_paths(parent_path))
 
     old_path = getattr(instance, "_old_path", None)
     if old_path is not None and old_path != instance.path:
-        # Rename — every descendant URL changed, blow them all away.
+        # Rename — descendants at the OLD path also need to drop.
         paths.update(_wildcard_paths(old_path))
-        paths.update(_wildcard_paths(instance.path))
 
     old_parent_id = getattr(instance, "_old_parent_id", None)
     if old_parent_id is not None and old_parent_id != instance.parent_id:
