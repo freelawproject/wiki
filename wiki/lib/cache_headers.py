@@ -67,6 +67,10 @@ class AnonymousCacheHeadersMiddleware:
             # Non-GET/HEAD aren't CDN-cacheable; don't clutter headers.
             return response
 
+        # Set Vary: Cookie unconditionally — even if we end up at
+        # `private, no-store`, any intermediate cache (browser, corporate
+        # proxy, non-CloudFront CDN) that ignores us must still key by
+        # cookie state so it can't serve a logged-in response to anyone else.
         _patch_vary(response)
 
         if request.user.is_authenticated:
