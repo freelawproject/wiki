@@ -21,6 +21,7 @@ from django.views.decorators.http import require_POST
 
 from wiki.comments.models import PageComment
 from wiki.directories.models import Directory, DirectoryPermission
+from wiki.lib.cache_headers import cache_for_anonymous
 from wiki.lib.data_source import fetch_page_data, substitute_data_variables
 from wiki.lib.edit_lock import (
     acquire_lock_for_page,
@@ -295,6 +296,7 @@ def _parse_directory_titles(post_data):
     return {k: v for k, v in titles.items() if isinstance(v, str) and v}
 
 
+@cache_for_anonymous
 def resolve_path(request, path):
     """Unified catch-all: resolve a path as page or directory.
 
@@ -958,6 +960,7 @@ def page_permissions(request, path):
     )
 
 
+@cache_for_anonymous
 def page_backlinks(request, path):
     """Show pages that link to this page."""
     page = get_page_from_path(path)
@@ -1525,6 +1528,7 @@ def toggle_pin(request, path):
     return JsonResponse({"is_pinned": page.is_pinned})
 
 
+@cache_for_anonymous
 def page_raw_markdown(request, path):
     """Return raw markdown content for a page (respects permissions)."""
     page = page_at_path(path)

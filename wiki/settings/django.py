@@ -105,6 +105,11 @@ TEMPLATES = [
 MIDDLEWARE = [
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    # Must sit above any middleware that may attach a Set-Cookie to a
+    # response (CsrfViewMiddleware, MessageMiddleware, WaffleMiddleware).
+    # Its response phase runs last — it needs to see the final cookie
+    # set to decide whether the response is safe to cache.
+    "wiki.lib.cache_headers.AnonymousCacheHeadersMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "wiki.lib.middleware.SEOHeadersMiddleware",
     "csp.middleware.CSPMiddleware",
