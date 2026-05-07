@@ -22,7 +22,7 @@
     If you're FLP staff, sign in with your email &mdash; no password needed.
   </p>
   <div class="mt-6 flex flex-col items-center gap-3">
-    <a href="{% url 'login' %}?next={{ request.path }}" class="btn-primary inline-flex text-lg px-8 py-3">
+    <a href="{% url 'login' %}?next={{ request.path }}" rel="nofollow" class="btn-primary inline-flex text-lg px-8 py-3">
       Sign In to Find Out
     </a>
     <a href="{% url 'root' %}" class="text-sm text-gray-400 dark:text-gray-500 underline">
