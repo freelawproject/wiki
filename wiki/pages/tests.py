@@ -6,7 +6,7 @@ from datetime import timedelta
 
 import pytest
 import time_machine
-from django.contrib.auth.models import AnonymousUser
+from django.contrib.auth.models import AnonymousUser, User
 from django.contrib.sessions.models import Session
 from django.core import mail
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -2391,6 +2391,80 @@ class TestCleanupCommand:
         )
         call_command("cleanup")
         assert FileUpload.objects.filter(pk=upload.pk).exists()
+
+
+class TestCleanupNeverLoggedInUsers:
+    """Stale accounts created by failed/spam login attempts get purged."""
+
+    def _backdate_join(self, user, days):
+        User.objects.filter(pk=user.pk).update(
+            date_joined=timezone.now() - timedelta(days=days)
+        )
+
+    def test_deletes_stale_never_logged_in_user(self, user):
+        assert user.last_login is None
+        self._backdate_join(user, days=30)
+        call_command("cleanup")
+        assert not User.objects.filter(pk=user.pk).exists()
+
+    def test_preserves_recently_joined_user(self, user):
+        # Joined just now — within retention window.
+        call_command("cleanup")
+        assert User.objects.filter(pk=user.pk).exists()
+
+    def test_preserves_user_who_has_logged_in(self, user):
+        user.last_login = timezone.now() - timedelta(days=365)
+        user.save(update_fields=["last_login"])
+        self._backdate_join(user, days=400)
+        call_command("cleanup")
+        assert User.objects.filter(pk=user.pk).exists()
+
+    def test_preserves_staff_user(self, user):
+        user.is_staff = True
+        user.save(update_fields=["is_staff"])
+        self._backdate_join(user, days=30)
+        call_command("cleanup")
+        assert User.objects.filter(pk=user.pk).exists()
+
+    def test_preserves_superuser(self, user):
+        user.is_superuser = True
+        user.save(update_fields=["is_superuser"])
+        self._backdate_join(user, days=30)
+        call_command("cleanup")
+        assert User.objects.filter(pk=user.pk).exists()
+
+    def test_preserves_system_owner(self, owner_user):
+        # owner_user is is_active=True but not staff/superuser by default.
+        self._backdate_join(owner_user, days=30)
+        call_command("cleanup")
+        assert User.objects.filter(pk=owner_user.pk).exists()
+
+    def test_preserves_archived_user(self, user):
+        # An admin deliberately archived this user; cleanup must not undo it.
+        user.is_active = False
+        user.save(update_fields=["is_active"])
+        self._backdate_join(user, days=30)
+        call_command("cleanup")
+        assert User.objects.filter(pk=user.pk).exists()
+
+    def test_preserves_user_with_active_magic_link(self, user):
+        # A stale row that just received a fresh magic link via login
+        # re-attempt must survive until verify_view runs.
+        profile = user.profile
+        profile.magic_link_token = "live-hash"
+        profile.magic_link_expires = timezone.now() + timedelta(minutes=10)
+        profile.save()
+        self._backdate_join(user, days=30)
+        call_command("cleanup")
+        assert User.objects.filter(pk=user.pk).exists()
+
+    def test_count_reports_users_not_cascaded_profiles(self, user, capsys):
+        # delete() returns total across cascades; reported count must
+        # reflect users only, not the cascaded UserProfile rows.
+        self._backdate_join(user, days=30)
+        call_command("cleanup")
+        out = capsys.readouterr().out
+        assert "Deleted 1 never-logged-in user(s)." in out
 
 
 # ── Edit Lock (Page) ─────────────────────────────────────

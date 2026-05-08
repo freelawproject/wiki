@@ -3,6 +3,7 @@
 from datetime import timedelta
 
 from django.conf import settings
+from django.contrib.auth.models import User
 from django.contrib.sessions.models import Session
 from django.core.management.base import BaseCommand
 from django.utils import timezone
@@ -10,7 +11,7 @@ from django.utils import timezone
 from wiki.lib.edit_lock import cleanup_expired_locks
 from wiki.lib.storage import get_s3_client
 from wiki.pages.models import FileUpload, PendingUpload
-from wiki.users.models import UserProfile
+from wiki.users.models import SystemConfig, UserProfile
 
 
 class Command(BaseCommand):
@@ -23,6 +24,7 @@ class Command(BaseCommand):
         self._delete_orphaned_uploads(now)
         self._delete_stale_pending_uploads(now)
         self._clear_expired_edit_locks()
+        self._delete_never_logged_in_users(now)
 
     def _clear_expired_sessions(self, now):
         count, _ = Session.objects.filter(expire_date__lt=now).delete()
@@ -77,3 +79,31 @@ class Command(BaseCommand):
     def _clear_expired_edit_locks(self):
         count = cleanup_expired_locks()
         self.stdout.write(f"Deleted {count} expired edit lock(s).")
+
+    def _delete_never_logged_in_users(self, now):
+        cutoff = now - timedelta(
+            days=settings.NEVER_LOGGED_IN_USER_RETENTION_DAYS
+        )
+        # Protect the system owner even if they somehow lack staff/superuser.
+        owner_id = SystemConfig.objects.values_list(
+            "owner_id", flat=True
+        ).first()
+
+        # Skip rows with a live magic link: a stale row picks up a fresh
+        # 15-minute token when get_or_create finds it, and we mustn't
+        # delete the User mid-flight before verify_view runs.
+        stale = User.objects.filter(
+            last_login__isnull=True,
+            date_joined__lt=cutoff,
+            is_active=True,
+            is_staff=False,
+            is_superuser=False,
+        ).exclude(profile__magic_link_expires__gt=now)
+        if owner_id is not None:
+            stale = stale.exclude(pk=owner_id)
+
+        # delete() returns (total_across_cascades, {label: count}); the
+        # cascading UserProfile would double the total, so read from the dict.
+        _, by_model = stale.delete()
+        count = by_model.get(User._meta.label, 0)
+        self.stdout.write(f"Deleted {count} never-logged-in user(s).")
