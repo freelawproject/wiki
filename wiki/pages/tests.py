@@ -2439,6 +2439,33 @@ class TestCleanupNeverLoggedInUsers:
         call_command("cleanup")
         assert User.objects.filter(pk=owner_user.pk).exists()
 
+    def test_preserves_archived_user(self, user):
+        # An admin deliberately archived this user; cleanup must not undo it.
+        user.is_active = False
+        user.save(update_fields=["is_active"])
+        self._backdate_join(user, days=30)
+        call_command("cleanup")
+        assert User.objects.filter(pk=user.pk).exists()
+
+    def test_preserves_user_with_active_magic_link(self, user):
+        # A stale row that just received a fresh magic link via login
+        # re-attempt must survive until verify_view runs.
+        profile = user.profile
+        profile.magic_link_token = "live-hash"
+        profile.magic_link_expires = timezone.now() + timedelta(minutes=10)
+        profile.save()
+        self._backdate_join(user, days=30)
+        call_command("cleanup")
+        assert User.objects.filter(pk=user.pk).exists()
+
+    def test_count_reports_users_not_cascaded_profiles(self, user, capsys):
+        # delete() returns total across cascades; reported count must
+        # reflect users only, not the cascaded UserProfile rows.
+        self._backdate_join(user, days=30)
+        call_command("cleanup")
+        out = capsys.readouterr().out
+        assert "Deleted 1 never-logged-in user(s)." in out
+
 
 # ── Edit Lock (Page) ─────────────────────────────────────
 

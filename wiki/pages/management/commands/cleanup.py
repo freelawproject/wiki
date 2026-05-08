@@ -89,14 +89,21 @@ class Command(BaseCommand):
             "owner_id", flat=True
         ).first()
 
+        # Skip rows with a live magic link: a stale row picks up a fresh
+        # 15-minute token when get_or_create finds it, and we mustn't
+        # delete the User mid-flight before verify_view runs.
         stale = User.objects.filter(
             last_login__isnull=True,
             date_joined__lt=cutoff,
+            is_active=True,
             is_staff=False,
             is_superuser=False,
-        )
+        ).exclude(profile__magic_link_expires__gt=now)
         if owner_id is not None:
             stale = stale.exclude(pk=owner_id)
 
-        count, _ = stale.delete()
+        # delete() returns (total_across_cascades, {label: count}); the
+        # cascading UserProfile would double the total, so read from the dict.
+        _, by_model = stale.delete()
+        count = by_model.get(User._meta.label, 0)
         self.stdout.write(f"Deleted {count} never-logged-in user(s).")
