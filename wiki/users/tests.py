@@ -61,6 +61,12 @@ class TestLoginForm:
         client.post(reverse("login"), {"email": "TEST@FREE.LAW"})
         assert User.objects.filter(username="test@free.law").exists()
 
+    def test_rejects_plus_addressing(self, client, db):
+        r = client.post(reverse("login"), {"email": "mike+foo@free.law"})
+        assert r.status_code == 200
+        assert not User.objects.filter(username="mike+foo@free.law").exists()
+        assert len(mail.outbox) == 0
+
 
 class TestMagicLinkFlow:
     def test_magic_link_email_sent(self, client, db):
@@ -401,6 +407,23 @@ class TestAdminEmailDomainSecurity:
         # The user should NOT be created
         assert not User.objects.filter(email="hacker@gmail.com").exists()
 
+    def test_django_admin_rejects_blank_email(self, client, user):
+        """SECURITY: a blank email must not skip the allowlist check."""
+        user.is_staff = True
+        user.is_superuser = True
+        user.save()
+        client.force_login(user)
+        client.post(
+            reverse("admin:auth_user_add"),
+            {
+                "username": "svc-account",
+                "email": "",
+                "password1": "Str0ngP@ss!",
+                "password2": "Str0ngP@ss!",
+            },
+        )
+        assert not User.objects.filter(username="svc-account").exists()
+
 
 class TestAccessAllowlist:
     """Sign-in allowlist model + admin management UI."""
@@ -413,6 +436,24 @@ class TestAccessAllowlist:
         assert is_email_allowed("solo@gmail.com")
         assert not is_email_allowed("other@gmail.com")
         assert not is_email_allowed("not-an-email")
+
+    def test_is_email_allowed_rejects_bypass_shapes(self, db):
+        AllowedDomain.objects.get_or_create(domain="free.law")
+        # The domain after the last "@" is free.law in all of these, but
+        # they must not be treated as a valid allowed address.
+        assert not is_email_allowed("evil@evil.com@free.law")  # multiple @
+        assert not is_email_allowed('"evil@evil.com"@free.law')  # quoted @
+        assert not is_email_allowed("@free.law")  # empty local part
+        assert not is_email_allowed("user@free.law.")  # trailing dot
+        assert not is_email_allowed("user@")  # empty domain
+        assert not is_email_allowed(None)
+
+    def test_is_email_allowed_rejects_plus_addressing(self, db):
+        # mike+foo@free.law delivers to mike@free.law; blocking it stops one
+        # mailbox minting many accounts / evading per-account archiving.
+        AllowedDomain.objects.get_or_create(domain="free.law")
+        assert not is_email_allowed("mike+foo@free.law")
+        assert is_email_allowed("mike@free.law")  # base address still works
 
     def test_domain_normalized_on_save(self, db):
         d = AllowedDomain.objects.create(domain="  @Example.ORG. ".strip())

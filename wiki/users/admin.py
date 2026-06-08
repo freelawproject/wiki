@@ -59,12 +59,14 @@ class UserAdmin(BaseUserAdmin):
 
     def save_model(self, request, obj, form, change):
         # SECURITY: enforce the email allowlist in admin too. The login form
-        # validates this, but admin bypasses that form.
-        if obj.email and not is_email_allowed(obj.email):
+        # validates this, but admin bypasses that form. Block a blank email
+        # as well — don't let the check be skipped by leaving it empty.
+        if not is_email_allowed(obj.email):
             messages.error(
                 request,
-                "That email address isn't on the allowlist. Add its domain "
-                "or the address under Allowed domains / Allowed emails first.",
+                "This user needs a non-empty email address that's on the "
+                "allowlist. Add its domain or the address under Allowed "
+                "domains / Allowed emails first.",
             )
             return
         super().save_model(request, obj, form, change)

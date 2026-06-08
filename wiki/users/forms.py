@@ -81,4 +81,14 @@ class AllowedEmailForm(forms.Form):
     )
 
     def clean_email(self):
-        return self.cleaned_data["email"].strip().lower()
+        email = self.cleaned_data["email"].strip().lower()
+        # Plus-addressing is blocked at sign-in, so an allowlisted plus
+        # address would never resolve — reject it on entry to avoid a
+        # dead allowlist row.
+        local = email.split("@", 1)[0]
+        if "+" in local:
+            raise forms.ValidationError(
+                "Plus-addressing (e.g. you+tag@example.com) isn't allowed; "
+                "use the base address instead."
+            )
+        return email
