@@ -269,6 +269,17 @@ def _announce_access_change(request, action, item_type, value):
         )
 
 
+def _form_error_message(form):
+    """Flatten a form's errors into one readable string.
+
+    Covers errors on any field (e.g. a too-long note) instead of only the
+    primary field, so the user isn't told "Invalid domain" for a valid
+    domain with a bad note.
+    """
+    flat = "; ".join(err for errs in form.errors.values() for err in errs)
+    return flat or "Invalid input."
+
+
 @login_required
 def access_list(request):
     """Manage the sign-in allowlist (domains + individual emails)."""
@@ -281,8 +292,8 @@ def access_list(request):
         {
             "domains": AllowedDomain.objects.all(),
             "emails": AllowedEmail.objects.all(),
-            "domain_form": AllowedDomainForm(),
-            "email_form": AllowedEmailForm(),
+            "domain_form": AllowedDomainForm(auto_id="id_domain_%s"),
+            "email_form": AllowedEmailForm(auto_id="id_email_%s"),
             "is_owner": is_system_owner(request.user),
         },
     )
@@ -303,8 +314,7 @@ def access_add_domain(request):
 
     form = AllowedDomainForm(request.POST)
     if not form.is_valid():
-        error = form.errors.get("domain", ["Invalid domain."])[0]
-        messages.error(request, error)
+        messages.error(request, _form_error_message(form))
         return redirect("access_list")
 
     domain = form.cleaned_data["domain"]
@@ -331,8 +341,7 @@ def access_add_email(request):
 
     form = AllowedEmailForm(request.POST)
     if not form.is_valid():
-        error = form.errors.get("email", ["Invalid email."])[0]
-        messages.error(request, error)
+        messages.error(request, _form_error_message(form))
         return redirect("access_list")
 
     email = form.cleaned_data["email"]

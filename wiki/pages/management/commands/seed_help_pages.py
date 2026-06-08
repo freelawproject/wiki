@@ -20,14 +20,15 @@ HELP_PAGES = [
 ## Welcome to FLP Wiki
 
 This wiki is the internal knowledge base for Free Law Project.
-Anyone with an @free.law email address can sign in and contribute.
+Anyone with an email address on the sign-in allowlist can sign in and
+contribute — ask an admin if you're not sure whether yours is allowed.
 This page covers the basics and links to detailed guides on every
 feature.
 
 ### Signing in
 
 1. Visit the [Sign In](/u/login/) page
-2. Enter your @free.law email address
+2. Enter your email address (it must be on the sign-in allowlist)
 3. Check your inbox for a magic link (valid for 15 minutes)
 4. Click the link to sign in — no password needed
 
@@ -466,7 +467,7 @@ Both pages **and** directories have a visibility setting:
 | Level | Who can view |
 |---|---|
 | **Public** | Everyone, including anonymous visitors |
-| **FLP Staff** | Any signed-in user with an @free.law account |
+| **FLP Staff** | Any signed-in (allowlisted) user |
 | **Private** | Only users with explicit permission (or the owner) |
 
 ### Permission types
@@ -616,7 +617,7 @@ In addition to visibility, pages and directories have an
 | Setting | Who can edit |
 |---|---|
 | **Restricted** | Only users with explicit edit permission (the default) |
-| **FLP Staff** | Any signed-in user with an @free.law account |
+| **FLP Staff** | Any signed-in (allowlisted) user |
 
 This is useful for pages that should be broadly collaborative —
 for example, team wikis or shared documentation where anyone at
@@ -746,15 +747,15 @@ Gravatar-enabled site, your avatar is looked up by your email.
 
 ### How the wiki uses Gravatar
 
-The wiki looks up your Gravatar using your **@free.law email
-address** — the same one you use to sign in. If you have a Gravatar
+The wiki looks up your Gravatar using **the email address you sign in
+with**. If you have a Gravatar
 linked to that address, it appears next to your name on pages you've
 created, edited, or are subscribed to.
 
 ### Setting up your Gravatar
 
 1. Go to [gravatar.com](https://gravatar.com/) and click **Sign Up**
-2. Create an account using your **@free.law email address**
+2. Create an account using **the email address you sign in with**
 3. Upload a photo or image you'd like to use as your avatar
 4. Save your profile
 
@@ -769,7 +770,7 @@ or are subscribed to.
 
 ### Tips
 
-- Use the same email address you sign in with (@free.law) — the wiki
+- Use the same email address you sign in with — the wiki
   won't find your Gravatar if it's linked to a different address
 - Choose a clear photo or image that's recognizable at small sizes
   (avatars are often displayed at 20-40px)

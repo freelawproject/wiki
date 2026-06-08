@@ -27,11 +27,11 @@
     <form method="post" action="{% url 'access_add_domain' %}" class="card flex flex-col sm:flex-row sm:items-end gap-3 py-3.5 px-5 mb-4">
       {% csrf_token %}
       <div class="flex-1 min-w-0">
-        <label for="id_domain" class="block text-sm font-medium mb-1.5">Domain</label>
+        <label for="id_domain_domain" class="block text-sm font-medium mb-1.5">Domain</label>
         {{ domain_form.domain }}
       </div>
       <div class="flex-1 min-w-0">
-        <label for="id_note" class="block text-sm font-medium mb-1.5">Note</label>
+        <label for="id_domain_note" class="block text-sm font-medium mb-1.5">Note</label>
         {{ domain_form.note }}
       </div>
       <button type="submit" class="btn-primary text-sm shrink-0">Add</button>
@@ -75,11 +75,11 @@
     <form method="post" action="{% url 'access_add_email' %}" class="card flex flex-col sm:flex-row sm:items-end gap-3 py-3.5 px-5 mb-4">
       {% csrf_token %}
       <div class="flex-1 min-w-0">
-        <label for="id_email" class="block text-sm font-medium mb-1.5">Email</label>
+        <label for="id_email_email" class="block text-sm font-medium mb-1.5">Email</label>
         {{ email_form.email }}
       </div>
       <div class="flex-1 min-w-0">
-        <label for="id_note" class="block text-sm font-medium mb-1.5">Note</label>
+        <label for="id_email_note" class="block text-sm font-medium mb-1.5">Note</label>
         {{ email_form.note }}
       </div>
       <button type="submit" class="btn-primary text-sm shrink-0">Add</button>
