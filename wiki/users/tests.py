@@ -12,7 +12,7 @@ from django.test import Client, RequestFactory
 from django.urls import reverse
 
 from wiki.lib.access import is_email_allowed
-from wiki.lib.users import user_by_local_part
+from wiki.lib.users import user_by_handle
 from wiki.lib.views import ratelimited
 from wiki.users.models import (
     AllowedDomain,
@@ -44,7 +44,7 @@ class TestLoginForm:
         assert r.status_code == 302
 
     def test_accepts_other_allowed_domain(self, client, db):
-        AllowedDomain.objects.create(domain="example.org")
+        AllowedDomain.objects.create(domain="example.org", suffix="ex")
         r = client.post(reverse("login"), {"email": "person@example.org"})
         assert r.status_code == 302
         assert User.objects.filter(username="person@example.org").exists()
@@ -429,7 +429,7 @@ class TestAccessAllowlist:
     """Sign-in allowlist model + admin management UI."""
 
     def test_is_email_allowed_helper(self, db):
-        AllowedDomain.objects.create(domain="example.org")
+        AllowedDomain.objects.create(domain="example.org", suffix="ex")
         AllowedEmail.objects.create(email="solo@gmail.com")
         assert is_email_allowed("anyone@example.org")
         assert is_email_allowed("ANYONE@EXAMPLE.ORG")
@@ -456,7 +456,9 @@ class TestAccessAllowlist:
         assert is_email_allowed("mike@free.law")  # base address still works
 
     def test_domain_normalized_on_save(self, db):
-        d = AllowedDomain.objects.create(domain="  @Example.ORG. ".strip())
+        d = AllowedDomain.objects.create(
+            domain="  @Example.ORG. ".strip(), suffix="ex"
+        )
         d.refresh_from_db()
         assert d.domain == "example.org"
 
@@ -477,14 +479,18 @@ class TestAccessAllowlist:
         client.force_login(owner_user)
         r = client.post(
             reverse("access_add_domain"),
-            {"domain": "Example.ORG", "note": "Partner org"},
+            {"domain": "Example.ORG", "suffix": "ex", "note": "Partner org"},
         )
         assert r.status_code == 302
-        assert AllowedDomain.objects.filter(domain="example.org").exists()
+        d = AllowedDomain.objects.get(domain="example.org")
+        assert d.suffix == "ex"
 
     def test_add_invalid_domain_rejected(self, client, owner_user):
         client.force_login(owner_user)
-        client.post(reverse("access_add_domain"), {"domain": "not a domain"})
+        client.post(
+            reverse("access_add_domain"),
+            {"domain": "not a domain", "suffix": "x"},
+        )
         assert not AllowedDomain.objects.filter(domain="not a domain").exists()
 
     def test_staff_can_add_email(self, client, user):
@@ -502,7 +508,7 @@ class TestAccessAllowlist:
 
     def test_owner_can_remove_domain(self, client, owner_user):
         client.force_login(owner_user)
-        d = AllowedDomain.objects.create(domain="example.org")
+        d = AllowedDomain.objects.create(domain="example.org", suffix="ex")
         r = client.post(reverse("access_delete_domain", kwargs={"pk": d.pk}))
         assert r.status_code == 302
         assert not AllowedDomain.objects.filter(pk=d.pk).exists()
@@ -540,7 +546,7 @@ class TestAccessChangePermissionsAndEmails:
         self, client, owner_user, other_user
     ):
         self._make_manager(other_user)
-        d = AllowedDomain.objects.create(domain="example.org")
+        d = AllowedDomain.objects.create(domain="example.org", suffix="ex")
         client.force_login(other_user)
         client.post(reverse("access_delete_domain", kwargs={"pk": d.pk}))
         assert AllowedDomain.objects.filter(pk=d.pk).exists()
@@ -553,7 +559,7 @@ class TestAccessChangePermissionsAndEmails:
         client.force_login(owner_user)
         r = client.post(
             reverse("access_add_domain"),
-            {"domain": "example.org"},
+            {"domain": "example.org", "suffix": "ex"},
             follow=True,
         )
         assert AllowedDomain.objects.filter(domain="example.org").exists()
@@ -564,7 +570,7 @@ class TestAccessChangePermissionsAndEmails:
         assert b"notified by email" in r.content
 
     def test_owner_delete_domain_notifies(self, client, owner_user):
-        d = AllowedDomain.objects.create(domain="example.org")
+        d = AllowedDomain.objects.create(domain="example.org", suffix="ex")
         client.force_login(owner_user)
         client.post(reverse("access_delete_domain", kwargs={"pk": d.pk}))
         assert not AllowedDomain.objects.filter(pk=d.pk).exists()
@@ -600,32 +606,134 @@ class TestAccessChangePermissionsAndEmails:
         assert len(mail.outbox) == 1
 
     def test_no_duplicate_add_no_email(self, client, owner_user):
-        AllowedDomain.objects.create(domain="example.org")
+        AllowedDomain.objects.create(domain="example.org", suffix="ex")
         client.force_login(owner_user)
-        client.post(reverse("access_add_domain"), {"domain": "example.org"})
-        # Re-adding an existing domain is a no-op, so nobody is emailed.
+        # A distinct suffix passes validation; the duplicate domain is the
+        # no-op path that must not email anyone.
+        client.post(
+            reverse("access_add_domain"),
+            {"domain": "example.org", "suffix": "ex2"},
+        )
         assert len(mail.outbox) == 0
 
 
-class TestUserByLocalPart:
-    """@-mention / username resolution must be unambiguous across domains."""
+def _make_user(email):
+    """Create a User + profile (so the post_save signal assigns a handle)."""
+    u = User.objects.create_user(username=email, email=email)
+    UserProfile.objects.create(user=u)
+    return u
 
-    def test_unique_local_part_resolves(self, user):
-        assert user_by_local_part("alice") == user
 
-    def test_ambiguous_local_part_returns_none(self, db):
-        # Two domains, same local part — resolving would guess wrong.
-        User.objects.create_user(username="bob@free.law", email="bob@free.law")
-        User.objects.create_user(
-            username="bob@example.org", email="bob@example.org"
-        )
-        assert user_by_local_part("bob") is None
+class TestHandleAssignment:
+    """Handles are unique; collisions use the domain suffix, else a number."""
 
-    def test_no_match_returns_none(self, db):
-        assert user_by_local_part("nobody") is None
+    def test_first_claimant_gets_bare_handle(self, user):
+        # The `user` fixture is alice@free.law.
+        assert user.profile.handle == "alice"
+
+    def test_collision_uses_domain_suffix(self, db):
+        AllowedDomain.objects.create(domain="wrrrk.com", suffix="wrrrk")
+        first = _make_user("mike@free.law")
+        second = _make_user("mike@wrrrk.com")
+        assert first.profile.handle == "mike"
+        assert second.profile.handle == "mike-wrrrk"
+
+    def test_allowed_email_collision_uses_number(self, db):
+        # contractor domain isn't an AllowedDomain, so there's no suffix.
+        AllowedEmail.objects.create(email="mike@contractor.io")
+        first = _make_user("mike@free.law")
+        second = _make_user("mike@contractor.io")
+        assert first.profile.handle == "mike"
+        assert second.profile.handle == "mike-2"
+
+
+class TestUserByHandle:
+    def test_resolves_by_handle(self, user):
+        assert user_by_handle("alice") == user
+
+    def test_handle_lookup_is_case_insensitive(self, user):
+        assert user_by_handle("ALICE") == user
+
+    def test_unknown_handle_returns_none(self, db):
+        assert user_by_handle("nobody") is None
 
     def test_blank_returns_none(self, db):
-        assert user_by_local_part("") is None
+        assert user_by_handle("") is None
+
+
+class TestDomainSuffixForm:
+    def test_suffix_required(self, client, owner_user):
+        client.force_login(owner_user)
+        client.post(reverse("access_add_domain"), {"domain": "example.org"})
+        assert not AllowedDomain.objects.filter(domain="example.org").exists()
+
+    def test_duplicate_suffix_rejected(self, client, owner_user):
+        AllowedDomain.objects.create(domain="a.com", suffix="acme")
+        client.force_login(owner_user)
+        client.post(
+            reverse("access_add_domain"),
+            {"domain": "b.com", "suffix": "acme"},
+        )
+        assert not AllowedDomain.objects.filter(domain="b.com").exists()
+
+    def test_non_slug_suffix_rejected(self, client, owner_user):
+        client.force_login(owner_user)
+        client.post(
+            reverse("access_add_domain"),
+            {"domain": "c.com", "suffix": "has space"},
+        )
+        assert not AllowedDomain.objects.filter(domain="c.com").exists()
+
+
+class TestLogoutOnAccessRemoval:
+    """Removing a domain/email ends affected users' sessions immediately."""
+
+    def _has_session(self, user):
+        return any(
+            s.get_decoded().get(SESSION_KEY) == str(user.pk)
+            for s in Session.objects.all()
+        )
+
+    def _login_with_session(self, user):
+        c = Client()
+        c.force_login(user)
+        c.get(reverse("root"), follow=True)
+        return c
+
+    def test_removing_domain_ends_member_sessions(self, client, owner_user):
+        AllowedDomain.objects.create(domain="example.org", suffix="ex")
+        member = _make_user("x@example.org")
+        self._login_with_session(member)
+        assert self._has_session(member)
+
+        d = AllowedDomain.objects.get(domain="example.org")
+        client.force_login(owner_user)
+        client.post(reverse("access_delete_domain", kwargs={"pk": d.pk}))
+        assert not self._has_session(member)
+
+    def test_removing_domain_keeps_still_allowed_user(
+        self, client, owner_user
+    ):
+        AllowedDomain.objects.create(domain="example.org", suffix="ex")
+        AllowedEmail.objects.create(email="keep@example.org")
+        member = _make_user("keep@example.org")
+        self._login_with_session(member)
+
+        d = AllowedDomain.objects.get(domain="example.org")
+        client.force_login(owner_user)
+        client.post(reverse("access_delete_domain", kwargs={"pk": d.pk}))
+        # Still covered by the individual AllowedEmail → session survives.
+        assert self._has_session(member)
+
+    def test_removing_email_ends_session(self, client, owner_user):
+        e = AllowedEmail.objects.create(email="solo@gmail.com")
+        member = _make_user("solo@gmail.com")
+        self._login_with_session(member)
+        assert self._has_session(member)
+
+        client.force_login(owner_user)
+        client.post(reverse("access_delete_email", kwargs={"pk": e.pk}))
+        assert not self._has_session(member)
 
 
 # ── Rate Limiting and 429 Tests ─────────────────────────
