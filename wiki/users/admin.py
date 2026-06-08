@@ -2,7 +2,9 @@ from django.contrib import admin, messages
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.contrib.auth.models import User
 
-from .models import SystemConfig, UserProfile
+from wiki.lib.access import is_email_allowed
+
+from .models import AllowedDomain, AllowedEmail, SystemConfig, UserProfile
 
 
 class UserProfileInline(admin.StackedInline):
@@ -54,12 +56,13 @@ class UserAdmin(BaseUserAdmin):
             return "—"
 
     def save_model(self, request, obj, form, change):
-        # SECURITY: enforce @free.law domain restriction in admin too.
-        # The login form validates this, but admin bypasses that form.
-        if obj.email and not obj.email.endswith("@free.law"):
+        # SECURITY: enforce the email allowlist in admin too. The login form
+        # validates this, but admin bypasses that form.
+        if obj.email and not is_email_allowed(obj.email):
             messages.error(
                 request,
-                "Only @free.law email addresses are allowed.",
+                "That email address isn't on the allowlist. Add its domain "
+                "or the address under Allowed domains / Allowed emails first.",
             )
             return
         super().save_model(request, obj, form, change)
@@ -90,3 +93,15 @@ class SystemConfigAdmin(admin.ModelAdmin):
 
     def has_delete_permission(self, request, obj=None):
         return False
+
+
+@admin.register(AllowedDomain)
+class AllowedDomainAdmin(admin.ModelAdmin):
+    list_display = ["domain", "note", "created_at"]
+    search_fields = ["domain", "note"]
+
+
+@admin.register(AllowedEmail)
+class AllowedEmailAdmin(admin.ModelAdmin):
+    list_display = ["email", "note", "created_at"]
+    search_fields = ["email", "note"]

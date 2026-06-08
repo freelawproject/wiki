@@ -163,8 +163,7 @@ def process_mentions(
     grant_map = grant_access_to or {}
 
     for uname in mentioned_usernames:
-        email = f"{uname}@free.law"
-        user = User.objects.filter(email=email).first()
+        user = User.objects.filter(email__istartswith=uname + "@").first()
         if not user or user.id == editor_id:
             continue
 

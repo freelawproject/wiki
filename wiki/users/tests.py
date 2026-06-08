@@ -12,7 +12,12 @@ from django.test import Client, RequestFactory
 from django.urls import reverse
 
 from wiki.lib.views import ratelimited
-from wiki.users.models import SystemConfig, UserProfile
+from wiki.users.models import (
+    AllowedDomain,
+    AllowedEmail,
+    SystemConfig,
+    UserProfile,
+)
 
 
 @pytest.fixture
@@ -24,16 +29,31 @@ class TestLoginForm:
     def test_login_page_loads(self, client, db):
         r = client.get(reverse("login"))
         assert r.status_code == 200
-        assert b"@free.law" in r.content
+        assert b"Send Sign-In Link" in r.content
 
-    def test_rejects_non_free_law_email(self, client, db):
+    def test_rejects_email_not_on_allowlist(self, client, db):
         r = client.post(reverse("login"), {"email": "test@gmail.com"})
         assert r.status_code == 200
-        assert b"Only @free.law email addresses are allowed" in r.content
+        assert b"isn&#x27;t allowed to sign in" in r.content
 
-    def test_accepts_free_law_email(self, client, db):
+    def test_accepts_seeded_free_law_domain(self, client, db):
+        # The data migration seeds free.law as an allowed domain.
         r = client.post(reverse("login"), {"email": "test@free.law"})
         assert r.status_code == 302
+
+    def test_accepts_other_allowed_domain(self, client, db):
+        AllowedDomain.objects.create(domain="example.org")
+        r = client.post(reverse("login"), {"email": "person@example.org"})
+        assert r.status_code == 302
+        assert User.objects.filter(username="person@example.org").exists()
+
+    def test_accepts_individual_allowed_email(self, client, db):
+        AllowedEmail.objects.create(email="contractor@gmail.com")
+        r = client.post(reverse("login"), {"email": "contractor@gmail.com"})
+        assert r.status_code == 302
+        # A different address on the same (non-allowed) domain is rejected.
+        r2 = client.post(reverse("login"), {"email": "someone@gmail.com"})
+        assert r2.status_code == 200
 
     def test_email_normalized_to_lowercase(self, client, db):
         client.post(reverse("login"), {"email": "TEST@FREE.LAW"})
@@ -378,6 +398,85 @@ class TestAdminEmailDomainSecurity:
         )
         # The user should NOT be created
         assert not User.objects.filter(email="hacker@gmail.com").exists()
+
+
+class TestAccessAllowlist:
+    """Sign-in allowlist model + admin management UI."""
+
+    def test_is_email_allowed_helper(self, db):
+        from wiki.lib.access import is_email_allowed
+
+        AllowedDomain.objects.create(domain="example.org")
+        AllowedEmail.objects.create(email="solo@gmail.com")
+        assert is_email_allowed("anyone@example.org")
+        assert is_email_allowed("ANYONE@EXAMPLE.ORG")
+        assert is_email_allowed("solo@gmail.com")
+        assert not is_email_allowed("other@gmail.com")
+        assert not is_email_allowed("not-an-email")
+
+    def test_domain_normalized_on_save(self, db):
+        d = AllowedDomain.objects.create(domain="  @Example.ORG. ".strip())
+        d.refresh_from_db()
+        assert d.domain == "example.org"
+
+    def test_access_list_requires_staff(self, client, user):
+        client.force_login(user)
+        r = client.get(reverse("access_list"))
+        assert r.status_code == 404
+
+    def test_access_list_visible_to_staff(self, client, user):
+        user.is_staff = True
+        user.save()
+        client.force_login(user)
+        r = client.get(reverse("access_list"))
+        assert r.status_code == 200
+        assert b"free.law" in r.content
+
+    def test_staff_can_add_domain(self, client, user):
+        user.is_staff = True
+        user.save()
+        client.force_login(user)
+        r = client.post(
+            reverse("access_add_domain"),
+            {"domain": "Example.ORG", "note": "Partner org"},
+        )
+        assert r.status_code == 302
+        assert AllowedDomain.objects.filter(domain="example.org").exists()
+
+    def test_add_invalid_domain_rejected(self, client, user):
+        user.is_staff = True
+        user.save()
+        client.force_login(user)
+        client.post(reverse("access_add_domain"), {"domain": "not a domain"})
+        assert not AllowedDomain.objects.filter(domain="not a domain").exists()
+
+    def test_staff_can_add_email(self, client, user):
+        user.is_staff = True
+        user.save()
+        client.force_login(user)
+        r = client.post(
+            reverse("access_add_email"),
+            {"email": "Contractor@Gmail.com"},
+        )
+        assert r.status_code == 302
+        assert AllowedEmail.objects.filter(
+            email="contractor@gmail.com"
+        ).exists()
+
+    def test_staff_can_remove_domain(self, client, user):
+        user.is_staff = True
+        user.save()
+        client.force_login(user)
+        d = AllowedDomain.objects.create(domain="example.org")
+        r = client.post(reverse("access_delete_domain", kwargs={"pk": d.pk}))
+        assert r.status_code == 302
+        assert not AllowedDomain.objects.filter(pk=d.pk).exists()
+
+    def test_non_staff_cannot_add_domain(self, client, user):
+        client.force_login(user)
+        r = client.post(reverse("access_add_domain"), {"domain": "evil.com"})
+        assert r.status_code == 404
+        assert not AllowedDomain.objects.filter(domain="evil.com").exists()
 
 
 # ── Rate Limiting and 429 Tests ─────────────────────────

@@ -81,3 +81,63 @@ class SystemConfig(models.Model):
     def save(self, *args, **kwargs):
         self.pk = 1
         super().save(*args, **kwargs)
+
+
+class AllowedDomain(models.Model):
+    """An email domain whose addresses are allowed to sign in.
+
+    Any address ending in ``@<domain>`` may request a magic link. Stored
+    lowercase without a leading ``@`` or ``.``.
+    """
+
+    domain = models.CharField(max_length=255, unique=True)
+    note = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text="Optional reminder of why this domain is allowed.",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["domain"]
+
+    def __str__(self):
+        return self.domain
+
+    @staticmethod
+    def normalize(domain):
+        return domain.strip().lower().lstrip("@").strip(".")
+
+    def save(self, *args, **kwargs):
+        self.domain = self.normalize(self.domain)
+        super().save(*args, **kwargs)
+
+
+class AllowedEmail(models.Model):
+    """A single email address allowed to sign in.
+
+    Use this to grant access to an individual whose domain is not allowed
+    wholesale (e.g. an outside contractor). Stored lowercase.
+    """
+
+    email = models.EmailField(unique=True)
+    note = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text="Optional reminder of why this address is allowed.",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["email"]
+
+    def __str__(self):
+        return self.email
+
+    @staticmethod
+    def normalize(email):
+        return email.strip().lower()
+
+    def save(self, *args, **kwargs):
+        self.email = self.normalize(self.email)
+        super().save(*args, **kwargs)

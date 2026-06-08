@@ -1115,8 +1115,7 @@ def check_page_permissions(request):
         page_eff_vis, _ = resolve_effective_value(page, "visibility")
     if page and page_eff_vis != "public":
         for uname in usernames:
-            email = f"{uname}@free.law"
-            user = User.objects.filter(email=email).first()
+            user = User.objects.filter(email__istartswith=uname + "@").first()
             if user and not can_view_page(user, page):
                 name = uname
                 if hasattr(user, "profile") and user.profile.display_name:
@@ -1476,9 +1475,11 @@ def recent_changes(request, username=None):
     short_name = username or request.GET.get("user")
     filter_user = None
     if short_name:
-        filter_user = get_object_or_404(
-            User, username=f"{short_name}@free.law"
-        )
+        filter_user = User.objects.filter(
+            email__istartswith=short_name + "@"
+        ).first()
+        if filter_user is None:
+            raise Http404
 
     visible_page_ids = Page.objects.filter(
         viewable_pages_q(request.user)

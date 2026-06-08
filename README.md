@@ -10,7 +10,7 @@ FLP Wiki is the result. It is a Django application designed around a few core id
 
 - **Full version history.** Every edit creates an immutable revision. Users can view diffs between any two versions, revert to a previous state, and see who changed what and when. Directory metadata is versioned the same way.
 
-- **Collaborative editing without accounts.** Authentication uses passwordless magic links — enter your `@free.law` email, click the link, you're in. Outside contributors don't need an account to suggest changes: they submit change proposals through a public feedback form, and editors can review, accept, or reject them with a side-by-side diff.
+- **Collaborative editing without accounts.** Authentication uses passwordless magic links — enter an allowed email, click the link, you're in. Outside contributors don't need an account to suggest changes: they submit change proposals through a public feedback form, and editors can review, accept, or reject them with a side-by-side diff.
 
 - **AI-friendly content.** The wiki serves an [`llms.txt`](https://llmstxt.org/) endpoint that lists all public pages with links to their raw Markdown. LLMs and other automated tools can discover and read wiki content without scraping HTML.
 
@@ -39,8 +39,9 @@ docker compose -f docker/wiki/docker-compose.yml exec wiki-django \
 ```
 
 The wiki is now running at **http://localhost:8001**. Visit `/login/` and enter
-any `@free.law` email. In development, the magic link is printed to the Django
-console — look for the `token=` URL in the container logs.
+any allowed email (the `free.law` domain is allowed out of the box). In
+development, the magic link is printed to the Django console — look for the
+`token=` URL in the container logs.
 
 The first user to sign in automatically becomes the **system owner** with
 unrestricted access to all content.
@@ -69,7 +70,7 @@ unrestricted access to all content.
 wiki/
   pages/          Page CRUD, history, diff, revert, search, file uploads
   directories/    Hierarchical directory tree, breadcrumbs
-  users/          Passwordless @free.law auth, user profiles, settings
+  users/          Passwordless magic-link auth, allowlist, profiles, settings
   proposals/      Change proposals workflow
   subscriptions/  Page change notifications, email unsubscribe
   groups/         Group management
@@ -407,9 +408,12 @@ MAX_REQUESTS=2500
 
 ### Passwordless Auth (Magic Links)
 
-No passwords. Users enter their `@free.law` email, receive a link with a
+No passwords. Users enter an allowed email, receive a link with a
 time-limited token (15 min), and click to sign in. Tokens are SHA-256 hashed
-before storage. Non-`@free.law` emails are rejected at the form level.
+before storage. Access is gated by an allowlist of email domains plus
+individual addresses, managed by admins under **Admin → Access** (`free.law`
+is seeded by default). Emails not on the allowlist are rejected at the form
+level.
 
 ### Unified URL Namespace
 

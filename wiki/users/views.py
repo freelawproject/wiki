@@ -12,8 +12,18 @@ from django.utils import timezone
 
 from wiki.lib.permissions import is_system_owner
 from wiki.lib.ratelimiter import ratelimit_login
-from wiki.users.forms import LoginForm, UserSettingsForm
-from wiki.users.models import SystemConfig, UserProfile
+from wiki.users.forms import (
+    AllowedDomainForm,
+    AllowedEmailForm,
+    LoginForm,
+    UserSettingsForm,
+)
+from wiki.users.models import (
+    AllowedDomain,
+    AllowedEmail,
+    SystemConfig,
+    UserProfile,
+)
 from wiki.users.tasks import send_magic_link_email
 
 
@@ -240,6 +250,111 @@ def admin_archive_toggle(request, pk):
         messages.success(request, f"{target.email} has been unarchived.")
 
     return redirect("admin_list")
+
+
+def _can_manage_admin(user):
+    """Staff or system owner may manage admin settings."""
+    return user.is_staff or is_system_owner(user)
+
+
+@login_required
+def access_list(request):
+    """Manage the sign-in allowlist (domains + individual emails)."""
+    if not _can_manage_admin(request.user):
+        raise Http404
+
+    return render(
+        request,
+        "users/access_list.html",
+        {
+            "domains": AllowedDomain.objects.all(),
+            "emails": AllowedEmail.objects.all(),
+            "domain_form": AllowedDomainForm(),
+            "email_form": AllowedEmailForm(),
+        },
+    )
+
+
+@login_required
+def access_add_domain(request):
+    """Add an allowed email domain."""
+    if not _can_manage_admin(request.user):
+        raise Http404
+    if request.method != "POST":
+        return redirect("access_list")
+
+    form = AllowedDomainForm(request.POST)
+    if not form.is_valid():
+        error = form.errors.get("domain", ["Invalid domain."])[0]
+        messages.error(request, error)
+        return redirect("access_list")
+
+    domain = form.cleaned_data["domain"]
+    _, created = AllowedDomain.objects.get_or_create(
+        domain=domain,
+        defaults={"note": form.cleaned_data["note"]},
+    )
+    if created:
+        messages.success(request, f"Domain {domain} is now allowed.")
+    else:
+        messages.info(request, f"Domain {domain} was already allowed.")
+    return redirect("access_list")
+
+
+@login_required
+def access_add_email(request):
+    """Add a single allowed email address."""
+    if not _can_manage_admin(request.user):
+        raise Http404
+    if request.method != "POST":
+        return redirect("access_list")
+
+    form = AllowedEmailForm(request.POST)
+    if not form.is_valid():
+        error = form.errors.get("email", ["Invalid email."])[0]
+        messages.error(request, error)
+        return redirect("access_list")
+
+    email = form.cleaned_data["email"]
+    _, created = AllowedEmail.objects.get_or_create(
+        email=email,
+        defaults={"note": form.cleaned_data["note"]},
+    )
+    if created:
+        messages.success(request, f"{email} is now allowed.")
+    else:
+        messages.info(request, f"{email} was already allowed.")
+    return redirect("access_list")
+
+
+@login_required
+def access_delete_domain(request, pk):
+    """Remove an allowed domain."""
+    if not _can_manage_admin(request.user):
+        raise Http404
+    if request.method != "POST":
+        return redirect("access_list")
+
+    domain = AllowedDomain.objects.filter(pk=pk).first()
+    if domain:
+        domain.delete()
+        messages.success(request, f"Domain {domain.domain} removed.")
+    return redirect("access_list")
+
+
+@login_required
+def access_delete_email(request, pk):
+    """Remove an allowed email address."""
+    if not _can_manage_admin(request.user):
+        raise Http404
+    if request.method != "POST":
+        return redirect("access_list")
+
+    email = AllowedEmail.objects.filter(pk=pk).first()
+    if email:
+        email.delete()
+        messages.success(request, f"{email.email} removed.")
+    return redirect("access_list")
 
 
 @login_required
