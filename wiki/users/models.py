@@ -18,6 +18,16 @@ class UserProfile(models.Model):
         related_name="profile",
     )
     display_name = models.CharField(max_length=255, blank=True)
+    handle = models.CharField(
+        max_length=64,
+        unique=True,
+        null=True,
+        blank=True,
+        help_text=(
+            "Unique public @-handle, assigned at first sign-in. Derived "
+            "from the email local part, disambiguated on collision."
+        ),
+    )
     gravatar_url = models.URLField(blank=True)
     magic_link_token = models.CharField(
         max_length=64,
@@ -91,6 +101,15 @@ class AllowedDomain(models.Model):
     """
 
     domain = models.CharField(max_length=255, unique=True)
+    suffix = models.CharField(
+        max_length=32,
+        unique=True,
+        help_text=(
+            "Short slug appended to a handle when it collides with an "
+            "existing one, e.g. 'flp' turns a colliding mike@free.law into "
+            "'mike-flp'. Used only on actual collisions."
+        ),
+    )
     note = models.CharField(
         max_length=255,
         blank=True,
@@ -108,8 +127,13 @@ class AllowedDomain(models.Model):
     def normalize(domain):
         return domain.strip().lower().lstrip("@").strip(".")
 
+    @staticmethod
+    def normalize_suffix(suffix):
+        return suffix.strip().lower()
+
     def save(self, *args, **kwargs):
         self.domain = self.normalize(self.domain)
+        self.suffix = self.normalize_suffix(self.suffix)
         super().save(*args, **kwargs)
 
 

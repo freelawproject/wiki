@@ -1,20 +1,37 @@
-"""Shared user display utilities."""
+"""Shared user display + handle utilities.
 
-from django.contrib.auth.models import User
+Users are addressed by a unique ``UserProfile.handle`` (the public @-name
+used in mentions, permission forms, and the activity feed). The handle is
+derived from the email local part and disambiguated on collision with the
+domain's :attr:`AllowedDomain.suffix` (or a number when there's no domain
+suffix). See ``assign_handle``.
+"""
+
+import re
+
+from wiki.users.models import AllowedDomain, UserProfile
+
+HANDLE_MAX = 64
+
+# Characters allowed in a handle. Matches the @-mention regex charset
+# (@([a-zA-Z][a-zA-Z0-9._-]*)) and is URL-safe for activity/<handle>/.
+_HANDLE_STRIP_RE = re.compile(r"[^a-z0-9._-]+")
 
 
 def display_name(user):
     """Return display name for a user, never showing a full email.
 
-    Priority: profile.display_name > first part of email > "Unknown"
+    Priority: profile.display_name > handle > first part of email > "Unknown"
     """
     if not user:
         return "Unknown"
     if hasattr(user, "profile"):
         try:
-            name = user.profile.display_name
-            if name:
-                return name
+            profile = user.profile
+            if profile.display_name:
+                return profile.display_name
+            if profile.handle:
+                return profile.handle
         except Exception:
             pass
     email = getattr(user, "email", "")
@@ -23,22 +40,84 @@ def display_name(user):
     return "Unknown"
 
 
-def user_by_local_part(local_part):
-    """Resolve a username / @-mention (an email local part) to one user.
+def sanitize_handle_base(email):
+    """Derive a handle base from an email's local part.
 
-    The wiki refers to users by the local part of their email. Once more
-    than one sign-in domain is allowed, two accounts can share a local part
-    (e.g. ``alice@free.law`` and ``alice@example.org``). In that case the
-    reference is ambiguous, so we return ``None`` rather than guess at a
-    user — guessing would otherwise grant page access to, or email a page
-    snippet to, the wrong person. Also returns ``None`` when nothing matches.
+    Lowercase it, drop anything outside ``[a-z0-9._-]``, and guarantee a
+    leading letter (the @-mention regex requires one). Leaves headroom in
+    the 64-char field for a disambiguating suffix.
     """
-    if not local_part:
+    local = (email or "").split("@", 1)[0].lower()
+    base = _HANDLE_STRIP_RE.sub("", local).lstrip("._-")
+    if not base or not base[0].isalpha():
+        base = "u" + base
+    return base[:50]
+
+
+def _compose(base, tail):
+    """Build a handle from ``base`` and an optional ``tail``, within length."""
+    if not tail:
+        return base[:HANDLE_MAX]
+    keep = HANDLE_MAX - len(tail) - 1
+    return f"{base[:keep]}-{tail}"
+
+
+def _suffix_for_email(email):
+    """The collision suffix for an address: its domain's suffix, else None."""
+    domain = email.split("@", 1)[1] if "@" in email else ""
+    row = AllowedDomain.objects.filter(domain=domain).first()
+    return row.suffix if row else None
+
+
+def assign_handle(profile):
+    """Assign and persist a unique handle to ``profile``.
+
+    Idempotent: returns the existing handle if already set. The first
+    claimant of a base keeps it; a colliding account gets ``<base>-<suffix>``
+    (its domain's suffix), or ``<base>-2`` when the address has no domain
+    suffix (an individually-allowed email) or the suffixed handle is taken.
+    """
+    if profile.handle:
+        return profile.handle
+
+    email = profile.user.email
+    base = sanitize_handle_base(email)
+
+    def taken(h):
+        return (
+            UserProfile.objects.filter(handle=h)
+            .exclude(pk=profile.pk)
+            .exists()
+        )
+
+    candidate = _compose(base, "")
+    if taken(candidate):
+        suffix = _suffix_for_email(email)
+        if suffix:
+            candidate = _compose(base, suffix)
+            n = 2
+            while taken(candidate):
+                candidate = _compose(base, f"{suffix}-{n}")
+                n += 1
+        else:
+            n = 2
+            candidate = _compose(base, str(n))
+            while taken(candidate):
+                n += 1
+                candidate = _compose(base, str(n))
+
+    profile.handle = candidate
+    profile.save(update_fields=["handle"])
+    return candidate
+
+
+def user_by_handle(handle):
+    """Resolve an @-handle to its user (exact, unique). None if not found."""
+    if not handle:
         return None
-    # Fetch at most two rows: one means unambiguous, two means ambiguous.
-    matches = list(
-        User.objects.filter(email__istartswith=local_part + "@")[:2]
+    profile = (
+        UserProfile.objects.filter(handle=handle.strip().lower())
+        .select_related("user")
+        .first()
     )
-    if len(matches) == 1:
-        return matches[0]
-    return None
+    return profile.user if profile else None

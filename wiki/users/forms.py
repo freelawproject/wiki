@@ -1,3 +1,5 @@
+import re
+
 from django import forms
 
 from wiki.lib.access import is_email_allowed
@@ -40,6 +42,12 @@ class AllowedDomainForm(forms.Form):
             attrs={"placeholder": "example.com", "class": "input-text w-full"}
         ),
     )
+    suffix = forms.CharField(
+        max_length=32,
+        widget=forms.TextInput(
+            attrs={"placeholder": "e.g. acme", "class": "input-text w-full"}
+        ),
+    )
     note = forms.CharField(
         max_length=255,
         required=False,
@@ -58,6 +66,18 @@ class AllowedDomainForm(forms.Form):
                 "Enter a valid domain, e.g. example.com."
             )
         return domain
+
+    def clean_suffix(self):
+        suffix = AllowedDomain.normalize_suffix(self.cleaned_data["suffix"])
+        if not re.fullmatch(r"[a-z0-9]+", suffix):
+            raise forms.ValidationError(
+                "Suffix must be letters and numbers only, e.g. acme."
+            )
+        if AllowedDomain.objects.filter(suffix=suffix).exists():
+            raise forms.ValidationError(
+                f'The suffix "{suffix}" is already used by another domain.'
+            )
+        return suffix
 
 
 class AllowedEmailForm(forms.Form):
