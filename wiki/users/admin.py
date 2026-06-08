@@ -3,8 +3,10 @@ from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.contrib.auth.models import User
 
 from wiki.lib.access import is_email_allowed
+from wiki.lib.permissions import is_system_owner
 
 from .models import AllowedDomain, AllowedEmail, SystemConfig, UserProfile
+from .tasks import notify_access_change
 
 
 class UserProfileInline(admin.StackedInline):
@@ -95,13 +97,68 @@ class SystemConfigAdmin(admin.ModelAdmin):
         return False
 
 
+class AccessRuleAdmin(admin.ModelAdmin):
+    """Base admin for allowlist models.
+
+    Mirrors the custom Access UI: every add/edit/delete (including bulk
+    deletes) emails the owner and managers, so the Django admin path leaves
+    the same audit trail as ``/u/admins/access/``.
+    """
+
+    audit_item_type = ""  # "domain" / "email address"
+    audit_value_field = ""  # model field holding the human-readable value
+
+    def _audit_value(self, obj):
+        return getattr(obj, self.audit_value_field)
+
+    def save_model(self, request, obj, form, change):
+        super().save_model(request, obj, form, change)
+        notify_access_change(
+            request.user,
+            "updated" if change else "added",
+            self.audit_item_type,
+            self._audit_value(obj),
+        )
+
+    def delete_model(self, request, obj):
+        value = self._audit_value(obj)
+        super().delete_model(request, obj)
+        notify_access_change(
+            request.user, "removed", self.audit_item_type, value
+        )
+
+    def delete_queryset(self, request, queryset):
+        values = [self._audit_value(o) for o in queryset]
+        super().delete_queryset(request, queryset)
+        for value in values:
+            notify_access_change(
+                request.user, "removed", self.audit_item_type, value
+            )
+
+
 @admin.register(AllowedDomain)
-class AllowedDomainAdmin(admin.ModelAdmin):
+class AllowedDomainAdmin(AccessRuleAdmin):
     list_display = ["domain", "note", "created_at"]
     search_fields = ["domain", "note"]
+    audit_item_type = "domain"
+    audit_value_field = "domain"
+
+    # SECURITY: domains are owner-only, matching the custom Access views.
+    # Managers are Django superusers (admin_toggle sets is_superuser), so
+    # permission checks would otherwise short-circuit to True for them.
+    def has_add_permission(self, request):
+        return is_system_owner(request.user)
+
+    def has_change_permission(self, request, obj=None):
+        return is_system_owner(request.user)
+
+    def has_delete_permission(self, request, obj=None):
+        return is_system_owner(request.user)
 
 
 @admin.register(AllowedEmail)
-class AllowedEmailAdmin(admin.ModelAdmin):
+class AllowedEmailAdmin(AccessRuleAdmin):
     list_display = ["email", "note", "created_at"]
     search_fields = ["email", "note"]
+    audit_item_type = "email address"
+    audit_value_field = "email"
