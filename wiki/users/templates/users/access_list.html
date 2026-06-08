@@ -31,6 +31,10 @@
         {{ domain_form.domain }}
       </div>
       <div class="flex-1 min-w-0">
+        <label for="id_domain_suffix" class="block text-sm font-medium mb-1.5">Handle suffix</label>
+        {{ domain_form.suffix }}
+      </div>
+      <div class="flex-1 min-w-0">
         <label for="id_domain_note" class="block text-sm font-medium mb-1.5">Note</label>
         {{ domain_form.note }}
       </div>
@@ -48,6 +52,7 @@
       <div class="card flex items-center justify-between gap-3 py-3 px-5">
         <div class="min-w-0">
           <span class="font-medium">@{{ d.domain }}</span>
+          <span class="text-sm text-gray-400 dark:text-gray-500">handle suffix: -{{ d.suffix }}</span>
           {% if d.note %}
           <span class="text-sm text-gray-400 dark:text-gray-500">— {{ d.note }}</span>
           {% endif %}

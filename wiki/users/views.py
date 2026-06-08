@@ -1,17 +1,19 @@
 import secrets
 
 from django.contrib import messages
-from django.contrib.auth import SESSION_KEY, login, logout
+from django.contrib.auth import login, logout
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
-from django.contrib.sessions.models import Session
 from django.db import transaction
+from django.db.models import Q
 from django.http import Http404, JsonResponse
 from django.shortcuts import redirect, render
-from django.utils import timezone
 
+from wiki.lib.access import is_email_allowed
 from wiki.lib.permissions import is_system_owner
 from wiki.lib.ratelimiter import ratelimit_login
+from wiki.lib.sessions import end_sessions_for_users
+from wiki.lib.users import assign_handle
 from wiki.users.forms import (
     AllowedDomainForm,
     AllowedEmailForm,
@@ -56,6 +58,9 @@ def login_view(request):
         profile, profile_created = UserProfile.objects.get_or_create(user=user)
         if profile_created:
             profile.gravatar_url = UserProfile.gravatar_url_for_email(email)
+        # Assign a unique public handle on first sign-in.
+        if not profile.handle:
+            assign_handle(profile)
 
         # First user to log in becomes system owner and admin
         if not SystemConfig.objects.exists():
@@ -233,15 +238,11 @@ def admin_archive_toggle(request, pk):
         pass
 
     if target.is_active:
-        # Archive: deactivate and delete all sessions
+        # Archive: deactivate and end all sessions.
         with transaction.atomic():
             target.is_active = False
             target.save(update_fields=["is_active"])
-            for session in Session.objects.filter(
-                expire_date__gt=timezone.now()
-            ):
-                if session.get_decoded().get(SESSION_KEY) == str(target.pk):
-                    session.delete()
+            end_sessions_for_users([target.pk])
         messages.success(request, f"{target.email} has been archived.")
     else:
         # Unarchive: reactivate
@@ -320,7 +321,10 @@ def access_add_domain(request):
     domain = form.cleaned_data["domain"]
     _, created = AllowedDomain.objects.get_or_create(
         domain=domain,
-        defaults={"note": form.cleaned_data["note"]},
+        defaults={
+            "suffix": form.cleaned_data["suffix"],
+            "note": form.cleaned_data["note"],
+        },
     )
     if not created:
         messages.info(request, f"Domain {domain} was already allowed.")
@@ -358,6 +362,16 @@ def access_add_email(request):
     return redirect("access_list")
 
 
+def _logout_now_disallowed(users):
+    """End sessions for any of ``users`` whose email is no longer allowed.
+
+    Called after a domain/email is removed so access is cut immediately,
+    while leaving anyone still covered by another allowlist entry signed in.
+    """
+    blocked = [u.id for u in users if not is_email_allowed(u.email)]
+    end_sessions_for_users(blocked)
+
+
 @login_required
 def access_delete_domain(request, pk):
     """Remove an allowed domain. Owner only."""
@@ -375,6 +389,9 @@ def access_delete_domain(request, pk):
     if domain:
         value = domain.domain
         domain.delete()
+        _logout_now_disallowed(
+            User.objects.filter(email__iendswith=f"@{value}")
+        )
         messages.success(request, f"Domain {value} removed.")
         _announce_access_change(request, "removed", "domain", value)
     return redirect("access_list")
@@ -392,6 +409,7 @@ def access_delete_email(request, pk):
     if email:
         value = email.email
         email.delete()
+        _logout_now_disallowed(User.objects.filter(email__iexact=value))
         messages.success(request, f"{value} removed.")
         _announce_access_change(request, "removed", "email address", value)
     return redirect("access_list")
@@ -407,25 +425,25 @@ def user_search_htmx(request):
     if len(q) < 1:
         return JsonResponse([], safe=False)
 
+    # Match the typed @-handle (or a display name). The inner join on
+    # profile means every result has a handle.
     users = (
-        User.objects.filter(email__istartswith=q)
+        User.objects.filter(
+            Q(profile__handle__istartswith=q)
+            | Q(profile__display_name__icontains=q)
+        )
         .exclude(pk=request.user.pk)
         .select_related("profile")[:10]
     )
 
     results = []
     for u in users:
-        name = u.email.split("@")[0]
-        display = name
-        gravatar = ""
-        if hasattr(u, "profile"):
-            display = u.profile.display_name or name
-            gravatar = u.profile.gravatar_url or ""
+        handle = u.profile.handle or u.email.split("@")[0]
         results.append(
             {
-                "username": name,
-                "display_name": display,
-                "gravatar_url": gravatar,
+                "username": handle,
+                "display_name": u.profile.display_name or handle,
+                "gravatar_url": u.profile.gravatar_url or "",
             }
         )
 

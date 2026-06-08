@@ -4,6 +4,7 @@ from django.contrib.auth.models import Group, User
 from django.shortcuts import get_object_or_404, redirect, render
 
 from wiki.lib.permissions import is_system_owner
+from wiki.lib.users import user_by_handle
 
 from .forms import AddMemberForm, GroupForm
 
@@ -122,9 +123,7 @@ def group_add_member(request, pk):
         form = AddMemberForm(request.POST)
         if form.is_valid():
             username = form.cleaned_data["username"].strip()
-            user = User.objects.filter(
-                email__istartswith=username + "@"
-            ).first()
+            user = user_by_handle(username)
             if not user:
                 messages.error(
                     request,

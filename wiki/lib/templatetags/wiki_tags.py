@@ -42,12 +42,18 @@ def display_name(user):
 
 
 @register.filter
-def username_local(user):
-    """Return the local part of a user's email username (before the @)."""
-    username = getattr(user, "username", "")
-    if "@" in username:
-        return username.split("@")[0]
-    return username
+def handle(user):
+    """Return a user's unique public @-handle.
+
+    Falls back to the email local part if a handle hasn't been assigned yet.
+    """
+    profile = getattr(user, "profile", None)
+    if profile is not None and getattr(profile, "handle", None):
+        return profile.handle
+    identifier = getattr(user, "email", "") or getattr(user, "username", "")
+    if "@" in identifier:
+        return identifier.split("@")[0]
+    return identifier
 
 
 @register.filter

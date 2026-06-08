@@ -57,7 +57,7 @@ from wiki.lib.seo import (
     extract_description,
 )
 from wiki.lib.storage import get_s3_client
-from wiki.lib.users import user_by_local_part
+from wiki.lib.users import user_by_handle
 from wiki.proposals.models import ChangeProposal
 from wiki.subscriptions.models import PageSubscription
 from wiki.subscriptions.tasks import notify_subscribers, process_mentions
@@ -907,7 +907,7 @@ def page_permissions(request, path):
             if not username:
                 messages.error(request, "Please enter a username.")
             else:
-                user = user_by_local_part(username)
+                user = user_by_handle(username)
                 if not user:
                     messages.error(
                         request,
@@ -1114,7 +1114,7 @@ def check_page_permissions(request):
         page_eff_vis, _ = resolve_effective_value(page, "visibility")
     if page and page_eff_vis != "public":
         for uname in usernames:
-            user = user_by_local_part(uname)
+            user = user_by_handle(uname)
             if user and not can_view_page(user, page):
                 name = uname
                 if hasattr(user, "profile") and user.profile.display_name:
@@ -1474,7 +1474,7 @@ def recent_changes(request, username=None):
     short_name = username or request.GET.get("user")
     filter_user = None
     if short_name:
-        filter_user = user_by_local_part(short_name)
+        filter_user = user_by_handle(short_name)
         if filter_user is None:
             raise Http404
 

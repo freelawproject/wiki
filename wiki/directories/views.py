@@ -29,7 +29,7 @@ from wiki.lib.permissions import (
 )
 from wiki.lib.ratelimiter import ratelimit_search
 from wiki.lib.seo import build_breadcrumbs_jsonld, extract_description
-from wiki.lib.users import user_by_local_part
+from wiki.lib.users import user_by_handle
 from wiki.pages.diff_utils import unified_diff
 from wiki.pages.models import Page, PagePermission
 from wiki.subscriptions.utils import is_effectively_subscribed_to_directory
@@ -517,7 +517,7 @@ def _directory_permissions_inner(request, directory):
             if not username:
                 messages.error(request, "Please enter a username.")
             else:
-                user = user_by_local_part(username)
+                user = user_by_handle(username)
                 if not user:
                     messages.error(
                         request,
