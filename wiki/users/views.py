@@ -250,11 +250,17 @@ def admin_archive_toggle(request, pk):
         pass
 
     if target.is_active:
-        # Archive: deactivate and end all sessions.
+        # Archive: deactivate, end sessions, and kill any outstanding magic
+        # link so it can't be redeemed (e.g. after a quick un-archive).
         with transaction.atomic():
             target.is_active = False
             target.save(update_fields=["is_active"])
             end_sessions_for_users([target.pk])
+            if hasattr(target, "profile"):
+                target.profile.clear_magic_token()
+                target.profile.save(
+                    update_fields=["magic_link_token", "magic_link_expires"]
+                )
         messages.success(request, f"{target.email} has been archived.")
     else:
         # Unarchive: reactivate

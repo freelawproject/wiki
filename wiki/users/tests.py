@@ -320,6 +320,22 @@ class TestUserArchiving:
         other_user.refresh_from_db()
         assert other_user.is_active is False
 
+    def test_archiving_clears_outstanding_magic_link(
+        self, client, user, other_user
+    ):
+        """Archiving kills the user's outstanding magic-link token."""
+        user.is_staff = True
+        user.save()
+        other_user.profile.set_magic_token("a-token")
+        other_user.profile.save()
+        client.force_login(user)
+        client.post(
+            reverse("admin_archive_toggle", kwargs={"pk": other_user.pk})
+        )
+        other_user.profile.refresh_from_db()
+        assert other_user.profile.magic_link_token == ""
+        assert other_user.profile.magic_link_expires is None
+
     def test_admin_can_unarchive_user(self, client, user, other_user):
         """POST to unarchive toggle sets is_active=True."""
         user.is_staff = True
