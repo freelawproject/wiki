@@ -432,10 +432,8 @@ class TestAccessAllowlist:
         assert r.status_code == 200
         assert b"free.law" in r.content
 
-    def test_staff_can_add_domain(self, client, user):
-        user.is_staff = True
-        user.save()
-        client.force_login(user)
+    def test_owner_can_add_domain(self, client, owner_user):
+        client.force_login(owner_user)
         r = client.post(
             reverse("access_add_domain"),
             {"domain": "Example.ORG", "note": "Partner org"},
@@ -443,10 +441,8 @@ class TestAccessAllowlist:
         assert r.status_code == 302
         assert AllowedDomain.objects.filter(domain="example.org").exists()
 
-    def test_add_invalid_domain_rejected(self, client, user):
-        user.is_staff = True
-        user.save()
-        client.force_login(user)
+    def test_add_invalid_domain_rejected(self, client, owner_user):
+        client.force_login(owner_user)
         client.post(reverse("access_add_domain"), {"domain": "not a domain"})
         assert not AllowedDomain.objects.filter(domain="not a domain").exists()
 
@@ -463,10 +459,8 @@ class TestAccessAllowlist:
             email="contractor@gmail.com"
         ).exists()
 
-    def test_staff_can_remove_domain(self, client, user):
-        user.is_staff = True
-        user.save()
-        client.force_login(user)
+    def test_owner_can_remove_domain(self, client, owner_user):
+        client.force_login(owner_user)
         d = AllowedDomain.objects.create(domain="example.org")
         r = client.post(reverse("access_delete_domain", kwargs={"pk": d.pk}))
         assert r.status_code == 302
@@ -477,6 +471,99 @@ class TestAccessAllowlist:
         r = client.post(reverse("access_add_domain"), {"domain": "evil.com"})
         assert r.status_code == 404
         assert not AllowedDomain.objects.filter(domain="evil.com").exists()
+
+
+class TestAccessChangePermissionsAndEmails:
+    """Domains are owner-only; emails are owner/manager. Every change
+    notifies the owner and managers and confirms to the actor on-site."""
+
+    def _make_manager(self, mgr):
+        mgr.is_staff = True
+        mgr.save()
+        return mgr
+
+    def test_manager_cannot_add_domain(self, client, owner_user, other_user):
+        # other_user is a manager (staff) but not the owner.
+        self._make_manager(other_user)
+        client.force_login(other_user)
+        r = client.post(
+            reverse("access_add_domain"),
+            {"domain": "example.org"},
+            follow=True,
+        )
+        assert not AllowedDomain.objects.filter(domain="example.org").exists()
+        assert b"Only the system owner" in r.content
+        assert len(mail.outbox) == 0
+
+    def test_manager_cannot_delete_domain(
+        self, client, owner_user, other_user
+    ):
+        self._make_manager(other_user)
+        d = AllowedDomain.objects.create(domain="example.org")
+        client.force_login(other_user)
+        client.post(reverse("access_delete_domain", kwargs={"pk": d.pk}))
+        assert AllowedDomain.objects.filter(pk=d.pk).exists()
+        assert len(mail.outbox) == 0
+
+    def test_owner_add_domain_notifies_owner_and_managers(
+        self, client, owner_user, other_user
+    ):
+        self._make_manager(other_user)
+        client.force_login(owner_user)
+        r = client.post(
+            reverse("access_add_domain"),
+            {"domain": "example.org"},
+            follow=True,
+        )
+        assert AllowedDomain.objects.filter(domain="example.org").exists()
+        assert len(mail.outbox) == 1
+        recipients = set(mail.outbox[0].to)
+        assert "alice@free.law" in recipients  # owner
+        assert "bob@free.law" in recipients  # manager
+        assert b"notified by email" in r.content
+
+    def test_owner_delete_domain_notifies(self, client, owner_user):
+        d = AllowedDomain.objects.create(domain="example.org")
+        client.force_login(owner_user)
+        client.post(reverse("access_delete_domain", kwargs={"pk": d.pk}))
+        assert not AllowedDomain.objects.filter(pk=d.pk).exists()
+        assert len(mail.outbox) == 1
+
+    def test_manager_add_email_notifies_owner_and_managers(
+        self, client, owner_user, other_user
+    ):
+        self._make_manager(other_user)
+        client.force_login(other_user)  # manager, not owner
+        r = client.post(
+            reverse("access_add_email"),
+            {"email": "contractor@gmail.com"},
+            follow=True,
+        )
+        assert AllowedEmail.objects.filter(
+            email="contractor@gmail.com"
+        ).exists()
+        assert len(mail.outbox) == 1
+        recipients = set(mail.outbox[0].to)
+        assert "alice@free.law" in recipients  # owner
+        assert "bob@free.law" in recipients  # manager (actor)
+        assert b"notified by email" in r.content
+
+    def test_manager_delete_email_notifies(
+        self, client, owner_user, other_user
+    ):
+        self._make_manager(other_user)
+        e = AllowedEmail.objects.create(email="contractor@gmail.com")
+        client.force_login(other_user)
+        client.post(reverse("access_delete_email", kwargs={"pk": e.pk}))
+        assert not AllowedEmail.objects.filter(pk=e.pk).exists()
+        assert len(mail.outbox) == 1
+
+    def test_no_duplicate_add_no_email(self, client, owner_user):
+        AllowedDomain.objects.create(domain="example.org")
+        client.force_login(owner_user)
+        client.post(reverse("access_add_domain"), {"domain": "example.org"})
+        # Re-adding an existing domain is a no-op, so nobody is emailed.
+        assert len(mail.outbox) == 0
 
 
 # ── Rate Limiting and 429 Tests ─────────────────────────

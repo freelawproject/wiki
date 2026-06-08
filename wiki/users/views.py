@@ -24,7 +24,7 @@ from wiki.users.models import (
     SystemConfig,
     UserProfile,
 )
-from wiki.users.tasks import send_magic_link_email
+from wiki.users.tasks import notify_access_change, send_magic_link_email
 
 
 # SECURITY: rate limit login POSTs to prevent magic link email spam.
@@ -257,6 +257,18 @@ def _can_manage_admin(user):
     return user.is_staff or is_system_owner(user)
 
 
+def _announce_access_change(request, action, item_type, value):
+    """Notify the owner and managers of a change and confirm to the actor.
+
+    Email sending is a side effect kept outside any transaction.
+    """
+    recipients = notify_access_change(request.user, action, item_type, value)
+    if recipients:
+        messages.info(
+            request, "The owner and managers have been notified by email."
+        )
+
+
 @login_required
 def access_list(request):
     """Manage the sign-in allowlist (domains + individual emails)."""
@@ -271,15 +283,21 @@ def access_list(request):
             "emails": AllowedEmail.objects.all(),
             "domain_form": AllowedDomainForm(),
             "email_form": AllowedEmailForm(),
+            "is_owner": is_system_owner(request.user),
         },
     )
 
 
 @login_required
 def access_add_domain(request):
-    """Add an allowed email domain."""
+    """Add an allowed email domain. Owner only."""
     if not _can_manage_admin(request.user):
         raise Http404
+    if not is_system_owner(request.user):
+        messages.error(
+            request, "Only the system owner can add or remove domains."
+        )
+        return redirect("access_list")
     if request.method != "POST":
         return redirect("access_list")
 
@@ -294,16 +312,18 @@ def access_add_domain(request):
         domain=domain,
         defaults={"note": form.cleaned_data["note"]},
     )
-    if created:
-        messages.success(request, f"Domain {domain} is now allowed.")
-    else:
+    if not created:
         messages.info(request, f"Domain {domain} was already allowed.")
+        return redirect("access_list")
+
+    messages.success(request, f"Domain {domain} is now allowed.")
+    _announce_access_change(request, "added", "domain", domain)
     return redirect("access_list")
 
 
 @login_required
 def access_add_email(request):
-    """Add a single allowed email address."""
+    """Add a single allowed email address. Owner or managers."""
     if not _can_manage_admin(request.user):
         raise Http404
     if request.method != "POST":
@@ -320,31 +340,40 @@ def access_add_email(request):
         email=email,
         defaults={"note": form.cleaned_data["note"]},
     )
-    if created:
-        messages.success(request, f"{email} is now allowed.")
-    else:
+    if not created:
         messages.info(request, f"{email} was already allowed.")
+        return redirect("access_list")
+
+    messages.success(request, f"{email} is now allowed.")
+    _announce_access_change(request, "added", "email address", email)
     return redirect("access_list")
 
 
 @login_required
 def access_delete_domain(request, pk):
-    """Remove an allowed domain."""
+    """Remove an allowed domain. Owner only."""
     if not _can_manage_admin(request.user):
         raise Http404
+    if not is_system_owner(request.user):
+        messages.error(
+            request, "Only the system owner can add or remove domains."
+        )
+        return redirect("access_list")
     if request.method != "POST":
         return redirect("access_list")
 
     domain = AllowedDomain.objects.filter(pk=pk).first()
     if domain:
+        value = domain.domain
         domain.delete()
-        messages.success(request, f"Domain {domain.domain} removed.")
+        messages.success(request, f"Domain {value} removed.")
+        _announce_access_change(request, "removed", "domain", value)
     return redirect("access_list")
 
 
 @login_required
 def access_delete_email(request, pk):
-    """Remove an allowed email address."""
+    """Remove an allowed email address. Owner or managers."""
     if not _can_manage_admin(request.user):
         raise Http404
     if request.method != "POST":
@@ -352,8 +381,10 @@ def access_delete_email(request, pk):
 
     email = AllowedEmail.objects.filter(pk=pk).first()
     if email:
+        value = email.email
         email.delete()
-        messages.success(request, f"{email.email} removed.")
+        messages.success(request, f"{value} removed.")
+        _announce_access_change(request, "removed", "email address", value)
     return redirect("access_list")
 
 
