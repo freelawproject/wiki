@@ -4,6 +4,7 @@ from django.contrib.auth.models import User
 
 from wiki.lib.access import is_email_allowed
 from wiki.lib.permissions import is_system_owner
+from wiki.lib.sessions import revoke_disallowed
 
 from .models import AllowedDomain, AllowedEmail, SystemConfig, UserProfile
 from .tasks import notify_access_change
@@ -113,14 +114,30 @@ class AccessRuleAdmin(admin.ModelAdmin):
     def _audit_value(self, obj):
         return getattr(obj, self.audit_value_field)
 
+    def _affected_users(self, value):
+        """Users whose sign-in depends on this rule value. Subclass hook."""
+        raise NotImplementedError
+
+    def _revoke(self, value):
+        """End sessions + magic links for users this value no longer allows."""
+        revoke_disallowed(self._affected_users(value))
+
     def save_model(self, request, obj, form, change):
+        old_value = None
+        if change:
+            previous = type(obj).objects.filter(pk=obj.pk).first()
+            old_value = self._audit_value(previous) if previous else None
         super().save_model(request, obj, form, change)
+        new_value = self._audit_value(obj)
         notify_access_change(
             request.user,
             "updated" if change else "added",
             self.audit_item_type,
-            self._audit_value(obj),
+            new_value,
         )
+        # A rename strands users on the old value; revoke them if now barred.
+        if old_value and old_value != new_value:
+            self._revoke(old_value)
 
     def delete_model(self, request, obj):
         value = self._audit_value(obj)
@@ -128,6 +145,7 @@ class AccessRuleAdmin(admin.ModelAdmin):
         notify_access_change(
             request.user, "removed", self.audit_item_type, value
         )
+        self._revoke(value)
 
     def delete_queryset(self, request, queryset):
         values = [self._audit_value(o) for o in queryset]
@@ -136,6 +154,7 @@ class AccessRuleAdmin(admin.ModelAdmin):
             notify_access_change(
                 request.user, "removed", self.audit_item_type, value
             )
+            self._revoke(value)
 
 
 @admin.register(AllowedDomain)
@@ -144,6 +163,9 @@ class AllowedDomainAdmin(AccessRuleAdmin):
     search_fields = ["domain", "note"]
     audit_item_type = "domain"
     audit_value_field = "domain"
+
+    def _affected_users(self, value):
+        return User.objects.filter(email__iendswith=f"@{value}")
 
     # SECURITY: domains are owner-only, matching the custom Access views.
     # Managers are Django superusers (admin_toggle sets is_superuser), so
@@ -164,3 +186,6 @@ class AllowedEmailAdmin(AccessRuleAdmin):
     search_fields = ["email", "note"]
     audit_item_type = "email address"
     audit_value_field = "email"
+
+    def _affected_users(self, value):
+        return User.objects.filter(email__iexact=value)

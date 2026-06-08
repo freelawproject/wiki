@@ -8,6 +8,7 @@ from django.contrib.auth import SESSION_KEY
 from django.contrib.auth.models import User
 from django.contrib.sessions.models import Session
 from django.core import mail
+from django.core.exceptions import ValidationError
 from django.test import Client, RequestFactory
 from django.urls import reverse
 
@@ -624,6 +625,13 @@ def _make_user(email):
     return u
 
 
+def _has_active_session(user):
+    return any(
+        s.get_decoded().get(SESSION_KEY) == str(user.pk)
+        for s in Session.objects.all()
+    )
+
+
 class TestHandleAssignment:
     """Handles are unique; collisions use the domain suffix, else a number."""
 
@@ -734,6 +742,92 @@ class TestLogoutOnAccessRemoval:
         client.force_login(owner_user)
         client.post(reverse("access_delete_email", kwargs={"pk": e.pk}))
         assert not self._has_session(member)
+
+    def test_removing_domain_clears_outstanding_magic_link(
+        self, client, owner_user
+    ):
+        AllowedDomain.objects.create(domain="example.org", suffix="ex")
+        member = _make_user("z@example.org")
+        member.profile.set_magic_token("a-token")
+        member.profile.save()
+
+        d = AllowedDomain.objects.get(domain="example.org")
+        client.force_login(owner_user)
+        client.post(reverse("access_delete_domain", kwargs={"pk": d.pk}))
+        member.profile.refresh_from_db()
+        assert member.profile.magic_link_token == ""
+        assert member.profile.magic_link_expires is None
+
+
+class TestVerifyRespectsAllowlist:
+    """A magic link must not redeem after the user's access is revoked."""
+
+    def test_revoked_link_is_rejected_and_cleared(self, client, db):
+        AllowedDomain.objects.create(domain="example.org", suffix="ex")
+        client.post(reverse("login"), {"email": "alice@example.org"})
+        token = re.search(r"token=([^&]+)", mail.outbox[0].body).group(1)
+
+        # Revoke access (delete the row directly, leaving the token intact).
+        AllowedDomain.objects.filter(domain="example.org").delete()
+
+        r = client.get(
+            reverse("verify"),
+            {"token": token, "email": "alice@example.org"},
+        )
+        assert r.status_code == 302
+        assert r.url == reverse("login")
+        profile = User.objects.get(username="alice@example.org").profile
+        assert profile.magic_link_token == ""  # token killed at redemption
+
+
+class TestAdminAccessRevocation:
+    """Removing allowlist rows via the Django admin also cuts access."""
+
+    def _admin(self, user):
+        user.is_staff = True
+        user.is_superuser = True
+        user.save()
+        return user
+
+    def test_admin_domain_delete_ends_sessions(self, client, owner_user):
+        # owner_user is the system owner (required to delete a domain).
+        self._admin(owner_user)
+        AllowedDomain.objects.create(domain="example.org", suffix="ex")
+        member = _make_user("y@example.org")
+        member_client = Client()
+        member_client.force_login(member)
+        member_client.get(reverse("root"), follow=True)
+        assert _has_active_session(member)
+
+        d = AllowedDomain.objects.get(domain="example.org")
+        client.force_login(owner_user)
+        client.post(
+            reverse("admin:users_alloweddomain_delete", args=[d.pk]),
+            {"post": "yes"},
+        )
+        assert not AllowedDomain.objects.filter(pk=d.pk).exists()
+        assert not _has_active_session(member)
+
+    def test_admin_rejects_plus_addressed_email(self, client, owner_user):
+        self._admin(owner_user)
+        client.force_login(owner_user)
+        client.post(
+            reverse("admin:users_allowedemail_add"),
+            {"email": "mike+x@gmail.com"},
+        )
+        assert not AllowedEmail.objects.filter(
+            email="mike+x@gmail.com"
+        ).exists()
+
+
+class TestAllowedEmailModel:
+    def test_clean_rejects_plus_addressing(self, db):
+        with pytest.raises(ValidationError):
+            AllowedEmail(email="mike+x@gmail.com").full_clean()
+
+    def test_clean_allows_plain_address(self, db):
+        # Should not raise.
+        AllowedEmail(email="mike@gmail.com").full_clean()
 
 
 # ── Rate Limiting and 429 Tests ─────────────────────────

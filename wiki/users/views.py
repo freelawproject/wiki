@@ -12,7 +12,7 @@ from django.shortcuts import redirect, render
 from wiki.lib.access import is_email_allowed
 from wiki.lib.permissions import is_system_owner
 from wiki.lib.ratelimiter import ratelimit_login
-from wiki.lib.sessions import end_sessions_for_users
+from wiki.lib.sessions import end_sessions_for_users, revoke_disallowed
 from wiki.lib.users import assign_handle
 from wiki.users.forms import (
     AllowedDomainForm,
@@ -106,6 +106,18 @@ def verify_view(request):
             request,
             "Your account has been archived. "
             "Contact an admin to restore access.",
+        )
+        return redirect("login")
+
+    # An outstanding magic link is a bearer credential: re-check the
+    # allowlist at redemption so a link minted before the user's domain or
+    # address was removed can't still mint a session. Kill the token too.
+    if not is_email_allowed(user.email):
+        profile.clear_magic_token()
+        profile.save()
+        messages.error(
+            request,
+            "Your sign-in access has been revoked. Contact an admin.",
         )
         return redirect("login")
 
@@ -362,16 +374,6 @@ def access_add_email(request):
     return redirect("access_list")
 
 
-def _logout_now_disallowed(users):
-    """End sessions for any of ``users`` whose email is no longer allowed.
-
-    Called after a domain/email is removed so access is cut immediately,
-    while leaving anyone still covered by another allowlist entry signed in.
-    """
-    blocked = [u.id for u in users if not is_email_allowed(u.email)]
-    end_sessions_for_users(blocked)
-
-
 @login_required
 def access_delete_domain(request, pk):
     """Remove an allowed domain. Owner only."""
@@ -389,9 +391,7 @@ def access_delete_domain(request, pk):
     if domain:
         value = domain.domain
         domain.delete()
-        _logout_now_disallowed(
-            User.objects.filter(email__iendswith=f"@{value}")
-        )
+        revoke_disallowed(User.objects.filter(email__iendswith=f"@{value}"))
         messages.success(request, f"Domain {value} removed.")
         _announce_access_change(request, "removed", "domain", value)
     return redirect("access_list")
@@ -409,7 +409,7 @@ def access_delete_email(request, pk):
     if email:
         value = email.email
         email.delete()
-        _logout_now_disallowed(User.objects.filter(email__iexact=value))
+        revoke_disallowed(User.objects.filter(email__iexact=value))
         messages.success(request, f"{value} removed.")
         _announce_access_change(request, "removed", "email address", value)
     return redirect("access_list")

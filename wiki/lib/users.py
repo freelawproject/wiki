@@ -9,6 +9,8 @@ suffix). See ``assign_handle``.
 
 import re
 
+from django.db import IntegrityError, transaction
+
 from wiki.users.models import AllowedDomain, UserProfile
 
 HANDLE_MAX = 64
@@ -69,6 +71,27 @@ def _suffix_for_email(email):
     return row.suffix if row else None
 
 
+def _handle_candidates(base, suffix):
+    """Yield handle candidates in priority order, indefinitely.
+
+    Bare base first, then the domain suffix (or numbers when there's no
+    suffix), then numbered variants — so collisions disambiguate the way
+    the design specifies.
+    """
+    yield _compose(base, "")
+    if suffix:
+        yield _compose(base, suffix)
+        n = 2
+        while True:
+            yield _compose(base, f"{suffix}-{n}")
+            n += 1
+    else:
+        n = 2
+        while True:
+            yield _compose(base, str(n))
+            n += 1
+
+
 def assign_handle(profile):
     """Assign and persist a unique handle to ``profile``.
 
@@ -76,12 +99,19 @@ def assign_handle(profile):
     claimant of a base keeps it; a colliding account gets ``<base>-<suffix>``
     (its domain's suffix), or ``<base>-2`` when the address has no domain
     suffix (an individually-allowed email) or the suffixed handle is taken.
+
+    The ``taken`` pre-check skips known collisions, but the unique constraint
+    is the real arbiter: two concurrent first sign-ins can both pass the
+    pre-check, so we catch ``IntegrityError`` and fall through to the next
+    candidate. ``transaction.atomic`` wraps each attempt as a savepoint so a
+    failed insert doesn't poison the surrounding transaction on PostgreSQL.
     """
     if profile.handle:
         return profile.handle
 
     email = profile.user.email
     base = sanitize_handle_base(email)
+    suffix = _suffix_for_email(email)
 
     def taken(h):
         return (
@@ -90,25 +120,17 @@ def assign_handle(profile):
             .exists()
         )
 
-    candidate = _compose(base, "")
-    if taken(candidate):
-        suffix = _suffix_for_email(email)
-        if suffix:
-            candidate = _compose(base, suffix)
-            n = 2
-            while taken(candidate):
-                candidate = _compose(base, f"{suffix}-{n}")
-                n += 1
-        else:
-            n = 2
-            candidate = _compose(base, str(n))
-            while taken(candidate):
-                n += 1
-                candidate = _compose(base, str(n))
-
-    profile.handle = candidate
-    profile.save(update_fields=["handle"])
-    return candidate
+    for candidate in _handle_candidates(base, suffix):
+        if taken(candidate):
+            continue
+        profile.handle = candidate
+        try:
+            with transaction.atomic():
+                profile.save(update_fields=["handle"])
+            return candidate
+        except IntegrityError:
+            # Lost the race for this handle; try the next candidate.
+            continue
 
 
 def user_by_handle(handle):

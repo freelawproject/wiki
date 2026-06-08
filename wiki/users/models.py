@@ -1,6 +1,7 @@
 import hashlib
 
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
 
@@ -161,6 +162,19 @@ class AllowedEmail(models.Model):
     @staticmethod
     def normalize(email):
         return email.strip().lower()
+
+    def clean(self):
+        # Plus-addressing is blocked at sign-in (is_email_allowed), so an
+        # allowlisted plus address would be a dead row. Reject it here too so
+        # the Django admin's auto-form catches it, not just the custom form.
+        local = self.normalize(self.email).split("@", 1)[0]
+        if "+" in local:
+            raise ValidationError(
+                {
+                    "email": "Plus-addressing isn't allowed; "
+                    "use the base address instead."
+                }
+            )
 
     def save(self, *args, **kwargs):
         self.email = self.normalize(self.email)
