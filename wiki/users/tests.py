@@ -11,6 +11,8 @@ from django.core import mail
 from django.test import Client, RequestFactory
 from django.urls import reverse
 
+from wiki.lib.access import is_email_allowed
+from wiki.lib.users import user_by_local_part
 from wiki.lib.views import ratelimited
 from wiki.users.models import (
     AllowedDomain,
@@ -404,8 +406,6 @@ class TestAccessAllowlist:
     """Sign-in allowlist model + admin management UI."""
 
     def test_is_email_allowed_helper(self, db):
-        from wiki.lib.access import is_email_allowed
-
         AllowedDomain.objects.create(domain="example.org")
         AllowedEmail.objects.create(email="solo@gmail.com")
         assert is_email_allowed("anyone@example.org")
@@ -564,6 +564,27 @@ class TestAccessChangePermissionsAndEmails:
         client.post(reverse("access_add_domain"), {"domain": "example.org"})
         # Re-adding an existing domain is a no-op, so nobody is emailed.
         assert len(mail.outbox) == 0
+
+
+class TestUserByLocalPart:
+    """@-mention / username resolution must be unambiguous across domains."""
+
+    def test_unique_local_part_resolves(self, user):
+        assert user_by_local_part("alice") == user
+
+    def test_ambiguous_local_part_returns_none(self, db):
+        # Two domains, same local part — resolving would guess wrong.
+        User.objects.create_user(username="bob@free.law", email="bob@free.law")
+        User.objects.create_user(
+            username="bob@example.org", email="bob@example.org"
+        )
+        assert user_by_local_part("bob") is None
+
+    def test_no_match_returns_none(self, db):
+        assert user_by_local_part("nobody") is None
+
+    def test_blank_returns_none(self, db):
+        assert user_by_local_part("") is None
 
 
 # ── Rate Limiting and 429 Tests ─────────────────────────

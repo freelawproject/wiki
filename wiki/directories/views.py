@@ -1,7 +1,6 @@
 from django.conf import settings as django_settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
-from django.contrib.auth.models import User
 from django.db import transaction
 from django.db.models import Q
 from django.http import Http404, JsonResponse
@@ -30,6 +29,7 @@ from wiki.lib.permissions import (
 )
 from wiki.lib.ratelimiter import ratelimit_search
 from wiki.lib.seo import build_breadcrumbs_jsonld, extract_description
+from wiki.lib.users import user_by_local_part
 from wiki.pages.diff_utils import unified_diff
 from wiki.pages.models import Page, PagePermission
 from wiki.subscriptions.utils import is_effectively_subscribed_to_directory
@@ -517,9 +517,7 @@ def _directory_permissions_inner(request, directory):
             if not username:
                 messages.error(request, "Please enter a username.")
             else:
-                user = User.objects.filter(
-                    email__istartswith=username + "@"
-                ).first()
+                user = user_by_local_part(username)
                 if not user:
                     messages.error(
                         request,

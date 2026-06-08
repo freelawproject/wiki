@@ -7,7 +7,7 @@ from django.core.signing import Signer
 from django.urls import reverse
 
 from wiki.lib.permissions import can_view_page
-from wiki.lib.users import display_name
+from wiki.lib.users import display_name, user_by_local_part
 from wiki.pages.models import Page, PagePermission
 
 from .utils import get_subscriber_info_for_page
@@ -163,7 +163,7 @@ def process_mentions(
     grant_map = grant_access_to or {}
 
     for uname in mentioned_usernames:
-        user = User.objects.filter(email__istartswith=uname + "@").first()
+        user = user_by_local_part(uname)
         if not user or user.id == editor_id:
             continue
 
