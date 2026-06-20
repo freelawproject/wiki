@@ -4,7 +4,7 @@ from django.contrib.auth.models import Group
 from wiki.directories.models import Directory
 from wiki.lib.data_source import is_domain_allowed
 from wiki.lib.inheritance import resolve_effective_value
-from wiki.lib.permissions import can_view_directory
+from wiki.lib.permissions import can_administer_directory
 from wiki.users.models import AllowedDomain
 
 from .models import Page, PagePermission
@@ -23,11 +23,15 @@ class PageMoveForm(forms.Form):
         qs = Directory.objects.exclude(path="").order_by("path")
         if exclude_current:
             qs = qs.exclude(pk=exclude_current.pk)
-        # SECURITY: only show directories the user can view so that
-        # private directory names are never leaked in the dropdown.
+        # SECURITY: only offer directories the user may administer. Moving a
+        # page can change its effective visibility, so a legitimate
+        # destination requires owner-level rights there — not merely view
+        # access (which would also leak private directory names).
         if user:
-            visible_pks = [d.pk for d in qs if can_view_directory(user, d)]
-            qs = qs.filter(pk__in=visible_pks)
+            allowed_pks = [
+                d.pk for d in qs if can_administer_directory(user, d)
+            ]
+            qs = qs.filter(pk__in=allowed_pks)
         self.fields["directory"].queryset = qs
         self.fields["directory"].label_from_instance = lambda d: f"/{d.path}"
 

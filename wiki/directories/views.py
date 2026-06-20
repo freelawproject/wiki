@@ -44,6 +44,32 @@ from .forms import (
 from .models import Directory, DirectoryPermission, DirectoryRevision
 
 
+def _grant_copy_kwargs(source_perm, **target):
+    """Build get_or_create kwargs to copy a permission grant onto ``target``.
+
+    Handles all three subject types (user / group / domain): the source's
+    subject becomes the lookup key and the other two subjects are forced NULL
+    in ``defaults``. Pinning the unused subjects to NULL keeps the lookup on
+    the right partial-unique index, so a domain grant can't accidentally match
+    (or collide with) a user/group row of the same permission_type on the
+    child.
+    """
+    kwargs = dict(target)
+    kwargs["permission_type"] = source_perm.permission_type
+    subjects = {"user": None, "group": None, "grant_domain": None}
+    if source_perm.user_id:
+        subjects["user"] = source_perm.user
+    elif source_perm.group_id:
+        subjects["group"] = source_perm.group
+    else:
+        subjects["grant_domain"] = source_perm.grant_domain
+    # The set subject is the lookup key; the other two go in defaults.
+    key = next(k for k, v in subjects.items() if v is not None)
+    kwargs[key] = subjects[key]
+    kwargs["defaults"] = {k: v for k, v in subjects.items() if k != key}
+    return kwargs
+
+
 def _create_revision(directory, user, change_message=""):
     """Create a new DirectoryRevision for the given directory."""
     last = directory.revisions.order_by("-revision_number").first()
@@ -855,17 +881,9 @@ def _directory_apply_permissions_inner(request, directory):
                     ]
                 )
                 for dp in dir_perms:
-                    kwargs = {
-                        "page": page,
-                        "permission_type": dp.permission_type,
-                    }
-                    if dp.user_id:
-                        kwargs["user"] = dp.user
-                        kwargs["defaults"] = {"group": None}
-                    else:
-                        kwargs["group"] = dp.group
-                        kwargs["defaults"] = {"user": None}
-                    PagePermission.objects.get_or_create(**kwargs)
+                    PagePermission.objects.get_or_create(
+                        **_grant_copy_kwargs(dp, page=page)
+                    )
 
         def apply_to_dirs_recursive(parent_dir):
             """Recursively set child directories to inherit."""
@@ -883,17 +901,9 @@ def _directory_apply_permissions_inner(request, directory):
                     ]
                 )
                 for dp in dir_perms:
-                    kwargs = {
-                        "directory": child,
-                        "permission_type": dp.permission_type,
-                    }
-                    if dp.user_id:
-                        kwargs["user"] = dp.user
-                        kwargs["defaults"] = {"group": None}
-                    else:
-                        kwargs["group"] = dp.group
-                        kwargs["defaults"] = {"user": None}
-                    DirectoryPermission.objects.get_or_create(**kwargs)
+                    DirectoryPermission.objects.get_or_create(
+                        **_grant_copy_kwargs(dp, directory=child)
+                    )
                 # Apply to pages in this child directory
                 apply_to_pages(child.pages.all())
                 # Recurse

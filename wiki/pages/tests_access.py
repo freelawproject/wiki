@@ -6,11 +6,15 @@ and the cleanup job that expires dormant domain grants.
 
 import json
 
+import pytest
+from django.contrib.auth.models import User
 from django.core.management import call_command
 from django.urls import reverse
 from django.utils import timezone
 
+from wiki.directories.models import Directory
 from wiki.pages.models import Page, PagePermission, PageRevision
+from wiki.users.models import AccessTier, AllowedDomain, UserProfile
 
 
 def _page(owner, slug, visibility=Page.Visibility.PUBLIC):
@@ -102,3 +106,87 @@ class TestCleanupDormantGrants:
         assert not PagePermission.objects.filter(pk=stale.pk).exists()
         assert PagePermission.objects.filter(pk=recent.pk).exists()
         assert PagePermission.objects.filter(pk=active.pk).exists()
+
+
+@pytest.fixture
+def guest(db):
+    AllowedDomain.objects.create(
+        domain="acme.com", suffix="acme", tier=AccessTier.GUEST
+    )
+    u = User.objects.create_user(
+        username="carol@acme.com", email="carol@acme.com", password="x"
+    )
+    UserProfile.objects.create(user=u)
+    return u
+
+
+class TestPageMoveIsOwnerOnly:
+    """A guest with an EDIT grant must not be able to move a page (which can
+    change its effective visibility). Moving is owner-only."""
+
+    def _dirs(self, owner):
+        root = Directory.objects.create(path="", title="Home")
+        internal = Directory.objects.create(
+            path="internal",
+            title="Internal",
+            parent=root,
+            owner=owner,
+            created_by=owner,
+            visibility=Directory.Visibility.INTERNAL,
+        )
+        public = Directory.objects.create(
+            path="public",
+            title="Public",
+            parent=root,
+            owner=owner,
+            created_by=owner,
+            visibility=Directory.Visibility.PUBLIC,
+        )
+        return internal, public
+
+    def test_edit_grant_cannot_move_page(self, client, user, guest):
+        internal, public = self._dirs(user)
+        page = Page.objects.create(
+            title="Secret",
+            slug="secret",
+            content="x",
+            directory=internal,
+            owner=user,
+            created_by=user,
+            updated_by=user,
+            visibility=Page.Visibility.INHERIT,
+        )
+        PagePermission.objects.create(
+            page=page,
+            grant_domain="acme.com",
+            permission_type=PagePermission.PermissionType.EDIT,
+        )
+        client.force_login(guest)
+        client.post(
+            reverse("page_move", kwargs={"path": page.content_path}),
+            {"directory": public.pk},
+        )
+        # Denied; the page stays put (and therefore stays effectively internal).
+        page.refresh_from_db()
+        assert page.directory_id == internal.id
+
+    def test_owner_can_still_move(self, client, user):
+        internal, public = self._dirs(user)
+        page = Page.objects.create(
+            title="Doc",
+            slug="doc",
+            content="x",
+            directory=internal,
+            owner=user,
+            created_by=user,
+            updated_by=user,
+            visibility=Page.Visibility.INHERIT,
+        )
+        client.force_login(user)
+        r = client.post(
+            reverse("page_move", kwargs={"path": page.content_path}),
+            {"directory": public.pk},
+        )
+        assert r.status_code == 302
+        page.refresh_from_db()
+        assert page.directory_id == public.id

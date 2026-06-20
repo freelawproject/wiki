@@ -66,7 +66,9 @@ def _compose(base, tail):
 
 def _suffix_for_email(email):
     """The collision suffix for an address: its domain's suffix, else None."""
-    domain = email.split("@", 1)[1] if "@" in email else ""
+    # Lowercase to match AllowedDomain.save(), which stores domains lowercase;
+    # an admin-created User may carry a mixed-case email.
+    domain = email.split("@", 1)[1].lower() if "@" in email else ""
     row = AllowedDomain.objects.filter(domain=domain).first()
     return row.suffix if row else None
 

@@ -733,7 +733,9 @@ def page_move(request, path):
     if not can_view_page(request.user, page):
         raise Http404
 
-    if not can_edit_page(request.user, page):
+    # Owner-only: moving a page can change its effective (inherited) visibility,
+    # so it's an administration action, not plain content editing.
+    if not can_administer_page(request.user, page):
         messages.error(request, "You don't have permission to move this page.")
         return redirect(page.get_absolute_url())
 
