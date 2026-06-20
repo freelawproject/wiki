@@ -9,7 +9,7 @@ whole email domains (:class:`AllowedDomain`) plus individual addresses
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
 
-from wiki.users.models import AllowedDomain, AllowedEmail
+from wiki.users.models import AccessTier, AllowedDomain, AllowedEmail
 
 
 def is_email_allowed(email):
@@ -55,3 +55,56 @@ def is_email_allowed(email):
     if AllowedEmail.objects.filter(email=email).exists():
         return True
     return AllowedDomain.objects.filter(domain=domain).exists()
+
+
+def resolve_tier(email):
+    """Return the access tier (``staff``/``third_party``) for ``email``.
+
+    An exact :class:`AllowedEmail` match wins over the address's domain, so an
+    individual can be elevated to staff (or held back to third-party) even when
+    their domain says otherwise. Returns ``None`` if the address is not on the
+    allowlist at all.
+    """
+    email = (email or "").strip().lower()
+    if "@" not in email:
+        return None
+    domain = email.rsplit("@", 1)[1]
+
+    row = (
+        AllowedEmail.objects.filter(email=email)
+        .values_list("tier", flat=True)
+        .first()
+    )
+    if row is not None:
+        return row
+    return (
+        AllowedDomain.objects.filter(domain=domain)
+        .values_list("tier", flat=True)
+        .first()
+    )
+
+
+def is_internal_user(user):
+    """Return True if ``user`` is part of the "internal" (staff) audience.
+
+    Staff see ``internal`` content without an explicit grant — the audience
+    that *every* authenticated user used to be before outside orgs could sign
+    in. Third parties get ``public`` content plus only what's explicitly
+    granted to them, their group, or their domain.
+
+    The system owner and managers always count as staff (both carry
+    ``is_staff``/``is_superuser`` — set in ``login_view`` and ``admin_toggle``);
+    everyone else is staff only if their allowlist entry's tier says so.
+    Cached on the user object for the duration of the request.
+    """
+    if not getattr(user, "is_authenticated", False):
+        return False
+    cached = getattr(user, "_is_internal_user_cache", None)
+    if cached is not None:
+        return cached
+
+    result = bool(user.is_staff or user.is_superuser) or (
+        resolve_tier(user.email) == AccessTier.STAFF
+    )
+    user._is_internal_user_cache = result
+    return result

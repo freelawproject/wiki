@@ -23,6 +23,7 @@ from wiki.lib.inheritance import (
 from wiki.lib.markdown import render_markdown
 from wiki.lib.path_utils import directory_path_conflicts_with_page
 from wiki.lib.permissions import (
+    can_administer_directory,
     can_edit_directory,
     can_view_directory,
     can_view_page,
@@ -172,6 +173,7 @@ def root_view(request):
             "current_sort": sort,
             "rendered_description": rendered_description,
             "can_edit": can_edit_directory(request.user, root),
+            "can_administer": can_administer_directory(request.user, root),
             "is_public": is_public,
             "directory_description": directory_description,
             "breadcrumbs_json": breadcrumbs_json,
@@ -214,7 +216,12 @@ def directory_edit_root(request):
             )
         acquire_lock_for_directory(root, request.user)
 
-    form = DirectoryForm(request.POST or None, instance=root, is_root=True)
+    form = DirectoryForm(
+        request.POST or None,
+        instance=root,
+        is_root=True,
+        can_administer=can_administer_directory(request.user, root),
+    )
     if request.method == "POST" and form.is_valid():
         with transaction.atomic():
             form.save()
@@ -305,6 +312,9 @@ def directory_detail(request, path):
             "breadcrumbs": breadcrumbs,
             "rendered_description": rendered_description,
             "can_edit": can_edit_directory(request.user, directory),
+            "can_administer": can_administer_directory(
+                request.user, directory
+            ),
             "current_sort": sort,
             "is_public": is_public,
             "directory_description": directory_description,
@@ -358,7 +368,11 @@ def directory_edit(request, path):
     # Snapshot old values before form binding (is_valid modifies instance)
     old_values = {f: getattr(directory, f) for f in INHERITABLE_FIELDS}
 
-    form = DirectoryForm(request.POST or None, instance=directory)
+    form = DirectoryForm(
+        request.POST or None,
+        instance=directory,
+        can_administer=can_administer_directory(request.user, directory),
+    )
     if request.method == "POST" and form.is_valid():
         with transaction.atomic():
             form.save()
@@ -467,7 +481,7 @@ def _directory_permissions_inner(request, directory):
     if not can_view_directory(request.user, directory):
         raise Http404
 
-    if not can_edit_directory(request.user, directory):
+    if not can_administer_directory(request.user, directory):
         messages.error(
             request,
             "You don't have permission to manage this directory.",
@@ -512,6 +526,28 @@ def _directory_permissions_inner(request, directory):
                     )
             else:
                 messages.error(request, "Please select a group.")
+        elif target_type == "domain":
+            domain = form.cleaned_data.get("allowed_domain")
+            if domain:
+                _, created = DirectoryPermission.objects.get_or_create(
+                    directory=directory,
+                    grant_domain=domain.domain,
+                    permission_type=perm_type,
+                    defaults={"user": None},
+                )
+                if created:
+                    messages.success(
+                        request,
+                        f"Granted {perm_type} access to everyone "
+                        f"@{domain.domain}.",
+                    )
+                else:
+                    messages.info(
+                        request,
+                        f"@{domain.domain} already has {perm_type} access.",
+                    )
+            else:
+                messages.error(request, "Please select a domain.")
         else:
             username = form.cleaned_data.get("username", "").strip()
             if not username:
@@ -551,6 +587,9 @@ def _directory_permissions_inner(request, directory):
         .select_related("group")
         .order_by("permission_type", "group__name")
     )
+    domain_perms = directory.permissions.filter(
+        grant_domain__isnull=False
+    ).order_by("permission_type", "grant_domain")
 
     return render(
         request,
@@ -560,6 +599,7 @@ def _directory_permissions_inner(request, directory):
             "form": form,
             "user_permissions": user_perms,
             "group_permissions": group_perms,
+            "domain_permissions": domain_perms,
         },
     )
 
@@ -586,7 +626,7 @@ def directory_move(request, path):
     if not can_view_directory(request.user, directory):
         raise Http404
 
-    if not can_edit_directory(request.user, directory):
+    if not can_administer_directory(request.user, directory):
         messages.error(
             request,
             "You don't have permission to move this directory.",
@@ -667,7 +707,7 @@ def directory_delete(request, path):
     if not can_view_directory(request.user, directory):
         raise Http404
 
-    if not can_edit_directory(request.user, directory):
+    if not can_administer_directory(request.user, directory):
         messages.error(
             request,
             "You don't have permission to delete this directory.",
@@ -757,7 +797,9 @@ def directory_inherit_meta(request):
     """
     dir_path = request.GET.get("path", "").strip()
     directory = Directory.objects.filter(path=dir_path).first()
-    if not directory:
+    # Same 404 for "missing" and "not allowed to see it" so this can't be used
+    # to probe the existence or settings of directories the user can't view.
+    if not directory or not can_view_directory(request.user, directory):
         return JsonResponse({}, status=404)
 
     field_display_maps = {
@@ -784,7 +826,7 @@ def _directory_apply_permissions_inner(request, directory):
     if not can_view_directory(request.user, directory):
         raise Http404
 
-    if not can_edit_directory(request.user, directory):
+    if not can_administer_directory(request.user, directory):
         messages.error(
             request,
             "You don't have permission to manage this directory.",

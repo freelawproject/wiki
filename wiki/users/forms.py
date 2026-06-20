@@ -2,8 +2,7 @@ import re
 
 from django import forms
 
-from wiki.lib.access import is_email_allowed
-from wiki.users.models import AllowedDomain
+from wiki.users.models import AccessTier, AllowedDomain
 
 
 class LoginForm(forms.Form):
@@ -18,13 +17,10 @@ class LoginForm(forms.Form):
     )
 
     def clean_email(self):
-        email = self.cleaned_data["email"].lower().strip()
-        if not is_email_allowed(email):
-            raise forms.ValidationError(
-                "That email address isn't allowed to sign in. "
-                "Contact an admin if you need access."
-            )
-        return email
+        # Only normalize here. The allowlist check lives in the view so the
+        # response is identical whether or not the address is allowed — the
+        # form must not reveal who can sign in (enumeration oracle).
+        return self.cleaned_data["email"].lower().strip()
 
 
 class UserSettingsForm(forms.Form):
@@ -41,6 +37,11 @@ class AllowedDomainForm(forms.Form):
         widget=forms.TextInput(
             attrs={"placeholder": "example.com", "class": "input-text w-full"}
         ),
+    )
+    tier = forms.ChoiceField(
+        choices=AccessTier.choices,
+        initial=AccessTier.THIRD_PARTY,
+        widget=forms.Select(attrs={"class": "input-text w-full"}),
     )
     suffix = forms.CharField(
         max_length=32,
@@ -88,6 +89,11 @@ class AllowedEmailForm(forms.Form):
                 "class": "input-text w-full",
             }
         ),
+    )
+    tier = forms.ChoiceField(
+        choices=AccessTier.choices,
+        initial=AccessTier.THIRD_PARTY,
+        widget=forms.Select(attrs={"class": "input-text w-full"}),
     )
     note = forms.CharField(
         max_length=255,

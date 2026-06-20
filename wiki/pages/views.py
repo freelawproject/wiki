@@ -38,11 +38,11 @@ from wiki.lib.page_utils import (
 )
 from wiki.lib.path_utils import page_path_conflicts_with_directory
 from wiki.lib.permissions import (
+    can_administer_page,
     can_edit_directory,
     can_edit_page,
     can_view_directory,
     can_view_page,
-    is_system_owner,
     viewable_pages_q,
 )
 from wiki.lib.ratelimiter import (
@@ -448,9 +448,9 @@ def _render_page_detail(request, page):
     people = _get_page_people(page)
 
     can_edit = can_edit_page(request.user, page)
-    can_delete = request.user.is_authenticated and (
-        page.owner == request.user or is_system_owner(request.user)
-    )
+    can_administer = can_administer_page(request.user, page)
+    # Deletion and other management actions are owner-level (can_administer).
+    can_delete = can_administer
     pending_proposal_count = 0
     pending_comment_count = 0
     if can_edit:
@@ -490,6 +490,7 @@ def _render_page_detail(request, page):
             "rendered_content": rendered_content,
             "toc": toc,
             "can_edit": can_edit,
+            "can_administer": can_administer,
             "can_delete": can_delete,
             "pending_proposal_count": pending_proposal_count,
             "pending_comment_count": pending_comment_count,
@@ -658,6 +659,7 @@ def page_edit(request, path):
         instance=page,
         editing=True,
         directory=form_directory,
+        can_administer=can_administer_page(request.user, page),
     )
     if request.method != "POST":
         form.initial["change_message"] = ""
@@ -802,7 +804,7 @@ def page_delete(request, path):
     if not can_view_page(request.user, page):
         raise Http404
 
-    if page.owner != request.user and not is_system_owner(request.user):
+    if not can_administer_page(request.user, page):
         messages.error(
             request, "You don't have permission to delete this page."
         )
@@ -857,7 +859,7 @@ def page_permissions(request, path):
     if not can_view_page(request.user, page):
         raise Http404
 
-    if not can_edit_page(request.user, page):
+    if not can_administer_page(request.user, page):
         messages.error(
             request, "You don't have permission to manage this page."
         )
@@ -902,6 +904,28 @@ def page_permissions(request, path):
                     )
             else:
                 messages.error(request, "Please select a group.")
+        elif target_type == "domain":
+            domain = form.cleaned_data.get("allowed_domain")
+            if domain:
+                _, created = PagePermission.objects.get_or_create(
+                    page=page,
+                    grant_domain=domain.domain,
+                    permission_type=perm_type,
+                    defaults={"user": None},
+                )
+                if created:
+                    messages.success(
+                        request,
+                        f"Granted {perm_type} access to everyone "
+                        f"@{domain.domain}.",
+                    )
+                else:
+                    messages.info(
+                        request,
+                        f"@{domain.domain} already has {perm_type} access.",
+                    )
+            else:
+                messages.error(request, "Please select a domain.")
         else:
             username = form.cleaned_data.get("username", "").strip()
             if not username:
@@ -947,6 +971,9 @@ def page_permissions(request, path):
         .select_related("group")
         .order_by("permission_type", "group__name")
     )
+    domain_perms = page.permissions.filter(
+        grant_domain__isnull=False
+    ).order_by("permission_type", "grant_domain")
 
     return render(
         request,
@@ -956,6 +983,7 @@ def page_permissions(request, path):
             "form": form,
             "user_permissions": user_perms,
             "group_permissions": group_perms,
+            "domain_permissions": domain_perms,
         },
     )
 
@@ -1109,6 +1137,15 @@ def check_page_permissions(request):
     users_without_access = []
     page = page_at_path(page_path) if page_path else None
 
+    # SECURITY: this advisory is only for someone editing the page. Gating it
+    # here (and filtering linked pages by the requester's own view access
+    # below) keeps it from leaking the existence/title/visibility of private
+    # pages to anyone who can POST guessed paths. A new page being created has
+    # no row yet (page is None); that's allowed since there's nothing to leak
+    # about the page itself, and linked pages are still view-filtered.
+    if page is not None and not can_edit_page(request.user, page):
+        return JsonResponse({"error": "Forbidden"}, status=403)
+
     page_eff_vis = None
     if page:
         page_eff_vis, _ = resolve_effective_value(page, "visibility")
@@ -1132,7 +1169,8 @@ def check_page_permissions(request):
             if link_path == page_path:
                 continue
             linked = page_at_path(link_path)
-            if not linked:
+            # Never reveal a page the requester can't view themselves.
+            if not linked or not can_view_page(request.user, linked):
                 continue
             linked_vis, _ = resolve_effective_value(linked, "visibility")
             # Flag if current page is more open than the linked page

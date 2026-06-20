@@ -410,10 +410,21 @@ MAX_REQUESTS=2500
 
 No passwords. Users enter an allowed email, receive a link with a
 time-limited token (15 min), and click to sign in. Tokens are SHA-256 hashed
-before storage. Access is gated by an allowlist of email domains plus
+before storage. Sign-in is gated by an allowlist of email domains plus
 individual addresses, managed by admins under **Admin → Access** (`free.law`
-is seeded by default). Emails not on the allowlist are rejected at the form
-level.
+is seeded by default). The login form gives the same response whether or not
+an address is allowed, so it can't be used to enumerate the allowlist.
+
+**Signing in is separate from seeing content.** Each allowlist entry is tagged
+**staff** or **third party**. Staff are the "internal" audience — they see
+`internal`-visibility content automatically (as every authenticated user did
+before outside orgs could sign in). Third parties can sign in but only see
+`public` pages plus whatever is explicitly granted to them, their group, or
+their whole domain. Grants are **additive at any visibility level**: sharing an
+internal or private page/directory with a domain lets that org in without
+changing the item's visibility. A removed domain's grants are retained (and go
+dormant) so re-adding it restores access; the cleanup job expires grants left
+dormant past `DORMANT_GRANT_RETENTION_DAYS` (default 180).
 
 ### Unified URL Namespace
 

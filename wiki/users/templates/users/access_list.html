@@ -15,6 +15,9 @@
   <p class="text-sm text-gray-500 dark:text-gray-400 mb-6">
     Anyone with an email on an allowed domain can request a sign-in link.
     Add individual addresses to grant access to people outside those domains.
+    <strong>Staff</strong> see internal content automatically; <strong>third
+    parties</strong> can sign in but only see public pages plus whatever is
+    explicitly shared with them, their group, or their domain.
     Only the system owner can change domains; managers can manage individual
     addresses. The owner and managers are emailed about every change.
   </p>
@@ -29,6 +32,10 @@
       <div class="flex-1 min-w-0">
         <label for="id_domain_domain" class="block text-sm font-medium mb-1.5">Domain</label>
         {{ domain_form.domain }}
+      </div>
+      <div class="flex-1 min-w-0">
+        <label for="id_domain_tier" class="block text-sm font-medium mb-1.5">Tier</label>
+        {{ domain_form.tier }}
       </div>
       <div class="flex-1 min-w-0">
         <label for="id_domain_suffix" class="block text-sm font-medium mb-1.5">Handle suffix</label>
@@ -52,6 +59,7 @@
       <div class="card flex items-center justify-between gap-3 py-3 px-5">
         <div class="min-w-0">
           <span class="font-medium">@{{ d.domain }}</span>
+          <span class="{% if d.tier == 'staff' %}badge-purple{% else %}badge-gray{% endif %}">{{ d.get_tier_display }}</span>
           <span class="text-sm text-gray-400 dark:text-gray-500">handle suffix: -{{ d.suffix }}</span>
           {% if d.note %}
           <span class="text-sm text-gray-400 dark:text-gray-500">— {{ d.note }}</span>
@@ -84,6 +92,10 @@
         {{ email_form.email }}
       </div>
       <div class="flex-1 min-w-0">
+        <label for="id_email_tier" class="block text-sm font-medium mb-1.5">Tier</label>
+        {{ email_form.tier }}
+      </div>
+      <div class="flex-1 min-w-0">
         <label for="id_email_note" class="block text-sm font-medium mb-1.5">Note</label>
         {{ email_form.note }}
       </div>
@@ -96,6 +108,7 @@
       <div class="card flex items-center justify-between gap-3 py-3 px-5">
         <div class="min-w-0">
           <span class="font-medium truncate">{{ e.email }}</span>
+          <span class="{% if e.tier == 'staff' %}badge-purple{% else %}badge-gray{% endif %}">{{ e.get_tier_display }}</span>
           {% if e.note %}
           <span class="text-sm text-gray-400 dark:text-gray-500">— {{ e.note }}</span>
           {% endif %}

@@ -3,7 +3,11 @@ from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.contrib.auth.models import User
 
 from wiki.lib.access import is_email_allowed
-from wiki.lib.permissions import is_system_owner
+from wiki.lib.permissions import (
+    is_system_owner,
+    mark_domain_grants_dormant,
+    reactivate_domain_grants,
+)
 from wiki.lib.sessions import revoke_disallowed
 
 from .models import AllowedDomain, AllowedEmail, SystemConfig, UserProfile
@@ -122,6 +126,12 @@ class AccessRuleAdmin(admin.ModelAdmin):
         """End sessions + magic links for users this value no longer allows."""
         revoke_disallowed(self._affected_users(value))
 
+    def _on_added(self, value):
+        """Hook: rule value was added/restored. Subclass override (no-op)."""
+
+    def _on_removed(self, value):
+        """Hook: rule value was removed. Subclass override (no-op)."""
+
     def save_model(self, request, obj, form, change):
         old_value = None
         if change:
@@ -135,9 +145,11 @@ class AccessRuleAdmin(admin.ModelAdmin):
             self.audit_item_type,
             new_value,
         )
+        self._on_added(new_value)
         # A rename strands users on the old value; revoke them if now barred.
         if old_value and old_value != new_value:
             self._revoke(old_value)
+            self._on_removed(old_value)
 
     def delete_model(self, request, obj):
         value = self._audit_value(obj)
@@ -146,6 +158,7 @@ class AccessRuleAdmin(admin.ModelAdmin):
             request.user, "removed", self.audit_item_type, value
         )
         self._revoke(value)
+        self._on_removed(value)
 
     def delete_queryset(self, request, queryset):
         values = [self._audit_value(o) for o in queryset]
@@ -155,17 +168,27 @@ class AccessRuleAdmin(admin.ModelAdmin):
                 request.user, "removed", self.audit_item_type, value
             )
             self._revoke(value)
+            self._on_removed(value)
 
 
 @admin.register(AllowedDomain)
 class AllowedDomainAdmin(AccessRuleAdmin):
-    list_display = ["domain", "note", "created_at"]
+    list_display = ["domain", "tier", "note", "created_at"]
+    list_filter = ["tier"]
     search_fields = ["domain", "note"]
     audit_item_type = "domain"
     audit_value_field = "domain"
 
     def _affected_users(self, value):
         return User.objects.filter(email__iendswith=f"@{value}")
+
+    # Mirror the custom Access views: retain a domain's content grants but
+    # mark them dormant on removal and reactivate them on re-add.
+    def _on_added(self, value):
+        reactivate_domain_grants(value)
+
+    def _on_removed(self, value):
+        mark_domain_grants_dormant(value)
 
     # SECURITY: domains are owner-only, matching the custom Access views.
     # Managers are Django superusers (admin_toggle sets is_superuser), so
@@ -182,7 +205,8 @@ class AllowedDomainAdmin(AccessRuleAdmin):
 
 @admin.register(AllowedEmail)
 class AllowedEmailAdmin(AccessRuleAdmin):
-    list_display = ["email", "note", "created_at"]
+    list_display = ["email", "tier", "note", "created_at"]
+    list_filter = ["tier"]
     search_fields = ["email", "note"]
     audit_item_type = "email address"
     audit_value_field = "email"

@@ -78,8 +78,10 @@
                       x-text="label">
               </button>
             {% endif %}
-            {% if can_edit %}
+            {% if can_administer %}
               <a href="{% url 'page_permissions' path=page.content_path %}" class="dropdown-item">Permissions</a>
+            {% endif %}
+            {% if can_edit %}
               <a href="{% url 'page_move' path=page.content_path %}" class="dropdown-item">Move</a>
               {% with total_feedback=pending_proposal_count|add:pending_comment_count %}
               {% if total_feedback %}

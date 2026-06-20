@@ -79,7 +79,7 @@ to copy the code to your clipboard.
 The **Actions** dropdown on each page gives you access to:
 
 - **Subscribe / Unsubscribe** — toggle email notifications
-- **Permissions** — manage who can view and edit (editors only)
+- **Permissions** — manage who can view and edit (owners/admins only)
 - **Move** — move the page to a different directory
 - **Feedback** — see pending comments and proposals (editors only)
 - **Propose Change** — suggest edits through the review workflow
@@ -467,16 +467,23 @@ Both pages **and** directories have a visibility setting:
 | Level | Who can view |
 |---|---|
 | **Public** | Everyone, including anonymous visitors |
-| **FLP Staff** | Any signed-in (allowlisted) user |
-| **Private** | Only users with explicit permission (or the owner) |
+| **Staff** | Any signed-in staff member (people on a staff domain) |
+| **Private** | Only users with an explicit grant (or the owner) |
+
+Being *allowed to sign in* is separate from being able to *see content*. Staff
+see Staff-level content automatically. Third parties (anyone allowed to sign in
+who isn't staff) only see Public pages plus whatever is explicitly shared with
+them. A grant is **additive at any level** — sharing a Staff or Private page or
+directory with a person, group, or whole **domain** lets them in without
+changing the item's visibility.
 
 ### Permission types
 
 | Type | What it allows |
 |---|---|
 | **View** | Read the page or directory contents |
-| **Edit** | Modify content, metadata, and create child items |
-| **Admin** | Full control, including managing permissions and deletion |
+| **Edit** | Modify content (title and body) only |
+| **Owner** (shown as "Admin") | Everything Edit allows, plus managing permissions, changing visibility/editability, moving, and deleting |
 
 ### How permissions are checked
 
@@ -506,8 +513,8 @@ nothing above it to inherit from.
 
 | Setting | Options | What it controls |
 |---|---|---|
-| **Visibility** | Public, FLP Staff, Private | Who can view |
-| **Editability** | Restricted, FLP Staff | Who can edit |
+| **Visibility** | Public, Staff, Private | Who can view |
+| **Editability** | Restricted, Staff | Who can edit |
 | **Search engines** | Yes, No | Sitemap inclusion |
 | **AI sharing** | Yes, On request, No | llms.txt inclusion |
 
@@ -616,17 +623,18 @@ In addition to visibility, pages and directories have an
 
 | Setting | Who can edit |
 |---|---|
-| **Restricted** | Only users with explicit edit permission (the default) |
-| **FLP Staff** | Any signed-in (allowlisted) user |
+| **Restricted** | Only users with an explicit edit grant (the default) |
+| **Staff** | Any signed-in staff member |
 
 This is useful for pages that should be broadly collaborative —
-for example, team wikis or shared documentation where anyone at
-FLP should be able to contribute.
+for example, team wikis or shared documentation where any staff
+member should be able to contribute. Third parties still need an
+explicit edit grant.
 
 ### Best practices
 
 - Use **Public** for documentation that should be widely accessible
-- Use **FLP Staff** editability for pages where any FLP team member
+- Use **Staff** editability for pages where any staff member
   should be able to contribute
 - Use **Private directories** with group permissions for team
   spaces (e.g., grant the Engineering group Edit on `/c/engineering/`)
@@ -711,7 +719,7 @@ the sort order using the dropdown above the results:
 The search results page has a sidebar with clickable facets that
 let you narrow results without typing filter syntax:
 
-- **Visibility** — Filter by Public, FLP Staff, or Private
+- **Visibility** — Filter by Public, Staff, or Private
   (with counts for each)
 - **Last edited** — Quick presets: last 7 days, 30 days,
   3 months, or 1 year
@@ -1340,7 +1348,7 @@ HTML is cached.
 - **Keep the system owner role** limited to one trusted person —
   it cannot be revoked
 - Use the **Restricted** editability default for sensitive content,
-  and **FLP Staff** editability for collaborative pages anyone at
+  and **Staff** editability for collaborative pages anyone on staff at
   FLP should be able to edit
 """,
     },

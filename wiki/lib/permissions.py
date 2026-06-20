@@ -3,11 +3,17 @@
 Permission hierarchy:
 - System owner: full access to everything
 - Page owner: full access to their page
-- PagePermission / DirectoryPermission: granular per-user/group grants
-- Visibility: PUBLIC pages viewable by anyone, INTERNAL by any
-  authenticated user, PRIVATE by explicit permission only
+- PagePermission / DirectoryPermission: granular per-user/group/domain grants
+- Visibility baseline: PUBLIC pages viewable by anyone, INTERNAL by staff
+  (the "internal" audience — see wiki.lib.access.is_internal_user), PRIVATE
+  by explicit grant only.
 
-Directory permissions are inherited: we walk up the parent chain.
+Grants are *additive at any visibility level*: a view/edit/owner grant to a
+user, group, or domain — on the item or any ancestor directory — adds that
+audience on top of the baseline without changing the item's visibility. Grant
+checks run ahead of the internal branch and pierce the directory gate, so a
+third party with a grant on an internal page sees it while the page stays
+internal. Directory permissions inherit down the parent chain.
 
 Settings inheritance: visibility, editability, in_sitemap, and in_llms_txt
 can be set to "inherit" to resolve from the nearest ancestor with an
@@ -16,8 +22,10 @@ resolve_all_directory_settings() for bulk queries.
 """
 
 from django.db.models import Q
+from django.utils import timezone
 
 from wiki.directories.models import Directory, DirectoryPermission
+from wiki.lib.access import is_internal_user
 from wiki.lib.inheritance import (
     resolve_all_directory_settings,
     resolve_effective_value,
@@ -44,23 +52,42 @@ def _user_group_ids(user):
     return user._group_ids_cache
 
 
-def _user_or_group_q(user):
-    """Build a Q filter matching either the user or any of their groups."""
+def _user_domain(user):
+    """Return the lowercased domain of the user's email (cached, '' if none)."""
+    if not hasattr(user, "_email_domain_cache"):
+        email = (getattr(user, "email", "") or "").strip().lower()
+        user._email_domain_cache = (
+            email.rsplit("@", 1)[1] if "@" in email else ""
+        )
+    return user._email_domain_cache
+
+
+def _grant_target_q(user):
+    """Q matching permission rows granted to this user, their groups, or domain.
+
+    Domain grants are stored as a normalized string (``grant_domain``), so a
+    grant on the user's email domain matches regardless of whether that domain
+    is currently on the sign-in allowlist (dormant grants still match; the
+    allowlist is what gates login).
+    """
     group_ids = _user_group_ids(user)
     q = Q(user=user)
     if group_ids:
         q = q | Q(group_id__in=group_ids)
+    domain = _user_domain(user)
+    if domain:
+        q = q | Q(grant_domain=domain)
     return q
 
 
 def can_view_directory(user, directory):
     """Check if user can view a directory.
 
-    PUBLIC directories are viewable by anyone.
-    INTERNAL directories are viewable by any authenticated user.
-    PRIVATE directories require owner, system owner, or explicit permission.
-    Permission is checked on this directory AND walks up ancestors —
-    access to a parent grants access to children.
+    PUBLIC directories are viewable by anyone. A grant (any level) to the user,
+    their group, or their domain — on this directory or any ancestor, or
+    ownership of one — grants access regardless of visibility. INTERNAL
+    directories are additionally viewable by staff (the internal audience).
+    PRIVATE directories are visible only via such a grant or ownership.
     """
     # Root directory is always accessible
     if directory.path == "":
@@ -74,27 +101,22 @@ def can_view_directory(user, directory):
     if not user.is_authenticated:
         return False
 
-    if effective_visibility == "internal":
-        return True
-
     if is_system_owner(user):
         return True
 
-    if directory.owner_id == user.id:
-        return True
-
-    # Check permissions on this directory (user or group, any type)
-    if directory.permissions.filter(_user_or_group_q(user)).exists():
-        return True
-
-    # Walk up ancestors — if user has access to a parent, they can see children
-    parent = directory.parent
-    while parent is not None:
-        if parent.permissions.filter(_user_or_group_q(user)).exists():
+    # Ownership of / explicit grant on this directory or any ancestor
+    # (additive — applies whatever the visibility).
+    d = directory
+    while d is not None:
+        if d.owner_id == user.id:
             return True
-        if parent.owner_id == user.id:
+        if d.permissions.filter(_grant_target_q(user)).exists():
             return True
-        parent = parent.parent
+        d = d.parent
+
+    # Baseline: internal directories are visible to the staff audience.
+    if effective_visibility == "internal" and is_internal_user(user):
+        return True
 
     return False
 
@@ -102,9 +124,12 @@ def can_view_directory(user, directory):
 def can_view_page(user, page):
     """Check if user can view a page.
 
-    PUBLIC pages are viewable by anyone (including anonymous).
-    INTERNAL pages are viewable by any authenticated user.
-    PRIVATE pages require owner, system owner, or explicit permission.
+    PUBLIC pages are viewable by anyone (including anonymous). A grant (any
+    level) to the user, their group, or their domain — on the page or any
+    ancestor directory — grants access regardless of visibility and pierces
+    the directory gate. INTERNAL pages are additionally viewable by staff (the
+    internal audience) who can see the page's directory. PRIVATE pages are
+    visible only via ownership or a grant.
     """
     effective_visibility, _ = resolve_effective_value(page, "visibility")
 
@@ -114,29 +139,29 @@ def can_view_page(user, page):
     if not user.is_authenticated:
         return False
 
-    # Directory gate: user must be able to view the page's directory
-    if page.directory and not can_view_directory(user, page.directory):
-        return False
-
-    if effective_visibility == "internal":
+    if is_system_owner(user) or page.owner_id == user.id:
         return True
 
-    if is_system_owner(user):
+    # Explicit grant on the page (additive; pierces the directory gate).
+    if page.permissions.filter(_grant_target_q(user)).exists():
         return True
 
-    if page.owner_id == user.id:
-        return True
-
-    # Check page-level permissions (user or group)
-    if page.permissions.filter(_user_or_group_q(user)).exists():
-        return True
-
-    # Walk up directory ancestry
+    # Explicit grant on any ancestor directory.
     directory = page.directory
     while directory is not None:
-        if directory.permissions.filter(_user_or_group_q(user)).exists():
+        if directory.permissions.filter(_grant_target_q(user)).exists():
             return True
         directory = directory.parent
+
+    # Baseline: internal pages are viewable by staff who can see the directory.
+    if (
+        effective_visibility == "internal"
+        and is_internal_user(user)
+        and (
+            page.directory is None or can_view_directory(user, page.directory)
+        )
+    ):
+        return True
 
     return False
 
@@ -165,77 +190,106 @@ def _effectively_matching_dir_ids(field_name, values):
     }
 
 
+def _expand_descendant_dirs(seed_dir_ids):
+    """Return ``seed_dir_ids`` plus every directory nested beneath them.
+
+    A grant (or ownership) on a directory cascades to its whole subtree, so we
+    BFS the parent→children map once. Returns a set; empty in, empty out.
+    """
+    seed = set(seed_dir_ids)
+    if not seed:
+        return seed
+    children_map = {}
+    for did, pid in Directory.objects.values_list("id", "parent_id"):
+        children_map.setdefault(pid, []).append(did)
+    queue = list(seed)
+    visited = set(seed)
+    while queue:
+        current = queue.pop(0)
+        for child_id in children_map.get(current, []):
+            if child_id not in visited:
+                visited.add(child_id)
+                queue.append(child_id)
+    return visited
+
+
+def _page_grant_q(user, prefix=""):
+    """Q matching pages whose ``<prefix>permissions`` grant the user access.
+
+    ``prefix`` lets the same shape target page-level (``""``) or
+    directory-level (``"directory__"``) permission joins.
+    """
+    field = f"{prefix}permissions"
+    q = Q(**{f"{field}__user": user})
+    group_ids = _user_group_ids(user)
+    if group_ids:
+        q = q | Q(**{f"{field}__group_id__in": group_ids})
+    domain = _user_domain(user)
+    if domain:
+        q = q | Q(**{f"{field}__grant_domain": domain})
+    return q
+
+
 def viewable_pages_q(user):
     """Return a Q filter for pages the user can view.
 
-    Translates the can_view_page() logic into SQL-level filtering
-    so that LIMIT/OFFSET apply to already-filtered results.
-    Handles both explicit and inherited visibility values.
+    Mirrors can_view_page() at the SQL level (asserted row-by-row in tests) so
+    LIMIT/OFFSET apply to already-filtered results. Public pages match
+    unconditionally; grants (page-level or on any ancestor directory) match
+    regardless of visibility and pierce the directory gate; the internal
+    baseline applies only to the staff audience within viewable directories.
     """
     if is_system_owner(user):
         return Q()
 
-    dir_ids = _viewable_directory_ids(user)
-    dir_gate = Q(directory__isnull=True) | Q(directory_id__in=dir_ids)
-
-    # Directory IDs where effective visibility is public
     public_dir_ids = _effectively_matching_dir_ids("visibility", {"public"})
-    # Directory IDs where effective visibility is public or internal
-    pub_int_dir_ids = _effectively_matching_dir_ids(
-        "visibility", {"public", "internal"}
+    eff_public = Q(visibility="public") | Q(
+        visibility="inherit", directory_id__in=public_dir_ids
     )
-    # Directory IDs where effective visibility is private
-    private_dir_ids = _effectively_matching_dir_ids("visibility", {"private"})
 
+    # Public pages are viewable by everyone, no directory gate (matches the
+    # public short-circuit in can_view_page).
     if not user.is_authenticated:
-        # Anonymous: only see explicitly public pages + inheriting-public
-        return (
-            Q(visibility="public")
-            | Q(visibility="inherit", directory_id__in=public_dir_ids)
-        ) & dir_gate
+        return eff_public
 
-    # Authenticated user
-    group_ids = _user_group_ids(user)
-
-    # Public or internal pages (explicit or inherited) in viewable dirs
-    public_internal = (
-        Q(visibility__in=["public", "internal"])
-        | Q(visibility="inherit", directory_id__in=pub_int_dir_ids)
-    ) & dir_gate
-
-    # Private pages (explicit or inherited) the user owns
-    private_q = Q(visibility="private") | Q(
-        visibility="inherit", directory_id__in=private_dir_ids
-    )
-    private_owned = private_q & Q(owner=user) & dir_gate
-
-    # Private pages with explicit page-level permission (user or groups)
-    perm_q = Q(permissions__user=user)
-    if group_ids:
-        perm_q = perm_q | Q(permissions__group_id__in=group_ids)
-    private_permitted = private_q & perm_q & dir_gate
-
-    # Private pages with directory-level permission (inherited)
-    dir_perm_q = Q(directory__permissions__user=user)
-    if group_ids:
-        dir_perm_q = dir_perm_q | Q(
-            directory__permissions__group_id__in=group_ids
+    q = eff_public
+    # Pages the user owns.
+    q |= Q(owner=user)
+    # Page-level grant (user / group / domain) — additive, pierces the gate.
+    q |= _page_grant_q(user)
+    # Grant on any ancestor directory: a grant on a directory covers its whole
+    # subtree, so resolve the granted directories and expand to descendants.
+    granted_dir_ids = _expand_descendant_dirs(
+        DirectoryPermission.objects.filter(_grant_target_q(user)).values_list(
+            "directory_id", flat=True
         )
-    private_dir_permitted = private_q & dir_perm_q & dir_gate
-
-    return (
-        public_internal
-        | private_owned
-        | private_permitted
-        | private_dir_permitted
     )
+    if granted_dir_ids:
+        q |= Q(directory_id__in=granted_dir_ids)
+
+    # Internal baseline: only the staff audience, only in viewable directories.
+    if is_internal_user(user):
+        internal_dir_ids = _effectively_matching_dir_ids(
+            "visibility", {"internal"}
+        )
+        eff_internal = Q(visibility="internal") | Q(
+            visibility="inherit", directory_id__in=internal_dir_ids
+        )
+        dir_ids = _viewable_directory_ids(user)
+        dir_gate = Q(directory__isnull=True) | Q(directory_id__in=dir_ids)
+        q |= eff_internal & dir_gate
+
+    return q
 
 
 def can_edit_page(user, page):
-    """Check if user can edit a page.
+    """Check if user may change a page's title/content.
 
-    Editing requires view access first — a user who cannot see a page
-    must not be able to edit it, regardless of editability settings.
+    Editing requires view access first. "Edit" is content-only; managing
+    permissions, visibility/editability, and deletion require
+    can_administer_page(). An EDIT or OWNER grant (user/group/domain) on the
+    page or any ancestor directory grants edit regardless of visibility; the
+    internal-editability baseline additionally grants it to the staff audience.
     """
     if not user.is_authenticated:
         return False
@@ -243,29 +297,21 @@ def can_edit_page(user, page):
     if not can_view_page(user, page):
         return False
 
-    effective_editability, _ = resolve_effective_value(page, "editability")
-
-    if effective_editability == "internal":
+    if is_system_owner(user) or page.owner_id == user.id:
         return True
 
-    if is_system_owner(user):
-        return True
-
-    if page.owner_id == user.id:
-        return True
-
-    # Check page-level EDIT or OWNER permission
+    # EDIT/OWNER grant on the page (additive, any visibility).
     edit_types = [
         PagePermission.PermissionType.EDIT,
         PagePermission.PermissionType.OWNER,
     ]
     if page.permissions.filter(
-        _user_or_group_q(user),
+        _grant_target_q(user),
         permission_type__in=edit_types,
     ).exists():
         return True
 
-    # Walk up directory ancestry for EDIT/OWNER
+    # Walk up directory ancestry for EDIT/OWNER.
     dir_edit_types = [
         DirectoryPermission.PermissionType.EDIT,
         DirectoryPermission.PermissionType.OWNER,
@@ -273,20 +319,24 @@ def can_edit_page(user, page):
     directory = page.directory
     while directory is not None:
         if directory.permissions.filter(
-            _user_or_group_q(user),
+            _grant_target_q(user),
             permission_type__in=dir_edit_types,
         ).exists():
             return True
         directory = directory.parent
 
+    # Baseline: internal editability is editable by the staff audience.
+    effective_editability, _ = resolve_effective_value(page, "editability")
+    if effective_editability == "internal" and is_internal_user(user):
+        return True
+
     return False
 
 
 def can_edit_directory(user, directory):
-    """Check if user can edit a directory.
-
-    Editing requires view access first — a user who cannot see a
-    directory must not be able to edit it, regardless of editability.
+    """Check if user may change a directory's content/metadata at the content
+    level. Structural actions (permissions, settings, delete, move) require
+    can_administer_directory().
     """
     if not user.is_authenticated:
         return False
@@ -294,29 +344,83 @@ def can_edit_directory(user, directory):
     if not can_view_directory(user, directory):
         return False
 
-    effective_editability, _ = resolve_effective_value(
-        directory, "editability"
-    )
-
-    if effective_editability == "internal":
-        return True
-
-    if is_system_owner(user):
-        return True
-
-    if directory.owner_id == user.id:
+    if is_system_owner(user) or directory.owner_id == user.id:
         return True
 
     edit_types = [
         DirectoryPermission.PermissionType.EDIT,
         DirectoryPermission.PermissionType.OWNER,
     ]
-    # Check this directory and walk up
+    # EDIT/OWNER grant on this directory or any ancestor (additive).
     d = directory
     while d is not None:
         if d.permissions.filter(
-            _user_or_group_q(user),
+            _grant_target_q(user),
             permission_type__in=edit_types,
+        ).exists():
+            return True
+        d = d.parent
+
+    # Baseline: internal editability is editable by the staff audience.
+    effective_editability, _ = resolve_effective_value(
+        directory, "editability"
+    )
+    if effective_editability == "internal" and is_internal_user(user):
+        return True
+
+    return False
+
+
+def can_administer_page(user, page):
+    """Check if user may manage a page: permissions, visibility/editability,
+    and deletion.
+
+    Owner-level only: the system owner, the page's owner (its creator), or an
+    OWNER-type grant (user/group/domain) on the page or any ancestor directory.
+    Plain editors and the internal-editability baseline do *not* confer this —
+    that's what keeps an "edit only" grant to an outside org safe.
+    """
+    if not user.is_authenticated:
+        return False
+
+    if is_system_owner(user) or page.owner_id == user.id:
+        return True
+
+    if page.permissions.filter(
+        _grant_target_q(user),
+        permission_type=PagePermission.PermissionType.OWNER,
+    ).exists():
+        return True
+
+    directory = page.directory
+    while directory is not None:
+        if directory.permissions.filter(
+            _grant_target_q(user),
+            permission_type=DirectoryPermission.PermissionType.OWNER,
+        ).exists():
+            return True
+        directory = directory.parent
+
+    return False
+
+
+def can_administer_directory(user, directory):
+    """Check if user may manage a directory: permissions, settings, delete,
+    move, and apply-to-children. Owner-level only (see can_administer_page).
+    """
+    if not user.is_authenticated:
+        return False
+
+    if is_system_owner(user):
+        return True
+
+    d = directory
+    while d is not None:
+        if d.owner_id == user.id:
+            return True
+        if d.permissions.filter(
+            _grant_target_q(user),
+            permission_type=DirectoryPermission.PermissionType.OWNER,
         ).exists():
             return True
         d = d.parent
@@ -340,38 +444,40 @@ def editable_page_ids(user):
     # Pages the user owns
     ids.update(Page.objects.filter(owner=user).values_list("id", flat=True))
 
-    # Pages with editability="internal" (explicit)
-    ids.update(
-        Page.objects.filter(editability="internal").values_list(
-            "id", flat=True
-        )
-    )
-
-    # Pages inheriting editability="internal" from their directory
-    internal_edit_dir_ids = _effectively_matching_dir_ids(
-        "editability", {"internal"}
-    )
-    if internal_edit_dir_ids:
+    # Internal editability is editable only by the staff audience.
+    if is_internal_user(user):
+        # Pages with editability="internal" (explicit)
         ids.update(
-            Page.objects.filter(
-                editability="inherit",
-                directory_id__in=internal_edit_dir_ids,
-            ).values_list("id", flat=True)
+            Page.objects.filter(editability="internal").values_list(
+                "id", flat=True
+            )
         )
 
-    # Pages with explicit EDIT/OWNER PagePermission
+        # Pages inheriting editability="internal" from their directory
+        internal_edit_dir_ids = _effectively_matching_dir_ids(
+            "editability", {"internal"}
+        )
+        if internal_edit_dir_ids:
+            ids.update(
+                Page.objects.filter(
+                    editability="inherit",
+                    directory_id__in=internal_edit_dir_ids,
+                ).values_list("id", flat=True)
+            )
+
+    # Pages with an EDIT/OWNER grant (user/group/domain)
     edit_types = [
         PagePermission.PermissionType.EDIT,
         PagePermission.PermissionType.OWNER,
     ]
     ids.update(
         PagePermission.objects.filter(
-            _user_or_group_q(user),
+            _grant_target_q(user),
             permission_type__in=edit_types,
         ).values_list("page_id", flat=True)
     )
 
-    # Pages in directories the user owns or has EDIT/OWNER permission on
+    # Pages in directories the user owns or has an EDIT/OWNER grant on
     dir_edit_types = [
         DirectoryPermission.PermissionType.EDIT,
         DirectoryPermission.PermissionType.OWNER,
@@ -382,34 +488,19 @@ def editable_page_ids(user):
         Directory.objects.filter(owner=user).values_list("id", flat=True)
     )
 
-    # Directories with explicit permission
+    # Directories with an EDIT/OWNER grant (user/group/domain)
     perm_dir_ids = set(
         DirectoryPermission.objects.filter(
-            _user_or_group_q(user),
+            _grant_target_q(user),
             permission_type__in=dir_edit_types,
         ).values_list("directory_id", flat=True)
     )
 
-    editable_dir_ids = owned_dir_ids | perm_dir_ids
-
-    # Walk children via BFS to include all descendant directories
+    # Include every page beneath an editable directory.
+    editable_dir_ids = _expand_descendant_dirs(owned_dir_ids | perm_dir_ids)
     if editable_dir_ids:
-        all_dirs = list(Directory.objects.values_list("id", "parent_id"))
-        children_map = {}
-        for did, pid in all_dirs:
-            children_map.setdefault(pid, []).append(did)
-
-        queue = list(editable_dir_ids)
-        visited = set(editable_dir_ids)
-        while queue:
-            current = queue.pop(0)
-            for child_id in children_map.get(current, []):
-                if child_id not in visited:
-                    visited.add(child_id)
-                    queue.append(child_id)
-
         ids.update(
-            Page.objects.filter(directory_id__in=visited).values_list(
+            Page.objects.filter(directory_id__in=editable_dir_ids).values_list(
                 "id", flat=True
             )
         )
@@ -422,3 +513,26 @@ def editable_page_ids(user):
             "id", flat=True
         )
     )
+
+
+def mark_domain_grants_dormant(domain):
+    """Stamp ``dormant_since`` on a domain's grants when it leaves the allowlist.
+
+    The grants are kept (so re-adding the domain restores access untouched) but
+    flagged so the cleanup job can expire them after the retention window. Only
+    rows not already dormant are stamped, so the clock isn't reset on repeats.
+    """
+    now = timezone.now()
+    for model in (PagePermission, DirectoryPermission):
+        model.objects.filter(
+            grant_domain=domain, dormant_since__isnull=True
+        ).update(dormant_since=now)
+
+
+def reactivate_domain_grants(domain):
+    """Clear ``dormant_since`` on a domain's grants when it returns to the
+    allowlist, reactivating them and resetting the expiry clock."""
+    for model in (PagePermission, DirectoryPermission):
+        model.objects.filter(
+            grant_domain=domain, dormant_since__isnull=False
+        ).update(dormant_since=None)

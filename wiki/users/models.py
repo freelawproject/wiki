@@ -94,6 +94,20 @@ class SystemConfig(models.Model):
         super().save(*args, **kwargs)
 
 
+class AccessTier(models.TextChoices):
+    """Whether an allowlist entry grants staff-level or third-party access.
+
+    Staff are the "internal" audience: they see content with ``internal``
+    visibility without an explicit grant, exactly as every authenticated user
+    did before outside orgs could sign in. Third parties can sign in but only
+    reach ``public`` content plus whatever is explicitly granted to them, their
+    group, or their domain.
+    """
+
+    STAFF = "staff", "Staff"
+    THIRD_PARTY = "third_party", "Third party"
+
+
 class AllowedDomain(models.Model):
     """An email domain whose addresses are allowed to sign in.
 
@@ -102,6 +116,15 @@ class AllowedDomain(models.Model):
     """
 
     domain = models.CharField(max_length=255, unique=True)
+    tier = models.CharField(
+        max_length=12,
+        choices=AccessTier.choices,
+        default=AccessTier.THIRD_PARTY,
+        help_text=(
+            "Staff see internal content without an explicit grant; third "
+            "parties only see public content plus what they're granted."
+        ),
+    )
     suffix = models.CharField(
         max_length=32,
         unique=True,
@@ -146,6 +169,16 @@ class AllowedEmail(models.Model):
     """
 
     email = models.EmailField(unique=True)
+    tier = models.CharField(
+        max_length=12,
+        choices=AccessTier.choices,
+        default=AccessTier.THIRD_PARTY,
+        help_text=(
+            "Staff see internal content without an explicit grant; third "
+            "parties only see public content plus what they're granted. "
+            "Overrides the tier of the address's domain, if any."
+        ),
+    )
     note = models.CharField(
         max_length=255,
         blank=True,

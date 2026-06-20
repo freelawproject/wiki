@@ -34,10 +34,14 @@ class TestLoginForm:
         assert r.status_code == 200
         assert b"Send Sign-In Link" in r.content
 
-    def test_rejects_email_not_on_allowlist(self, client, db):
+    def test_disallowed_email_gets_neutral_response(self, client, db):
+        # SECURITY: the response must be identical to an allowed address so
+        # the form can't be used to enumerate the allowlist — a neutral
+        # redirect, no account created, no email sent.
         r = client.post(reverse("login"), {"email": "test@gmail.com"})
-        assert r.status_code == 200
-        assert b"isn&#x27;t allowed to sign in" in r.content
+        assert r.status_code == 302
+        assert not User.objects.filter(username="test@gmail.com").exists()
+        assert len(mail.outbox) == 0
 
     def test_accepts_seeded_free_law_domain(self, client, db):
         # The data migration seeds free.law as an allowed domain.
@@ -54,9 +58,12 @@ class TestLoginForm:
         AllowedEmail.objects.create(email="contractor@gmail.com")
         r = client.post(reverse("login"), {"email": "contractor@gmail.com"})
         assert r.status_code == 302
-        # A different address on the same (non-allowed) domain is rejected.
+        assert User.objects.filter(username="contractor@gmail.com").exists()
+        # A different address on the same (non-allowed) domain is not minted,
+        # though the response looks identical (neutral redirect).
         r2 = client.post(reverse("login"), {"email": "someone@gmail.com"})
-        assert r2.status_code == 200
+        assert r2.status_code == 302
+        assert not User.objects.filter(username="someone@gmail.com").exists()
 
     def test_email_normalized_to_lowercase(self, client, db):
         client.post(reverse("login"), {"email": "TEST@FREE.LAW"})
@@ -64,7 +71,7 @@ class TestLoginForm:
 
     def test_rejects_plus_addressing(self, client, db):
         r = client.post(reverse("login"), {"email": "mike+foo@free.law"})
-        assert r.status_code == 200
+        assert r.status_code == 302
         assert not User.objects.filter(username="mike+foo@free.law").exists()
         assert len(mail.outbox) == 0
 
@@ -284,14 +291,18 @@ class TestUserArchiving:
     """User archiving: deactivate account, delete sessions, block login."""
 
     def test_archived_user_cannot_request_magic_link(self, client, user):
-        """Archived user submits login form — gets error, no email."""
+        """Archived user submits login form — no email, neutral response.
+
+        The response no longer reveals the archive state (that would leak who
+        has an account); the security property is that no link is sent.
+        """
         user.is_active = False
         user.save(update_fields=["is_active"])
         r = client.post(
             reverse("login"), {"email": "alice@free.law"}, follow=True
         )
-        assert b"archived" in r.content.lower()
         assert len(mail.outbox) == 0
+        assert b"allowed to sign in" in r.content.lower()
 
     def test_archived_user_cannot_verify_magic_link(self, client, user):
         """Archived user with valid token is rejected at verify."""

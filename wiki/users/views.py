@@ -10,7 +10,11 @@ from django.http import Http404, JsonResponse
 from django.shortcuts import redirect, render
 
 from wiki.lib.access import is_email_allowed
-from wiki.lib.permissions import is_system_owner
+from wiki.lib.permissions import (
+    is_system_owner,
+    mark_domain_grants_dormant,
+    reactivate_domain_grants,
+)
 from wiki.lib.ratelimiter import ratelimit_login
 from wiki.lib.sessions import end_sessions_for_users, revoke_disallowed
 from wiki.lib.users import assign_handle
@@ -40,45 +44,43 @@ def login_view(request):
     if request.method == "POST" and form.is_valid():
         email = form.cleaned_data["email"]
 
-        # Get or create user (look up by username, which is unique)
-        user, created = User.objects.get_or_create(
-            username=email,
-            defaults={"email": email},
-        )
-
-        if not user.is_active:
-            messages.error(
-                request,
-                "Your account has been archived. "
-                "Contact an admin to restore access.",
+        # Only mint an account and send a link for an allowed, active address.
+        # The response is identical in every case (below) so the form never
+        # reveals whether an address is on the allowlist or has been archived.
+        if is_email_allowed(email):
+            user, _ = User.objects.get_or_create(
+                username=email,
+                defaults={"email": email},
             )
-            return redirect("login")
+            if user.is_active:
+                profile, profile_created = UserProfile.objects.get_or_create(
+                    user=user
+                )
+                if profile_created:
+                    profile.gravatar_url = UserProfile.gravatar_url_for_email(
+                        email
+                    )
+                # Assign a unique public handle on first sign-in.
+                if not profile.handle:
+                    assign_handle(profile)
 
-        # Get or create profile
-        profile, profile_created = UserProfile.objects.get_or_create(user=user)
-        if profile_created:
-            profile.gravatar_url = UserProfile.gravatar_url_for_email(email)
-        # Assign a unique public handle on first sign-in.
-        if not profile.handle:
-            assign_handle(profile)
+                # First user to log in becomes system owner and admin.
+                if not SystemConfig.objects.exists():
+                    SystemConfig.objects.create(owner=user)
+                    user.is_staff = True
+                    user.is_superuser = True
+                    user.save(update_fields=["is_staff", "is_superuser"])
 
-        # First user to log in becomes system owner and admin
-        if not SystemConfig.objects.exists():
-            SystemConfig.objects.create(owner=user)
-            user.is_staff = True
-            user.is_superuser = True
-            user.save(update_fields=["is_staff", "is_superuser"])
-
-        # Generate magic link token
-        raw_token = secrets.token_urlsafe(32)
-        profile.set_magic_token(raw_token)
-        profile.save()
-
-        send_magic_link_email(email, raw_token)
+                # Generate magic link token and send the email.
+                raw_token = secrets.token_urlsafe(32)
+                profile.set_magic_token(raw_token)
+                profile.save()
+                send_magic_link_email(email, raw_token)
 
         messages.success(
             request,
-            "Check your email for a sign-in link. It expires in 15 minutes.",
+            "If that address is allowed to sign in, we've emailed a "
+            "sign-in link. It expires in 15 minutes.",
         )
         return redirect("login")
 
@@ -342,12 +344,16 @@ def access_add_domain(request):
         defaults={
             "suffix": form.cleaned_data["suffix"],
             "note": form.cleaned_data["note"],
+            "tier": form.cleaned_data["tier"],
         },
     )
     if not created:
         messages.info(request, f"Domain {domain} was already allowed.")
         return redirect("access_list")
 
+    # Reactivate any content grants retained from a previous stint on the
+    # allowlist so re-adding a domain restores its exact prior access.
+    reactivate_domain_grants(domain)
     messages.success(request, f"Domain {domain} is now allowed.")
     _announce_access_change(request, "added", "domain", domain)
     return redirect("access_list")
@@ -369,7 +375,10 @@ def access_add_email(request):
     email = form.cleaned_data["email"]
     _, created = AllowedEmail.objects.get_or_create(
         email=email,
-        defaults={"note": form.cleaned_data["note"]},
+        defaults={
+            "note": form.cleaned_data["note"],
+            "tier": form.cleaned_data["tier"],
+        },
     )
     if not created:
         messages.info(request, f"{email} was already allowed.")
@@ -398,6 +407,9 @@ def access_delete_domain(request, pk):
         value = domain.domain
         domain.delete()
         revoke_disallowed(User.objects.filter(email__iendswith=f"@{value}"))
+        # Keep the domain's content grants but flag them dormant so the
+        # cleanup job can expire them if the domain stays gone.
+        mark_domain_grants_dormant(value)
         messages.success(request, f"Domain {value} removed.")
         _announce_access_change(request, "removed", "domain", value)
     return redirect("access_list")

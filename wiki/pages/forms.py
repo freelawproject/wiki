@@ -5,6 +5,7 @@ from wiki.directories.models import Directory
 from wiki.lib.data_source import is_domain_allowed
 from wiki.lib.inheritance import resolve_effective_value
 from wiki.lib.permissions import can_view_directory
+from wiki.users.models import AllowedDomain
 
 from .models import Page, PagePermission
 
@@ -93,7 +94,23 @@ class PageForm(forms.ModelForm):
             ),
         }
 
-    def __init__(self, *args, editing=False, directory=None, **kwargs):
+    # Settings only an administrator (owner-level) may change. Content-only
+    # editors don't see these; on save the page keeps its current values.
+    ADMIN_ONLY_FIELDS = (
+        "visibility",
+        "editability",
+        "in_sitemap",
+        "in_llms_txt",
+    )
+
+    def __init__(
+        self,
+        *args,
+        editing=False,
+        directory=None,
+        can_administer=True,
+        **kwargs,
+    ):
         super().__init__(*args, **kwargs)
         self.fields["change_message"].required = True
         self.fields["change_message"].widget.attrs["required"] = True
@@ -102,21 +119,23 @@ class PageForm(forms.ModelForm):
         self.fields["in_sitemap"].required = False
         self.fields["data_source_ttl"].required = False
 
-        # Build inherit labels for each field
-        if directory:
-            self._add_inherit_choices(directory)
-            # Default new pages to "inherit"
-            if not editing and not self.instance.pk:
-                for field_name in (
-                    "visibility",
-                    "editability",
-                    "in_sitemap",
-                    "in_llms_txt",
-                ):
-                    self.initial.setdefault(field_name, "inherit")
-        else:
-            # Root-level page: no directory to inherit from
-            self._remove_inherit_choices()
+        # Content-only editors can't touch visibility/editability/sitemap/llms.
+        if not can_administer:
+            for field_name in self.ADMIN_ONLY_FIELDS:
+                self.fields.pop(field_name, None)
+
+        # Build inherit labels for each field (only when the settings fields
+        # are present — content-only editors don't get them).
+        if "visibility" in self.fields:
+            if directory:
+                self._add_inherit_choices(directory)
+                # Default new pages to "inherit"
+                if not editing and not self.instance.pk:
+                    for field_name in self.ADMIN_ONLY_FIELDS:
+                        self.initial.setdefault(field_name, "inherit")
+            else:
+                # Root-level page: no directory to inherit from
+                self._remove_inherit_choices()
 
     def _add_inherit_choices(self, directory):
         """Build inherit metadata for each field.
@@ -206,6 +225,13 @@ class PagePermissionForm(forms.Form):
         queryset=Group.objects.all().order_by("name"),
         required=False,
         widget=forms.Select(attrs={"class": "input-text w-full"}),
+    )
+    allowed_domain = forms.ModelChoiceField(
+        queryset=AllowedDomain.objects.all().order_by("domain"),
+        required=False,
+        widget=forms.Select(
+            attrs={"class": "input-text w-full", "id": "id_allowed_domain"}
+        ),
     )
     permission_type = forms.ChoiceField(
         choices=PagePermission.PermissionType.choices,

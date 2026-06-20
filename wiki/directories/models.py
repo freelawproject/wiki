@@ -12,13 +12,13 @@ class Directory(models.Model):
 
     class Visibility(models.TextChoices):
         PUBLIC = "public", "Public"
-        INTERNAL = "internal", "FLP Staff"
+        INTERNAL = "internal", "Staff"
         PRIVATE = "private", "Private"
         INHERIT = "inherit", "Inherit"
 
     class Editability(models.TextChoices):
         RESTRICTED = "restricted", "Restricted"
-        INTERNAL = "internal", "FLP Staff"
+        INTERNAL = "internal", "Staff"
         INHERIT = "inherit", "Inherit"
 
     class SitemapStatus(models.TextChoices):
@@ -171,6 +171,25 @@ class DirectoryPermission(models.Model):
         null=True,
         blank=True,
     )
+    grant_domain = models.CharField(
+        max_length=255,
+        null=True,
+        blank=True,
+        help_text=(
+            "Normalized email domain (e.g. 'acme.com') granted access. Stored "
+            "as a string, not a FK, so the grant survives the domain leaving "
+            "the sign-in allowlist and re-binds if it is re-added."
+        ),
+    )
+    dormant_since = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text=(
+            "Set when a domain grant's domain leaves the allowlist; cleared "
+            "when it returns. Grants dormant past the retention window are "
+            "removed by the cleanup job."
+        ),
+    )
     permission_type = models.CharField(
         max_length=5,
         choices=PermissionType.choices,
@@ -189,8 +208,13 @@ class DirectoryPermission(models.Model):
                 condition=models.Q(group__isnull=False),
                 name="unique_dir_group_perm",
             ),
+            models.UniqueConstraint(
+                fields=["directory", "grant_domain", "permission_type"],
+                condition=models.Q(grant_domain__isnull=False),
+                name="unique_dir_domain_perm",
+            ),
         ]
 
     def __str__(self):
-        target = self.user or self.group
+        target = self.user or self.group or self.grant_domain
         return f"{target} → {self.directory} ({self.permission_type})"
