@@ -95,17 +95,17 @@ class SystemConfig(models.Model):
 
 
 class AccessTier(models.TextChoices):
-    """Whether an allowlist entry grants staff-level or third-party access.
+    """Whether an allowlist entry grants staff-level or guest access.
 
     Staff are the "internal" audience: they see content with ``internal``
     visibility without an explicit grant, exactly as every authenticated user
-    did before outside orgs could sign in. Third parties can sign in but only
-    reach ``public`` content plus whatever is explicitly granted to them, their
+    did before outside orgs could sign in. Guests can sign in but only reach
+    ``public`` content plus whatever is explicitly granted to them, their
     group, or their domain.
     """
 
     STAFF = "staff", "Staff"
-    THIRD_PARTY = "third_party", "Third party"
+    GUEST = "guest", "Guest"
 
 
 class AllowedDomain(models.Model):
@@ -119,10 +119,10 @@ class AllowedDomain(models.Model):
     tier = models.CharField(
         max_length=12,
         choices=AccessTier.choices,
-        default=AccessTier.THIRD_PARTY,
+        default=AccessTier.GUEST,
         help_text=(
-            "Staff see internal content without an explicit grant; third "
-            "parties only see public content plus what they're granted."
+            "Staff see internal content without an explicit grant; guests "
+            "only see public content plus what they're granted."
         ),
     )
     suffix = models.CharField(
@@ -172,10 +172,10 @@ class AllowedEmail(models.Model):
     tier = models.CharField(
         max_length=12,
         choices=AccessTier.choices,
-        default=AccessTier.THIRD_PARTY,
+        default=AccessTier.GUEST,
         help_text=(
-            "Staff see internal content without an explicit grant; third "
-            "parties only see public content plus what they're granted. "
+            "Staff see internal content without an explicit grant; guests "
+            "only see public content plus what they're granted. "
             "Overrides the tier of the address's domain, if any."
         ),
     )

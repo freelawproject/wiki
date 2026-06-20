@@ -58,10 +58,10 @@ def is_email_allowed(email):
 
 
 def resolve_tier(email):
-    """Return the access tier (``staff``/``third_party``) for ``email``.
+    """Return the access tier (``staff``/``guest``) for ``email``.
 
     An exact :class:`AllowedEmail` match wins over the address's domain, so an
-    individual can be elevated to staff (or held back to third-party) even when
+    individual can be elevated to staff (or held back to guest) even when
     their domain says otherwise. Returns ``None`` if the address is not on the
     allowlist at all.
     """
@@ -89,7 +89,7 @@ def is_internal_user(user):
 
     Staff see ``internal`` content without an explicit grant — the audience
     that *every* authenticated user used to be before outside orgs could sign
-    in. Third parties get ``public`` content plus only what's explicitly
+    in. Guests get ``public`` content plus only what's explicitly
     granted to them, their group, or their domain.
 
     The system owner and managers always count as staff (both carry

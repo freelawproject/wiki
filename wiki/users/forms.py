@@ -40,7 +40,8 @@ class AllowedDomainForm(forms.Form):
     )
     tier = forms.ChoiceField(
         choices=AccessTier.choices,
-        initial=AccessTier.THIRD_PARTY,
+        initial=AccessTier.GUEST,
+        required=False,
         widget=forms.Select(attrs={"class": "input-text w-full"}),
     )
     suffix = forms.CharField(
@@ -80,6 +81,10 @@ class AllowedDomainForm(forms.Form):
             )
         return suffix
 
+    def clean_tier(self):
+        # Default to the safe (guest) tier when none is submitted.
+        return self.cleaned_data.get("tier") or AccessTier.GUEST
+
 
 class AllowedEmailForm(forms.Form):
     email = forms.EmailField(
@@ -92,7 +97,8 @@ class AllowedEmailForm(forms.Form):
     )
     tier = forms.ChoiceField(
         choices=AccessTier.choices,
-        initial=AccessTier.THIRD_PARTY,
+        initial=AccessTier.GUEST,
+        required=False,
         widget=forms.Select(attrs={"class": "input-text w-full"}),
     )
     note = forms.CharField(
@@ -118,3 +124,7 @@ class AllowedEmailForm(forms.Form):
                 "use the base address instead."
             )
         return email
+
+    def clean_tier(self):
+        # Default to the safe (guest) tier when none is submitted.
+        return self.cleaned_data.get("tier") or AccessTier.GUEST

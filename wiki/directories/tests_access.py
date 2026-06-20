@@ -11,7 +11,7 @@ from wiki.users.models import AccessTier, AllowedDomain, UserProfile
 @pytest.fixture
 def carol(db):
     AllowedDomain.objects.create(
-        domain="acme.com", suffix="acme", tier=AccessTier.THIRD_PARTY
+        domain="acme.com", suffix="acme", tier=AccessTier.GUEST
     )
     u = User.objects.create_user(
         username="carol@acme.com", email="carol@acme.com", password="x"

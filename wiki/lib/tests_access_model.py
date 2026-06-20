@@ -1,4 +1,4 @@
-"""Tests for the staff/third-party access model and additive grants.
+"""Tests for the staff/guest access model and additive grants.
 
 Covers the heart of the "internal = staff, grants are additive" change:
 is_internal_user resolution, grants that reveal internal/private content
@@ -39,15 +39,15 @@ def _make_user(email, **flags):
 
 @pytest.fixture
 def acme(db):
-    """A third-party domain (not staff)."""
+    """A guest domain (not staff)."""
     return AllowedDomain.objects.create(
-        domain="acme.com", suffix="acme", tier=AccessTier.THIRD_PARTY
+        domain="acme.com", suffix="acme", tier=AccessTier.GUEST
     )
 
 
 @pytest.fixture
 def carol(acme):
-    """A third-party user @acme.com."""
+    """A guest user @acme.com."""
     return _make_user("carol@acme.com")
 
 
@@ -83,7 +83,7 @@ class TestIsInternalUser:
         # free.law is seeded staff by migration 0005.
         assert is_internal_user(user) is True
 
-    def test_third_party_domain_is_not_internal(self, carol):
+    def test_guest_domain_is_not_internal(self, carol):
         assert is_internal_user(carol) is False
 
     def test_individual_email_overrides_domain(self, acme):
@@ -109,7 +109,7 @@ class TestIsInternalUser:
             email="vip@acme.com", tier=AccessTier.STAFF
         )
         assert resolve_tier("vip@acme.com") == AccessTier.STAFF
-        assert resolve_tier("rando@acme.com") == AccessTier.THIRD_PARTY
+        assert resolve_tier("rando@acme.com") == AccessTier.GUEST
         assert resolve_tier("x@nowhere.test") is None
 
 
@@ -117,7 +117,7 @@ class TestIsInternalUser:
 
 
 class TestAdditiveGrants:
-    def test_third_party_cannot_view_internal_without_grant(
+    def test_guest_cannot_view_internal_without_grant(
         self, carol, internal_page
     ):
         assert can_view_page(carol, internal_page) is False
@@ -225,7 +225,7 @@ class TestOwnerOnlyManagement:
 
 
 class TestViewableQueryAgreement:
-    def test_query_matches_can_view_for_third_party(self, carol, user):
+    def test_query_matches_can_view_for_guest(self, carol, user):
         root = Directory.objects.create(path="", title="Home")
         priv_dir = Directory.objects.create(
             path="p",
@@ -273,7 +273,7 @@ class TestViewableQueryAgreement:
         )
         from_func = {p.id for p in all_pages if can_view_page(carol, p)}
         assert from_query == from_func
-        # Third party sees: public, the granted internal page, and the page in
+        # Guest sees: public, the granted internal page, and the page in
         # the granted private directory — not the ungranted internal/private.
         assert from_func == {pub.id, granted.id, in_priv_dir.id}
 

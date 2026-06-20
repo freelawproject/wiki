@@ -416,9 +416,9 @@ is seeded by default). The login form gives the same response whether or not
 an address is allowed, so it can't be used to enumerate the allowlist.
 
 **Signing in is separate from seeing content.** Each allowlist entry is tagged
-**staff** or **third party**. Staff are the "internal" audience — they see
+**staff** or **guest**. Staff are the "internal" audience — they see
 `internal`-visibility content automatically (as every authenticated user did
-before outside orgs could sign in). Third parties can sign in but only see
+before outside orgs could sign in). Guests can sign in but only see
 `public` pages plus whatever is explicitly granted to them, their group, or
 their whole domain. Grants are **additive at any visibility level**: sharing an
 internal or private page/directory with a domain lets that org in without

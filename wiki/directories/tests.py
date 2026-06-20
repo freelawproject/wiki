@@ -844,11 +844,16 @@ class TestDirectoryGate:
         r = client.get(sub_directory.get_absolute_url())
         assert b"Private Child" not in r.content
 
-    def test_private_page_in_private_dir_hidden(
+    def test_page_grant_pierces_private_directory(
         self, client, other_user, private_directory
     ):
-        """A private page in a private directory is hidden even
-        if the user has page-level permission but not dir permission."""
+        """An explicit page-level grant reveals a page even inside a private
+        directory the user can't otherwise see.
+
+        Grants are now additive and pierce the directory gate (deliberate
+        per-page sharing wins over the directory's ambient privacy). They do
+        NOT expose the rest of the directory — only the granted page.
+        """
 
         page = Page.objects.create(
             title="Secret Doc",
@@ -860,13 +865,17 @@ class TestDirectoryGate:
             updated_by=private_directory.owner,
             visibility=Page.Visibility.PRIVATE,
         )
-        # Grant page-level view but NOT directory-level
+        # Grant page-level view but NOT directory-level.
         PagePermission.objects.create(
             page=page, user=other_user, permission_type="view"
         )
         client.force_login(other_user)
         r = client.get(page.get_absolute_url())
-        assert r.status_code == 404
+        assert r.status_code == 200
+        # But the private directory itself stays hidden.
+        assert (
+            client.get(private_directory.get_absolute_url()).status_code == 404
+        )
 
     def test_create_in_dir_requires_edit_perm(
         self, client, other_user, sub_directory

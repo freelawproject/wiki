@@ -30,7 +30,11 @@ from wiki.users.models import (
     SystemConfig,
     UserProfile,
 )
-from wiki.users.tasks import notify_access_change, send_magic_link_email
+from wiki.users.tasks import (
+    notify_access_change,
+    notify_email_access_granted,
+    send_magic_link_email,
+)
 
 
 # SECURITY: rate limit login POSTs to prevent magic link email spam.
@@ -278,12 +282,14 @@ def _can_manage_admin(user):
     return user.is_staff or is_system_owner(user)
 
 
-def _announce_access_change(request, action, item_type, value):
+def _announce_access_change(request, action, item_type, value, tier=None):
     """Notify the owner and managers of a change and confirm to the actor.
 
     Email sending is a side effect kept outside any transaction.
     """
-    recipients = notify_access_change(request.user, action, item_type, value)
+    recipients = notify_access_change(
+        request.user, action, item_type, value, tier=tier
+    )
     if recipients:
         messages.info(
             request, "The owner and managers have been notified by email."
@@ -355,7 +361,9 @@ def access_add_domain(request):
     # allowlist so re-adding a domain restores its exact prior access.
     reactivate_domain_grants(domain)
     messages.success(request, f"Domain {domain} is now allowed.")
-    _announce_access_change(request, "added", "domain", domain)
+    _announce_access_change(
+        request, "added", "domain", domain, tier=form.cleaned_data["tier"]
+    )
     return redirect("access_list")
 
 
@@ -384,8 +392,16 @@ def access_add_email(request):
         messages.info(request, f"{email} was already allowed.")
         return redirect("access_list")
 
+    # Tell the person they can now sign in.
+    notify_email_access_granted(email)
     messages.success(request, f"{email} is now allowed.")
-    _announce_access_change(request, "added", "email address", email)
+    _announce_access_change(
+        request,
+        "added",
+        "email address",
+        email,
+        tier=form.cleaned_data["tier"],
+    )
     return redirect("access_list")
 
 

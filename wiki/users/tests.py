@@ -617,10 +617,13 @@ class TestAccessChangePermissionsAndEmails:
         assert AllowedEmail.objects.filter(
             email="contractor@gmail.com"
         ).exists()
-        assert len(mail.outbox) == 1
-        recipients = set(mail.outbox[0].to)
-        assert "alice@free.law" in recipients  # owner
-        assert "bob@free.law" in recipients  # manager (actor)
+        # Two emails: one to the new grantee, one to the owner + managers.
+        assert len(mail.outbox) == 2
+        grantee = [m for m in mail.outbox if m.to == ["contractor@gmail.com"]]
+        audit = [m for m in mail.outbox if "alice@free.law" in m.to]
+        assert len(grantee) == 1
+        assert len(audit) == 1
+        assert "bob@free.law" in set(audit[0].to)  # manager (actor)
         assert b"notified by email" in r.content
 
     def test_manager_delete_email_notifies(

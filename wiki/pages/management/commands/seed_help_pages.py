@@ -471,7 +471,7 @@ Both pages **and** directories have a visibility setting:
 | **Private** | Only users with an explicit grant (or the owner) |
 
 Being *allowed to sign in* is separate from being able to *see content*. Staff
-see Staff-level content automatically. Third parties (anyone allowed to sign in
+see Staff-level content automatically. Guests (anyone allowed to sign in
 who isn't staff) only see Public pages plus whatever is explicitly shared with
 them. A grant is **additive at any level** — sharing a Staff or Private page or
 directory with a person, group, or whole **domain** lets them in without
@@ -628,7 +628,7 @@ In addition to visibility, pages and directories have an
 
 This is useful for pages that should be broadly collaborative —
 for example, team wikis or shared documentation where any staff
-member should be able to contribute. Third parties still need an
+member should be able to contribute. Guests still need an
 explicit edit grant.
 
 ### Best practices

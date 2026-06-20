@@ -11,7 +11,7 @@ from wiki.lib.permissions import (
 from wiki.lib.sessions import revoke_disallowed
 
 from .models import AllowedDomain, AllowedEmail, SystemConfig, UserProfile
-from .tasks import notify_access_change
+from .tasks import notify_access_change, notify_email_access_granted
 
 
 class UserProfileInline(admin.StackedInline):
@@ -144,8 +144,11 @@ class AccessRuleAdmin(admin.ModelAdmin):
             "updated" if change else "added",
             self.audit_item_type,
             new_value,
+            tier=getattr(obj, "tier", None),
         )
-        self._on_added(new_value)
+        # Only fire the "added" hook on a genuine add, not on edits.
+        if not change:
+            self._on_added(new_value)
         # A rename strands users on the old value; revoke them if now barred.
         if old_value and old_value != new_value:
             self._revoke(old_value)
@@ -213,3 +216,7 @@ class AllowedEmailAdmin(AccessRuleAdmin):
 
     def _affected_users(self, value):
         return User.objects.filter(email__iexact=value)
+
+    # Tell the newly-allowlisted person they can now sign in.
+    def _on_added(self, value):
+        notify_email_access_granted(value)

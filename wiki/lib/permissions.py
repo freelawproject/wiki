@@ -12,7 +12,7 @@ Grants are *additive at any visibility level*: a view/edit/owner grant to a
 user, group, or domain — on the item or any ancestor directory — adds that
 audience on top of the baseline without changing the item's visibility. Grant
 checks run ahead of the internal branch and pierce the directory gate, so a
-third party with a grant on an internal page sees it while the page stays
+guest with a grant on an internal page sees it while the page stays
 internal. Directory permissions inherit down the parent chain.
 
 Settings inheritance: visibility, editability, in_sitemap, and in_llms_txt
@@ -231,13 +231,16 @@ def _page_grant_q(user, prefix=""):
 
 
 def viewable_pages_q(user):
-    """Return a Q filter for pages the user can view.
+    """Return a Q filter for pages the user can view (used by search/listings).
 
-    Mirrors can_view_page() at the SQL level (asserted row-by-row in tests) so
-    LIMIT/OFFSET apply to already-filtered results. Public pages match
-    unconditionally; grants (page-level or on any ancestor directory) match
-    regardless of visibility and pierce the directory gate; the internal
-    baseline applies only to the staff audience within viewable directories.
+    Two layers, matching can_view_page():
+    - *Ambient* visibility (public, and internal for the staff audience) is
+      gated by the directory — a page in a directory the user can't see is
+      hidden from listings even if the page itself is public. (This is the
+      long-standing search/listing behavior; direct URL access to a public
+      page is governed separately by can_view_page.)
+    - *Explicit* grants/ownership (user/group/domain, on the page or any
+      ancestor directory) pierce that gate and match at any visibility.
     """
     if is_system_owner(user):
         return Q()
@@ -247,18 +250,15 @@ def viewable_pages_q(user):
         visibility="inherit", directory_id__in=public_dir_ids
     )
 
-    # Public pages are viewable by everyone, no directory gate (matches the
-    # public short-circuit in can_view_page).
-    if not user.is_authenticated:
-        return eff_public
+    dir_ids = _viewable_directory_ids(user)
+    dir_gate = Q(directory__isnull=True) | Q(directory_id__in=dir_ids)
 
-    q = eff_public
-    # Pages the user owns.
-    q |= Q(owner=user)
-    # Page-level grant (user / group / domain) — additive, pierces the gate.
-    q |= _page_grant_q(user)
-    # Grant on any ancestor directory: a grant on a directory covers its whole
-    # subtree, so resolve the granted directories and expand to descendants.
+    if not user.is_authenticated:
+        return eff_public & dir_gate
+
+    # Explicit grants and ownership pierce the directory gate.
+    q = Q(owner=user) | _page_grant_q(user)
+    # A grant on a directory covers its whole subtree.
     granted_dir_ids = _expand_descendant_dirs(
         DirectoryPermission.objects.filter(_grant_target_q(user)).values_list(
             "directory_id", flat=True
@@ -267,17 +267,17 @@ def viewable_pages_q(user):
     if granted_dir_ids:
         q |= Q(directory_id__in=granted_dir_ids)
 
-    # Internal baseline: only the staff audience, only in viewable directories.
+    # Ambient visibility, gated by the directory: public for everyone, internal
+    # for the staff audience.
+    ambient = eff_public
     if is_internal_user(user):
         internal_dir_ids = _effectively_matching_dir_ids(
             "visibility", {"internal"}
         )
-        eff_internal = Q(visibility="internal") | Q(
+        ambient |= Q(visibility="internal") | Q(
             visibility="inherit", directory_id__in=internal_dir_ids
         )
-        dir_ids = _viewable_directory_ids(user)
-        dir_gate = Q(directory__isnull=True) | Q(directory_id__in=dir_ids)
-        q |= eff_internal & dir_gate
+    q |= ambient & dir_gate
 
     return q
 

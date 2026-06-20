@@ -12,15 +12,23 @@
     <a href="{% url 'access_list' %}" class="tab-item-active">Access</a>
   </nav>
 
-  <p class="text-sm text-gray-500 dark:text-gray-400 mb-6">
-    Anyone with an email on an allowed domain can request a sign-in link.
-    Add individual addresses to grant access to people outside those domains.
-    <strong>Staff</strong> see internal content automatically; <strong>third
-    parties</strong> can sign in but only see public pages plus whatever is
-    explicitly shared with them, their group, or their domain.
-    Only the system owner can change domains; managers can manage individual
-    addresses. The owner and managers are emailed about every change.
-  </p>
+  <div class="text-sm text-gray-500 dark:text-gray-400 mb-6 space-y-2">
+    <p>
+      Anyone on an allowed domain can request a sign-in link. Add individual
+      addresses for people outside those domains.
+    </p>
+    <ul class="list-disc pl-5 space-y-1">
+      <li><strong>Staff</strong> see internal content automatically.</li>
+      <li>
+        <strong>Guests</strong> can sign in but only see public pages, plus
+        anything shared with them, their group, or their domain.
+      </li>
+    </ul>
+    <p>
+      Only the system owner can change domains; managers can manage individual
+      addresses. The owner and managers are emailed about every change.
+    </p>
+  </div>
 
   <!-- Allowed domains -->
   <section class="mb-10">
