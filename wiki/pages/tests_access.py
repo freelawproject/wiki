@@ -52,9 +52,7 @@ class TestCheckPagePermissionsLeak:
         )
         assert resp.status_code == 403
 
-    def test_private_linked_page_not_reported(
-        self, client, user, other_user
-    ):
+    def test_private_linked_page_not_reported(self, client, user, other_user):
         # alice owns a public page (she can edit it). It links to bob's private
         # page, which alice cannot view — it must not appear in the advisory.
         page = _page(user, "home", Page.Visibility.PUBLIC)
