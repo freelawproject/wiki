@@ -50,8 +50,22 @@ def backfill_handles(apps, schema_editor):
     }
     taken = set()
 
-    profiles = UserProfile.objects.select_related("user").order_by(
-        "user__date_joined", "user__id"
+    # Stream rows (bounded memory) and persist in batches rather than one
+    # UPDATE per row, so this scales to a large existing user base. The
+    # taken-set + (date_joined, id) ordering keep handle assignment
+    # deterministic and collision-free regardless of batching.
+    BATCH = 1000
+    pending = []
+
+    def flush():
+        if pending:
+            UserProfile.objects.bulk_update(pending, ["handle"])
+            pending.clear()
+
+    profiles = (
+        UserProfile.objects.select_related("user")
+        .order_by("user__date_joined", "user__id")
+        .iterator(chunk_size=BATCH)
     )
     for p in profiles:
         if p.handle:
@@ -83,7 +97,11 @@ def backfill_handles(apps, schema_editor):
 
         p.handle = candidate
         taken.add(candidate)
-        p.save(update_fields=["handle"])
+        pending.append(p)
+        if len(pending) >= BATCH:
+            flush()
+
+    flush()
 
 
 def clear_handles(apps, schema_editor):
