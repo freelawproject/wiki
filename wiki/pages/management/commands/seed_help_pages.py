@@ -584,9 +584,9 @@ Groups can be managed from the [Groups](/g/) page.
 Click the **Permissions** link on any page or directory to manage
 who has access. From there you can:
 
-- Add user or group permissions with a specific access level
+- Grant access to a user, a group, or a whole domain at a specific level
 - Remove existing permissions
-- See all current user and group grants at a glance
+- See all current user, group, and domain grants at a glance
 
 ### Wiki-link permission warnings
 

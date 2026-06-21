@@ -246,8 +246,13 @@ def viewable_pages_q(user):
         return Q()
 
     public_dir_ids = _effectively_matching_dir_ids("visibility", {"public"})
-    eff_public = Q(visibility="public") | Q(
-        visibility="inherit", directory_id__in=public_dir_ids
+    eff_public = (
+        Q(visibility="public")
+        | Q(visibility="inherit", directory_id__in=public_dir_ids)
+        # A directory-less inherit page has no parent to resolve from, so
+        # resolve_effective_value falls back to the "public" default —
+        # mirror that here or can_view_page and this query disagree.
+        | Q(visibility="inherit", directory__isnull=True)
     )
 
     dir_ids = _viewable_directory_ids(user)

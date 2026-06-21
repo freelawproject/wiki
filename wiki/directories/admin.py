@@ -49,6 +49,7 @@ class DirectoryPermissionAdmin(admin.ModelAdmin):
         "directory",
         "user",
         "group",
+        "grant_domain",
         "permission_type",
     ]
     list_filter = ["permission_type"]
@@ -57,6 +58,7 @@ class DirectoryPermissionAdmin(admin.ModelAdmin):
         "directory__path",
         "user__email",
         "group__name",
+        "grant_domain",
     ]
     raw_id_fields = ["directory", "user"]
     list_select_related = ["directory", "user", "group"]

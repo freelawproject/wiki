@@ -155,12 +155,13 @@ class PageRevisionAdmin(admin.ModelAdmin):
 
 @admin.register(PagePermission)
 class PagePermissionAdmin(admin.ModelAdmin):
-    list_display = ["page", "user", "group", "permission_type"]
+    list_display = ["page", "user", "group", "grant_domain", "permission_type"]
     list_filter = ["permission_type"]
     search_fields = [
         "page__title",
         "user__email",
         "group__name",
+        "grant_domain",
     ]
     raw_id_fields = ["page", "user"]
     list_select_related = ["page", "user", "group"]

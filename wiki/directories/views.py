@@ -165,7 +165,9 @@ def root_view(request):
 
     rendered_description = ""
     if root.description:
-        rendered_description = render_markdown(root.description)
+        rendered_description = render_markdown(
+            root.description, viewer=request.user
+        )
 
     # SEO — root always has explicit values, but use resolve for consistency
     is_public = root.visibility == "public"
@@ -304,12 +306,14 @@ def directory_detail(request, path):
 
     rendered_description = ""
     if directory.description:
-        rendered_description = render_markdown(directory.description)
+        rendered_description = render_markdown(
+            directory.description, viewer=request.user
+        )
 
     # SEO
     eff_visibility, _ = resolve_effective_value(directory, "visibility")
     is_public = eff_visibility == "public"
-    breadcrumbs = directory.get_breadcrumbs()
+    breadcrumbs = directory.get_breadcrumbs(viewer=request.user)
     directory_description = extract_description(directory.description)
     breadcrumbs_json = ""
     if is_public:
@@ -423,7 +427,7 @@ def directory_edit(request, path):
         messages.success(request, f'Directory "{directory.title}" updated.')
         return redirect(directory.get_absolute_url())
 
-    breadcrumbs = directory.get_breadcrumbs()
+    breadcrumbs = directory.get_breadcrumbs(viewer=request.user)
     return render(
         request,
         "directories/form.html",
@@ -457,7 +461,7 @@ def directory_create(request, path=""):
             )
             return redirect(parent.get_absolute_url())
 
-    breadcrumbs = parent.get_breadcrumbs()
+    breadcrumbs = parent.get_breadcrumbs(viewer=request.user)
     breadcrumbs.append(("New Subdirectory", ""))
 
     form = DirectoryCreateForm(request.POST or None, parent=parent)

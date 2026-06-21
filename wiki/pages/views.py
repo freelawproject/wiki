@@ -434,7 +434,7 @@ def _render_page_detail(request, page):
     if page.data_source_url:
         data = fetch_page_data(page.data_source_url, page.data_source_ttl)
         content = substitute_data_variables(content, data)
-    rendered_content = render_markdown(content)
+    rendered_content = render_markdown(content, viewer=request.user)
     toc = getattr(rendered_content, "toc_html", "")
 
     breadcrumbs = _build_page_breadcrumbs(request, page)
@@ -1244,13 +1244,13 @@ def record_page_view(request):
 def page_preview_htmx(request):
     """Return rendered markdown preview for HTMX requests.
 
-    Gated on auth: rendering resolves ``#dir/slug`` references and emits
-    the target URL path even for pages the anonymous crawler wouldn't
-    otherwise be able to see, so unauthenticated preview would confirm
-    the existence of private pages via URL leakage.
+    Gated on auth, and rendered *as the requesting viewer*: wiki-link
+    resolution emits the target page's title and URL, so previewing must not
+    resolve references to pages this user can't view — otherwise a guest
+    could enumerate internal page titles/URLs by previewing ``#guessed-slug``.
     """
     content = request.POST.get("content", "")
-    rendered = render_markdown(content)
+    rendered = render_markdown(content, viewer=request.user)
     return HttpResponse(rendered)
 
 

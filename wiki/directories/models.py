@@ -108,12 +108,29 @@ class Directory(models.Model):
         ancestors.reverse()
         return ancestors
 
-    def get_breadcrumbs(self):
-        """Return list of (title, url) tuples for breadcrumb nav."""
+    def get_breadcrumbs(self, viewer=None):
+        """Return list of (title, url) tuples for breadcrumb nav.
+
+        When ``viewer`` is provided, ancestor directories that viewer cannot
+        view are omitted — otherwise the trail to a public directory nested
+        under an internal/private parent would leak that parent's title and
+        URL (a public child can sit under a non-public parent; visibility
+        doesn't force-inherit).
+        """
+        can_view = None
+        if viewer is not None:
+            # Inline import to avoid a circular dependency
+            # (directories.models → permissions → directories.models).
+            from wiki.lib.permissions import can_view_directory
+
+            can_view = can_view_directory
+
         crumbs = [("Home", reverse("root"))]
         for ancestor in self.get_ancestors():
             if not ancestor.path:
                 continue  # skip root — already in breadcrumbs
+            if can_view is not None and not can_view(viewer, ancestor):
+                continue
             crumbs.append((ancestor.title, ancestor.get_absolute_url()))
         if self.path:
             crumbs.append((self.title, self.get_absolute_url()))

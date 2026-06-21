@@ -122,3 +122,46 @@ class TestApplyPermissionsCopiesDomainGrants:
             user=user,
             permission_type=PagePermission.PermissionType.VIEW,
         ).exists()
+
+
+class TestBreadcrumbsHideNonViewableAncestors:
+    """A public directory can sit under an internal/private parent; the
+    breadcrumb trail must not leak the non-viewable parent's title."""
+
+    def test_guest_breadcrumb_omits_internal_parent(self, client, user):
+        root = Directory.objects.create(path="", title="Home")
+        AllowedDomain.objects.create(
+            domain="acme.com", suffix="acme", tier=AccessTier.GUEST
+        )
+        guest = User.objects.create_user(
+            username="dana@acme.com", email="dana@acme.com", password="x"
+        )
+        UserProfile.objects.create(user=guest)
+
+        internal_parent = Directory.objects.create(
+            path="hush",
+            title="Hush Hush Project",
+            parent=root,
+            owner=user,
+            created_by=user,
+            visibility=Directory.Visibility.INTERNAL,
+        )
+        public_child = Directory.objects.create(
+            path="hush/public-notes",
+            title="Public Notes",
+            parent=internal_parent,
+            owner=user,
+            created_by=user,
+            visibility=Directory.Visibility.PUBLIC,
+        )
+
+        client.force_login(guest)
+        r = client.get(public_child.get_absolute_url())
+        assert r.status_code == 200
+        # The guest can see the public child but not the internal parent —
+        # its title must not appear (it would only be there via breadcrumbs).
+        assert b"Hush Hush Project" not in r.content
+        # A staff member sees the full trail.
+        client.force_login(user)
+        r2 = client.get(public_child.get_absolute_url())
+        assert b"Hush Hush Project" in r2.content

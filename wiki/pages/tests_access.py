@@ -38,6 +38,51 @@ def _page(owner, slug, visibility=Page.Visibility.PUBLIC):
     return p
 
 
+class TestPreviewDoesNotLeakInternalTitles:
+    """page_preview renders as the requesting viewer: a guest must not be able
+    to resolve an internal page's title/URL by previewing #slug."""
+
+    def _internal_page(self, owner, title):
+        # Distinct title vs slug so the test checks the *title* leak, not the
+        # slug the previewer typed themselves.
+        p = Page.objects.create(
+            title=title,
+            content="x",
+            owner=owner,
+            created_by=owner,
+            updated_by=owner,
+            visibility=Page.Visibility.INTERNAL,
+        )
+        PageRevision.objects.create(
+            page=p,
+            title=p.title,
+            content=p.content,
+            change_message="init",
+            revision_number=1,
+            created_by=owner,
+        )
+        return p
+
+    def test_guest_preview_redacts_internal_link(self, client, user, guest):
+        internal = self._internal_page(user, "Confidential Roadmap")
+        client.force_login(guest)
+        r = client.post(
+            reverse("page_preview"), {"content": f"See #{internal.slug}"}
+        )
+        assert r.status_code == 200
+        body = r.content.decode()
+        assert internal.title not in body
+        assert internal.get_absolute_url() not in body
+
+    def test_staff_preview_resolves_link(self, client, user):
+        internal = self._internal_page(user, "Staff Roadmap")
+        client.force_login(user)
+        r = client.post(
+            reverse("page_preview"), {"content": f"See #{internal.slug}"}
+        )
+        assert internal.title in r.content.decode()
+
+
 class TestCheckPagePermissionsLeak:
     """#1: the mention/link advisory must not reveal private pages."""
 

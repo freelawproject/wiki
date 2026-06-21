@@ -2850,8 +2850,8 @@ class TestSearchView:
         )
         client.force_login(user)
         r = client.get(f"{reverse('search')}?q=badgeterm")
-        # Building icon has title="FLP Staff"
-        assert b'title="FLP Staff"' in r.content
+        # Building icon for internal (staff) visibility.
+        assert b'title="Staff"' in r.content
 
 
 class TestRawMarkdown:

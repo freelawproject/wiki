@@ -328,17 +328,34 @@ def resolve_references(references, exclude_pk=None):
     return resolved
 
 
-def _build_link_resolver(content, code_ranges):
+def _build_link_resolver(content, code_ranges, viewer=None):
     """Return ``resolve(dir_path, slug) -> Page | None`` for ``content``.
 
     Thin wrapper around ``resolve_references`` that extracts the refs
     from ``content`` first.
+
+    When ``viewer`` is provided, a reference to a page that viewer cannot
+    view resolves to ``None`` (treated exactly like a missing page). This
+    keeps a standalone ``#slug`` from rendering a non-viewable page's title
+    and URL — otherwise a public page that references an internal one would
+    leak the internal page's title to anyone, including guest-tier users.
     """
     references = set(_iter_references(content, code_ranges))
     resolved = resolve_references(references)
 
+    can_view = None
+    if viewer is not None:
+        # Inline import to avoid a circular dependency
+        # (markdown → permissions → pages.models → markdown).
+        from wiki.lib.permissions import can_view_page
+
+        can_view = can_view_page
+
     def resolve(dir_path, slug):
-        return resolved.get((dir_path, slug))
+        page = resolved.get((dir_path, slug))
+        if page is None or can_view is None:
+            return page
+        return page if can_view(viewer, page) else None
 
     return resolve
 
@@ -347,7 +364,7 @@ def _append_fragment(url, fragment):
     return f"{url}#{fragment}" if fragment else url
 
 
-def resolve_wiki_links(content):
+def resolve_wiki_links(content, viewer=None):
     """Replace #slug and #dir/slug references with proper markdown links.
 
     Handles three syntaxes:
@@ -366,7 +383,7 @@ def resolve_wiki_links(content):
     if not any(True for _ in _iter_references(content, code_ranges)):
         return content
 
-    resolve = _build_link_resolver(content, code_ranges)
+    resolve = _build_link_resolver(content, code_ranges, viewer)
 
     def replace_md_link(match):
         if _in_code_region(match.start(), code_ranges):
@@ -695,9 +712,15 @@ def _convert_button_links(html):
     return _BUTTON_LINK_RE.sub(replace_button, html)
 
 
-def render_markdown(content):
-    """Render markdown content to HTML with wiki link resolution and TOC."""
-    content = resolve_wiki_links(content)
+def render_markdown(content, viewer=None):
+    """Render markdown content to HTML with wiki link resolution and TOC.
+
+    When ``viewer`` is provided, wiki-link references to pages that viewer
+    cannot view are left unresolved (rendered as not-found) so the target's
+    title and URL aren't disclosed. Pass the request user at every
+    user-facing call site; leave it None only for system/no-viewer contexts.
+    """
+    content = resolve_wiki_links(content, viewer=viewer)
     html = markdown2.markdown(
         content,
         extras=[

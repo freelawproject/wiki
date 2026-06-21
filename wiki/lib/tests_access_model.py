@@ -7,11 +7,12 @@ can_view_page agreement, and domain-grant retention/dormancy.
 """
 
 import pytest
-from django.contrib.auth.models import User
+from django.contrib.auth.models import AnonymousUser, User
 from django.utils import timezone
 
 from wiki.directories.models import Directory, DirectoryPermission
 from wiki.lib.access import is_internal_user, resolve_tier
+from wiki.lib.markdown import render_markdown
 from wiki.lib.permissions import (
     can_administer_directory,
     can_administer_page,
@@ -325,3 +326,58 @@ class TestDomainGrantDormancy:
             dormant_since=timezone.now(),
         )
         assert can_view_page(carol, internal_page) is True
+
+
+# --- wiki-link rendering must not leak non-viewable titles --------------
+
+
+class TestWikiLinkViewerGating:
+    def test_guest_does_not_see_internal_title(self, carol, internal_page):
+        md = f"See #{internal_page.slug} for details."
+        html = render_markdown(md, viewer=carol)
+        assert internal_page.title not in html
+        assert "Page not found" in html
+
+    def test_staff_sees_resolved_link(self, user, internal_page):
+        md = f"See #{internal_page.slug} for details."
+        html = render_markdown(md, viewer=user)
+        assert internal_page.title in html
+        assert internal_page.get_absolute_url() in html
+
+    def test_anonymous_does_not_see_internal_title(self, internal_page):
+        md = f"See #{internal_page.slug} for details."
+        html = render_markdown(md, viewer=AnonymousUser())
+        assert internal_page.title not in html
+
+    def test_no_viewer_preserves_legacy_behavior(self, internal_page):
+        # System/no-request contexts (viewer=None) render unchanged.
+        md = f"See #{internal_page.slug} for details."
+        html = render_markdown(md)
+        assert internal_page.title in html
+
+
+# --- viewable_pages_q mirrors can_view_page for edge cases --------------
+
+
+class TestViewableQueryNullDirectory:
+    def test_directoryless_inherit_page_is_listed(self, user, db):
+        """A directory-less inherit page resolves to the public default in
+        can_view_page; viewable_pages_q must include it too."""
+        page = Page.objects.create(
+            title="Loose",
+            slug="loose",
+            content="x",
+            directory=None,
+            owner=user,
+            created_by=user,
+            updated_by=user,
+            visibility=Page.Visibility.INHERIT,
+        )
+        anon = AnonymousUser()
+        assert can_view_page(anon, page) is True
+        listed = set(
+            Page.objects.filter(viewable_pages_q(anon)).values_list(
+                "id", flat=True
+            )
+        )
+        assert page.id in listed
