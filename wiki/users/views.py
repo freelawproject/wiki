@@ -1,20 +1,40 @@
 import secrets
 
 from django.contrib import messages
-from django.contrib.auth import SESSION_KEY, login, logout
+from django.contrib.auth import login, logout
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
-from django.contrib.sessions.models import Session
 from django.db import transaction
+from django.db.models import Q
 from django.http import Http404, JsonResponse
 from django.shortcuts import redirect, render
-from django.utils import timezone
 
-from wiki.lib.permissions import is_system_owner
+from wiki.lib.access import is_email_allowed
+from wiki.lib.permissions import (
+    is_system_owner,
+    mark_domain_grants_dormant,
+    reactivate_domain_grants,
+)
 from wiki.lib.ratelimiter import ratelimit_login
-from wiki.users.forms import LoginForm, UserSettingsForm
-from wiki.users.models import SystemConfig, UserProfile
-from wiki.users.tasks import send_magic_link_email
+from wiki.lib.sessions import end_sessions_for_users, revoke_disallowed
+from wiki.lib.users import assign_handle
+from wiki.users.forms import (
+    AllowedDomainForm,
+    AllowedEmailForm,
+    LoginForm,
+    UserSettingsForm,
+)
+from wiki.users.models import (
+    AllowedDomain,
+    AllowedEmail,
+    SystemConfig,
+    UserProfile,
+)
+from wiki.users.tasks import (
+    notify_access_change,
+    notify_email_access_granted,
+    send_magic_link_email,
+)
 
 
 # SECURITY: rate limit login POSTs to prevent magic link email spam.
@@ -28,42 +48,43 @@ def login_view(request):
     if request.method == "POST" and form.is_valid():
         email = form.cleaned_data["email"]
 
-        # Get or create user (look up by username, which is unique)
-        user, created = User.objects.get_or_create(
-            username=email,
-            defaults={"email": email},
-        )
-
-        if not user.is_active:
-            messages.error(
-                request,
-                "Your account has been archived. "
-                "Contact an admin to restore access.",
+        # Only mint an account and send a link for an allowed, active address.
+        # The response is identical in every case (below) so the form never
+        # reveals whether an address is on the allowlist or has been archived.
+        if is_email_allowed(email):
+            user, _ = User.objects.get_or_create(
+                username=email,
+                defaults={"email": email},
             )
-            return redirect("login")
+            if user.is_active:
+                profile, profile_created = UserProfile.objects.get_or_create(
+                    user=user
+                )
+                if profile_created:
+                    profile.gravatar_url = UserProfile.gravatar_url_for_email(
+                        email
+                    )
+                # Assign a unique public handle on first sign-in.
+                if not profile.handle:
+                    assign_handle(profile)
 
-        # Get or create profile
-        profile, profile_created = UserProfile.objects.get_or_create(user=user)
-        if profile_created:
-            profile.gravatar_url = UserProfile.gravatar_url_for_email(email)
+                # First user to log in becomes system owner and admin.
+                if not SystemConfig.objects.exists():
+                    SystemConfig.objects.create(owner=user)
+                    user.is_staff = True
+                    user.is_superuser = True
+                    user.save(update_fields=["is_staff", "is_superuser"])
 
-        # First user to log in becomes system owner and admin
-        if not SystemConfig.objects.exists():
-            SystemConfig.objects.create(owner=user)
-            user.is_staff = True
-            user.is_superuser = True
-            user.save(update_fields=["is_staff", "is_superuser"])
-
-        # Generate magic link token
-        raw_token = secrets.token_urlsafe(32)
-        profile.set_magic_token(raw_token)
-        profile.save()
-
-        send_magic_link_email(email, raw_token)
+                # Generate magic link token and send the email.
+                raw_token = secrets.token_urlsafe(32)
+                profile.set_magic_token(raw_token)
+                profile.save()
+                send_magic_link_email(email, raw_token)
 
         messages.success(
             request,
-            "Check your email for a sign-in link. It expires in 15 minutes.",
+            "If that address is allowed to sign in, we've emailed a "
+            "sign-in link. It expires in 15 minutes.",
         )
         return redirect("login")
 
@@ -91,6 +112,18 @@ def verify_view(request):
             request,
             "Your account has been archived. "
             "Contact an admin to restore access.",
+        )
+        return redirect("login")
+
+    # An outstanding magic link is a bearer credential: re-check the
+    # allowlist at redemption so a link minted before the user's domain or
+    # address was removed can't still mint a session. Kill the token too.
+    if not is_email_allowed(user.email):
+        profile.clear_magic_token()
+        profile.save()
+        messages.error(
+            request,
+            "Your sign-in access has been revoked. Contact an admin.",
         )
         return redirect("login")
 
@@ -223,15 +256,17 @@ def admin_archive_toggle(request, pk):
         pass
 
     if target.is_active:
-        # Archive: deactivate and delete all sessions
+        # Archive: deactivate, end sessions, and kill any outstanding magic
+        # link so it can't be redeemed (e.g. after a quick un-archive).
         with transaction.atomic():
             target.is_active = False
             target.save(update_fields=["is_active"])
-            for session in Session.objects.filter(
-                expire_date__gt=timezone.now()
-            ):
-                if session.get_decoded().get(SESSION_KEY) == str(target.pk):
-                    session.delete()
+            end_sessions_for_users([target.pk])
+            if hasattr(target, "profile"):
+                target.profile.clear_magic_token()
+                target.profile.save(
+                    update_fields=["magic_link_token", "magic_link_expires"]
+                )
         messages.success(request, f"{target.email} has been archived.")
     else:
         # Unarchive: reactivate
@@ -240,6 +275,178 @@ def admin_archive_toggle(request, pk):
         messages.success(request, f"{target.email} has been unarchived.")
 
     return redirect("admin_list")
+
+
+def _can_manage_admin(user):
+    """Staff or system owner may manage admin settings."""
+    return user.is_staff or is_system_owner(user)
+
+
+def _announce_access_change(request, action, item_type, value, tier=None):
+    """Notify the owner and managers of a change and confirm to the actor.
+
+    Email sending is a side effect kept outside any transaction.
+    """
+    recipients = notify_access_change(
+        request.user, action, item_type, value, tier=tier
+    )
+    if recipients:
+        messages.info(
+            request, "The owner and managers have been notified by email."
+        )
+
+
+def _form_error_message(form):
+    """Flatten a form's errors into one readable string.
+
+    Covers errors on any field (e.g. a too-long note) instead of only the
+    primary field, so the user isn't told "Invalid domain" for a valid
+    domain with a bad note.
+    """
+    flat = "; ".join(err for errs in form.errors.values() for err in errs)
+    return flat or "Invalid input."
+
+
+@login_required
+def access_list(request):
+    """Manage the sign-in allowlist (domains + individual emails)."""
+    if not _can_manage_admin(request.user):
+        raise Http404
+
+    return render(
+        request,
+        "users/access_list.html",
+        {
+            "domains": AllowedDomain.objects.all(),
+            "emails": AllowedEmail.objects.all(),
+            "domain_form": AllowedDomainForm(auto_id="id_domain_%s"),
+            "email_form": AllowedEmailForm(auto_id="id_email_%s"),
+            "is_owner": is_system_owner(request.user),
+        },
+    )
+
+
+@login_required
+def access_add_domain(request):
+    """Add an allowed email domain. Owner only."""
+    if not _can_manage_admin(request.user):
+        raise Http404
+    if not is_system_owner(request.user):
+        messages.error(
+            request, "Only the system owner can add or remove domains."
+        )
+        return redirect("access_list")
+    if request.method != "POST":
+        return redirect("access_list")
+
+    form = AllowedDomainForm(request.POST)
+    if not form.is_valid():
+        messages.error(request, _form_error_message(form))
+        return redirect("access_list")
+
+    domain = form.cleaned_data["domain"]
+    _, created = AllowedDomain.objects.get_or_create(
+        domain=domain,
+        defaults={
+            "suffix": form.cleaned_data["suffix"],
+            "note": form.cleaned_data["note"],
+            "tier": form.cleaned_data["tier"],
+        },
+    )
+    if not created:
+        messages.info(request, f"Domain {domain} was already allowed.")
+        return redirect("access_list")
+
+    # Reactivate any content grants retained from a previous stint on the
+    # allowlist so re-adding a domain restores its exact prior access.
+    reactivate_domain_grants(domain)
+    messages.success(request, f"Domain {domain} is now allowed.")
+    _announce_access_change(
+        request, "added", "domain", domain, tier=form.cleaned_data["tier"]
+    )
+    return redirect("access_list")
+
+
+@login_required
+def access_add_email(request):
+    """Add a single allowed email address. Owner or managers."""
+    if not _can_manage_admin(request.user):
+        raise Http404
+    if request.method != "POST":
+        return redirect("access_list")
+
+    form = AllowedEmailForm(request.POST)
+    if not form.is_valid():
+        messages.error(request, _form_error_message(form))
+        return redirect("access_list")
+
+    email = form.cleaned_data["email"]
+    _, created = AllowedEmail.objects.get_or_create(
+        email=email,
+        defaults={
+            "note": form.cleaned_data["note"],
+            "tier": form.cleaned_data["tier"],
+        },
+    )
+    if not created:
+        messages.info(request, f"{email} was already allowed.")
+        return redirect("access_list")
+
+    # Tell the person they can now sign in.
+    notify_email_access_granted(email)
+    messages.success(request, f"{email} is now allowed.")
+    _announce_access_change(
+        request,
+        "added",
+        "email address",
+        email,
+        tier=form.cleaned_data["tier"],
+    )
+    return redirect("access_list")
+
+
+@login_required
+def access_delete_domain(request, pk):
+    """Remove an allowed domain. Owner only."""
+    if not _can_manage_admin(request.user):
+        raise Http404
+    if not is_system_owner(request.user):
+        messages.error(
+            request, "Only the system owner can add or remove domains."
+        )
+        return redirect("access_list")
+    if request.method != "POST":
+        return redirect("access_list")
+
+    domain = AllowedDomain.objects.filter(pk=pk).first()
+    if domain:
+        value = domain.domain
+        domain.delete()
+        revoke_disallowed(User.objects.filter(email__iendswith=f"@{value}"))
+        # Keep the domain's content grants but flag them dormant so the
+        # cleanup job can expire them if the domain stays gone.
+        mark_domain_grants_dormant(value)
+        messages.success(request, f"Domain {value} removed.")
+        _announce_access_change(request, "removed", "domain", value)
+    return redirect("access_list")
+
+
+@login_required
+def access_delete_email(request, pk):
+    """Remove an allowed email address. Owner or managers."""
+    if not _can_manage_admin(request.user):
+        raise Http404
+    if request.method != "POST":
+        return redirect("access_list")
+
+    email = AllowedEmail.objects.filter(pk=pk).first()
+    if email:
+        value = email.email
+        email.delete()
+        revoke_disallowed(User.objects.filter(email__iexact=value))
+        messages.success(request, f"{value} removed.")
+        _announce_access_change(request, "removed", "email address", value)
+    return redirect("access_list")
 
 
 @login_required
@@ -252,25 +459,25 @@ def user_search_htmx(request):
     if len(q) < 1:
         return JsonResponse([], safe=False)
 
+    # Match the typed @-handle (or a display name). The inner join on
+    # profile means every result has a handle.
     users = (
-        User.objects.filter(email__istartswith=q)
+        User.objects.filter(
+            Q(profile__handle__istartswith=q)
+            | Q(profile__display_name__icontains=q)
+        )
         .exclude(pk=request.user.pk)
         .select_related("profile")[:10]
     )
 
     results = []
     for u in users:
-        name = u.email.split("@")[0]
-        display = name
-        gravatar = ""
-        if hasattr(u, "profile"):
-            display = u.profile.display_name or name
-            gravatar = u.profile.gravatar_url or ""
+        handle = u.profile.handle or u.email.split("@")[0]
         results.append(
             {
-                "username": name,
-                "display_name": display,
-                "gravatar_url": gravatar,
+                "username": handle,
+                "display_name": u.profile.display_name or handle,
+                "gravatar_url": u.profile.gravatar_url or "",
             }
         )
 

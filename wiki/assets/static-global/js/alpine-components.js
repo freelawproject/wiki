@@ -6,13 +6,15 @@ document.addEventListener('alpine:init', () => {
     close() { this.open = false },
   }))
 
-  // Permission form — user/group tab toggle
+  // Permission form — user/group/domain tab toggle
   Alpine.data('permissionForm', () => ({
     target: 'user',
     get isUser() { return this.target === 'user' },
     get isGroup() { return this.target === 'group' },
+    get isDomain() { return this.target === 'domain' },
     setUser() { this.target = 'user' },
     setGroup() { this.target = 'group' },
+    setDomain() { this.target = 'domain' },
   }))
 
   // Copy page markdown to clipboard

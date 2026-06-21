@@ -1,5 +1,4 @@
 {% extends "base.html" %}
-{% load wiki_tags %}
 
 {% block title %}Settings - FLP Wiki{% endblock %}
 
@@ -19,7 +18,7 @@
         <div>
           <label class="block text-sm font-medium mb-1">Email</label>
           <p class="text-sm text-gray-500 dark:text-gray-400">
-            {{ user|display_name }}@free.law
+            {{ user.email }}
           </p>
         </div>
         <button type="submit" class="btn-primary">Save</button>

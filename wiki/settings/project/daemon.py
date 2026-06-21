@@ -22,3 +22,10 @@ DAEMON_OPTIMIZE_IMAGES_INTERVAL = env.int(
 NEVER_LOGGED_IN_USER_RETENTION_DAYS = env.int(
     "NEVER_LOGGED_IN_USER_RETENTION_DAYS", default=7
 )
+
+# How long a domain's content grants are kept after the domain leaves the
+# sign-in allowlist. Re-adding the domain within this window restores them;
+# past it, the cleanup job deletes the dormant grants.
+DORMANT_GRANT_RETENTION_DAYS = env.int(
+    "DORMANT_GRANT_RETENTION_DAYS", default=180
+)

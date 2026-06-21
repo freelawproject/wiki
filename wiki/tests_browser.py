@@ -164,7 +164,7 @@ class TestInheritSelectDropdown:
         """When a directory has explicit visibility='public' and
         the parent also has 'public', the dropdown should show:
         - 'Public / Provided by Home' (inherit option)
-        - 'FLP Staff'
+        - 'Staff'
         - 'Private'
         NOT a separate 'Public' explicit option (it's redundant)."""
         _force_login(browser_page, live_server, browser_user)
@@ -184,8 +184,8 @@ class TestInheritSelectDropdown:
         texts = _get_visible_option_labels(listbox)
 
         # Should be exactly 3 options, with "Public" appearing once
-        assert texts == ["Public", "FLP Staff", "Private"], (
-            f"Expected ['Public', 'FLP Staff', 'Private'], got {texts}"
+        assert texts == ["Public", "Staff", "Private"], (
+            f"Expected ['Public', 'Staff', 'Private'], got {texts}"
         )
 
     def test_new_page_in_dir_uses_inherit_select_on_load(
@@ -210,7 +210,7 @@ class TestInheritSelectDropdown:
             "[data-field='visibility'] button[role='combobox']"
         )
         expect(vis_button).to_be_visible()
-        expect(vis_button).to_contain_text("FLP Staff")
+        expect(vis_button).to_contain_text("Staff")
 
     def test_new_page_selects_upgrade_on_dir_pick(
         self, browser_page, live_server, browser_user, dir_tree
@@ -237,7 +237,7 @@ class TestInheritSelectDropdown:
             "[data-field='visibility'] button[role='combobox']"
         )
         expect(vis_button).to_be_visible()
-        expect(vis_button).to_contain_text("FLP Staff")
+        expect(vis_button).to_contain_text("Staff")
 
     def test_page_form_inherit_select_updates_on_dir_change(
         self, browser_page, live_server, browser_user, dir_tree
@@ -251,11 +251,11 @@ class TestInheritSelectDropdown:
         url = reverse("page_create_in_dir", kwargs={"path": "staff"})
         browser_page.goto(f"{live_server.url}{url}")
 
-        # The visibility button should show "FLP Staff"
+        # The visibility button should show "Staff"
         vis_button = browser_page.locator(
             "[data-field='visibility'] button[role='combobox']"
         )
-        expect(vis_button).to_contain_text("FLP Staff")
+        expect(vis_button).to_contain_text("Staff")
 
         # Backspace to remove "Staff" and pick "Docs" (public).
         location_input = browser_page.locator("#location-input")

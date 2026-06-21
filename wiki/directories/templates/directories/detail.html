@@ -69,11 +69,16 @@
           {% if can_edit %}
             {% if directory.path %}
               <a href="{% url 'directory_edit' path=directory.path %}" class="dropdown-item">Edit</a>
+            {% else %}
+              <a href="{% url 'directory_edit_root' %}" class="dropdown-item">Edit</a>
+            {% endif %}
+          {% endif %}
+          {% if can_administer %}
+            {% if directory.path %}
               <a href="{% url 'directory_permissions' path=directory.path %}" class="dropdown-item">Permissions</a>
               <a href="{% url 'directory_move' path=directory.path %}" class="dropdown-item">Move</a>
               <a href="{% url 'directory_delete' path=directory.path %}" class="dropdown-item-danger">Delete</a>
             {% else %}
-              <a href="{% url 'directory_edit_root' %}" class="dropdown-item">Edit</a>
               <a href="{% url 'directory_permissions_root' %}" class="dropdown-item">Permissions</a>
             {% endif %}
           {% endif %}

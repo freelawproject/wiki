@@ -20,14 +20,15 @@ HELP_PAGES = [
 ## Welcome to FLP Wiki
 
 This wiki is the internal knowledge base for Free Law Project.
-Anyone with an @free.law email address can sign in and contribute.
+Anyone with an email address on the sign-in allowlist can sign in and
+contribute — ask an admin if you're not sure whether yours is allowed.
 This page covers the basics and links to detailed guides on every
 feature.
 
 ### Signing in
 
 1. Visit the [Sign In](/u/login/) page
-2. Enter your @free.law email address
+2. Enter your email address (it must be on the sign-in allowlist)
 3. Check your inbox for a magic link (valid for 15 minutes)
 4. Click the link to sign in — no password needed
 
@@ -78,7 +79,7 @@ to copy the code to your clipboard.
 The **Actions** dropdown on each page gives you access to:
 
 - **Subscribe / Unsubscribe** — toggle email notifications
-- **Permissions** — manage who can view and edit (editors only)
+- **Permissions** — manage who can view and edit (owners/admins only)
 - **Move** — move the page to a different directory
 - **Feedback** — see pending comments and proposals (editors only)
 - **Propose Change** — suggest edits through the review workflow
@@ -466,16 +467,23 @@ Both pages **and** directories have a visibility setting:
 | Level | Who can view |
 |---|---|
 | **Public** | Everyone, including anonymous visitors |
-| **FLP Staff** | Any signed-in user with an @free.law account |
-| **Private** | Only users with explicit permission (or the owner) |
+| **Staff** | Any signed-in staff member (people on a staff domain) |
+| **Private** | Only users with an explicit grant (or the owner) |
+
+Being *allowed to sign in* is separate from being able to *see content*. Staff
+see Staff-level content automatically. Guests (anyone allowed to sign in
+who isn't staff) only see Public pages plus whatever is explicitly shared with
+them. A grant is **additive at any level** — sharing a Staff or Private page or
+directory with a person, group, or whole **domain** lets them in without
+changing the item's visibility.
 
 ### Permission types
 
 | Type | What it allows |
 |---|---|
 | **View** | Read the page or directory contents |
-| **Edit** | Modify content, metadata, and create child items |
-| **Admin** | Full control, including managing permissions and deletion |
+| **Edit** | Modify content (title and body) only |
+| **Owner** (shown as "Admin") | Everything Edit allows, plus managing permissions, changing visibility/editability, moving, and deleting |
 
 ### How permissions are checked
 
@@ -505,8 +513,8 @@ nothing above it to inherit from.
 
 | Setting | Options | What it controls |
 |---|---|---|
-| **Visibility** | Public, FLP Staff, Private | Who can view |
-| **Editability** | Restricted, FLP Staff | Who can edit |
+| **Visibility** | Public, Staff, Private | Who can view |
+| **Editability** | Restricted, Staff | Who can edit |
 | **Search engines** | Yes, No | Sitemap inclusion |
 | **AI sharing** | Yes, On request, No | llms.txt inclusion |
 
@@ -576,9 +584,9 @@ Groups can be managed from the [Groups](/g/) page.
 Click the **Permissions** link on any page or directory to manage
 who has access. From there you can:
 
-- Add user or group permissions with a specific access level
+- Grant access to a user, a group, or a whole domain at a specific level
 - Remove existing permissions
-- See all current user and group grants at a glance
+- See all current user, group, and domain grants at a glance
 
 ### Wiki-link permission warnings
 
@@ -615,17 +623,18 @@ In addition to visibility, pages and directories have an
 
 | Setting | Who can edit |
 |---|---|
-| **Restricted** | Only users with explicit edit permission (the default) |
-| **FLP Staff** | Any signed-in user with an @free.law account |
+| **Restricted** | Only users with an explicit edit grant (the default) |
+| **Staff** | Any signed-in staff member |
 
 This is useful for pages that should be broadly collaborative —
-for example, team wikis or shared documentation where anyone at
-FLP should be able to contribute.
+for example, team wikis or shared documentation where any staff
+member should be able to contribute. Guests still need an
+explicit edit grant.
 
 ### Best practices
 
 - Use **Public** for documentation that should be widely accessible
-- Use **FLP Staff** editability for pages where any FLP team member
+- Use **Staff** editability for pages where any staff member
   should be able to contribute
 - Use **Private directories** with group permissions for team
   spaces (e.g., grant the Engineering group Edit on `/c/engineering/`)
@@ -710,7 +719,7 @@ the sort order using the dropdown above the results:
 The search results page has a sidebar with clickable facets that
 let you narrow results without typing filter syntax:
 
-- **Visibility** — Filter by Public, FLP Staff, or Private
+- **Visibility** — Filter by Public, Staff, or Private
   (with counts for each)
 - **Last edited** — Quick presets: last 7 days, 30 days,
   3 months, or 1 year
@@ -746,15 +755,15 @@ Gravatar-enabled site, your avatar is looked up by your email.
 
 ### How the wiki uses Gravatar
 
-The wiki looks up your Gravatar using your **@free.law email
-address** — the same one you use to sign in. If you have a Gravatar
+The wiki looks up your Gravatar using **the email address you sign in
+with**. If you have a Gravatar
 linked to that address, it appears next to your name on pages you've
 created, edited, or are subscribed to.
 
 ### Setting up your Gravatar
 
 1. Go to [gravatar.com](https://gravatar.com/) and click **Sign Up**
-2. Create an account using your **@free.law email address**
+2. Create an account using **the email address you sign in with**
 3. Upload a photo or image you'd like to use as your avatar
 4. Save your profile
 
@@ -769,7 +778,7 @@ or are subscribed to.
 
 ### Tips
 
-- Use the same email address you sign in with (@free.law) — the wiki
+- Use the same email address you sign in with — the wiki
   won't find your Gravatar if it's linked to a different address
 - Choose a clear photo or image that's recognizable at small sizes
   (avatars are often displayed at 20-40px)
@@ -1339,7 +1348,7 @@ HTML is cached.
 - **Keep the system owner role** limited to one trusted person —
   it cannot be revoked
 - Use the **Restricted** editability default for sensitive content,
-  and **FLP Staff** editability for collaborative pages anyone at
+  and **Staff** editability for collaborative pages anyone on staff at
   FLP should be able to edit
 """,
     },

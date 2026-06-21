@@ -1,6 +1,7 @@
 import hashlib
 
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
 
@@ -18,6 +19,16 @@ class UserProfile(models.Model):
         related_name="profile",
     )
     display_name = models.CharField(max_length=255, blank=True)
+    handle = models.CharField(
+        max_length=64,
+        unique=True,
+        null=True,
+        blank=True,
+        help_text=(
+            "Unique public @-handle, assigned at first sign-in. Derived "
+            "from the email local part, disambiguated on collision."
+        ),
+    )
     gravatar_url = models.URLField(blank=True)
     magic_link_token = models.CharField(
         max_length=64,
@@ -80,4 +91,124 @@ class SystemConfig(models.Model):
 
     def save(self, *args, **kwargs):
         self.pk = 1
+        super().save(*args, **kwargs)
+
+
+class AccessTier(models.TextChoices):
+    """Whether an allowlist entry grants staff-level or guest access.
+
+    Staff are the "internal" audience: they see content with ``internal``
+    visibility without an explicit grant, exactly as every authenticated user
+    did before outside orgs could sign in. Guests can sign in but only reach
+    ``public`` content plus whatever is explicitly granted to them, their
+    group, or their domain.
+    """
+
+    STAFF = "staff", "Staff"
+    GUEST = "guest", "Guest"
+
+
+class AllowedDomain(models.Model):
+    """An email domain whose addresses are allowed to sign in.
+
+    Any address ending in ``@<domain>`` may request a magic link. Stored
+    lowercase without a leading ``@`` or ``.``.
+    """
+
+    domain = models.CharField(max_length=255, unique=True)
+    tier = models.CharField(
+        max_length=12,
+        choices=AccessTier.choices,
+        default=AccessTier.GUEST,
+        help_text=(
+            "Staff see internal content without an explicit grant; guests "
+            "only see public content plus what they're granted."
+        ),
+    )
+    suffix = models.CharField(
+        max_length=32,
+        unique=True,
+        help_text=(
+            "Short slug appended to a handle when it collides with an "
+            "existing one, e.g. 'flp' turns a colliding mike@free.law into "
+            "'mike-flp'. Used only on actual collisions."
+        ),
+    )
+    note = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text="Optional reminder of why this domain is allowed.",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["domain"]
+
+    def __str__(self):
+        return self.domain
+
+    @staticmethod
+    def normalize(domain):
+        return domain.strip().lower().lstrip("@").strip(".")
+
+    @staticmethod
+    def normalize_suffix(suffix):
+        return suffix.strip().lower()
+
+    def save(self, *args, **kwargs):
+        self.domain = self.normalize(self.domain)
+        self.suffix = self.normalize_suffix(self.suffix)
+        super().save(*args, **kwargs)
+
+
+class AllowedEmail(models.Model):
+    """A single email address allowed to sign in.
+
+    Use this to grant access to an individual whose domain is not allowed
+    wholesale (e.g. an outside contractor). Stored lowercase.
+    """
+
+    email = models.EmailField(unique=True)
+    tier = models.CharField(
+        max_length=12,
+        choices=AccessTier.choices,
+        default=AccessTier.GUEST,
+        help_text=(
+            "Staff see internal content without an explicit grant; guests "
+            "only see public content plus what they're granted. "
+            "Overrides the tier of the address's domain, if any."
+        ),
+    )
+    note = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text="Optional reminder of why this address is allowed.",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["email"]
+
+    def __str__(self):
+        return self.email
+
+    @staticmethod
+    def normalize(email):
+        return email.strip().lower()
+
+    def clean(self):
+        # Plus-addressing is blocked at sign-in (is_email_allowed), so an
+        # allowlisted plus address would be a dead row. Reject it here too so
+        # the Django admin's auto-form catches it, not just the custom form.
+        local = self.normalize(self.email).split("@", 1)[0]
+        if "+" in local:
+            raise ValidationError(
+                {
+                    "email": "Plus-addressing isn't allowed; "
+                    "use the base address instead."
+                }
+            )
+
+    def save(self, *args, **kwargs):
+        self.email = self.normalize(self.email)
         super().save(*args, **kwargs)

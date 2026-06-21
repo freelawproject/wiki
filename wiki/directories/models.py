@@ -12,13 +12,13 @@ class Directory(models.Model):
 
     class Visibility(models.TextChoices):
         PUBLIC = "public", "Public"
-        INTERNAL = "internal", "FLP Staff"
+        INTERNAL = "internal", "Staff"
         PRIVATE = "private", "Private"
         INHERIT = "inherit", "Inherit"
 
     class Editability(models.TextChoices):
         RESTRICTED = "restricted", "Restricted"
-        INTERNAL = "internal", "FLP Staff"
+        INTERNAL = "internal", "Staff"
         INHERIT = "inherit", "Inherit"
 
     class SitemapStatus(models.TextChoices):
@@ -108,12 +108,29 @@ class Directory(models.Model):
         ancestors.reverse()
         return ancestors
 
-    def get_breadcrumbs(self):
-        """Return list of (title, url) tuples for breadcrumb nav."""
+    def get_breadcrumbs(self, viewer=None):
+        """Return list of (title, url) tuples for breadcrumb nav.
+
+        When ``viewer`` is provided, ancestor directories that viewer cannot
+        view are omitted — otherwise the trail to a public directory nested
+        under an internal/private parent would leak that parent's title and
+        URL (a public child can sit under a non-public parent; visibility
+        doesn't force-inherit).
+        """
+        can_view = None
+        if viewer is not None:
+            # Inline import to avoid a circular dependency
+            # (directories.models → permissions → directories.models).
+            from wiki.lib.permissions import can_view_directory
+
+            can_view = can_view_directory
+
         crumbs = [("Home", reverse("root"))]
         for ancestor in self.get_ancestors():
             if not ancestor.path:
                 continue  # skip root — already in breadcrumbs
+            if can_view is not None and not can_view(viewer, ancestor):
+                continue
             crumbs.append((ancestor.title, ancestor.get_absolute_url()))
         if self.path:
             crumbs.append((self.title, self.get_absolute_url()))
@@ -171,6 +188,25 @@ class DirectoryPermission(models.Model):
         null=True,
         blank=True,
     )
+    grant_domain = models.CharField(
+        max_length=255,
+        null=True,
+        blank=True,
+        help_text=(
+            "Normalized email domain (e.g. 'acme.com') granted access. Stored "
+            "as a string, not a FK, so the grant survives the domain leaving "
+            "the sign-in allowlist and re-binds if it is re-added."
+        ),
+    )
+    dormant_since = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text=(
+            "Set when a domain grant's domain leaves the allowlist; cleared "
+            "when it returns. Grants dormant past the retention window are "
+            "removed by the cleanup job."
+        ),
+    )
     permission_type = models.CharField(
         max_length=5,
         choices=PermissionType.choices,
@@ -189,8 +225,13 @@ class DirectoryPermission(models.Model):
                 condition=models.Q(group__isnull=False),
                 name="unique_dir_group_perm",
             ),
+            models.UniqueConstraint(
+                fields=["directory", "grant_domain", "permission_type"],
+                condition=models.Q(grant_domain__isnull=False),
+                name="unique_dir_domain_perm",
+            ),
         ]
 
     def __str__(self):
-        target = self.user or self.group
+        target = self.user or self.group or self.grant_domain
         return f"{target} → {self.directory} ({self.permission_type})"

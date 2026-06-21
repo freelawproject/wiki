@@ -9,6 +9,9 @@
         <label class="flex items-center gap-1.5 cursor-pointer">
           <input type="radio" name="target_type" value="group" :checked="isGroup" @change="setGroup" class="accent-primary-600"> Group
         </label>
+        <label class="flex items-center gap-1.5 cursor-pointer">
+          <input type="radio" name="target_type" value="domain" :checked="isDomain" @change="setDomain" class="accent-primary-600"> Domain
+        </label>
       </div>
       <div x-show="isUser" class="relative">
         <label for="id_username" class="block text-sm font-medium mb-1.5">Username</label>
@@ -20,6 +23,11 @@
       <div x-show="isGroup" x-cloak>
         <label for="id_group" class="block text-sm font-medium mb-1.5">Group</label>
         {{ form.group }}
+      </div>
+      <div x-show="isDomain" x-cloak>
+        <label for="id_allowed_domain" class="block text-sm font-medium mb-1.5">Domain</label>
+        {{ form.allowed_domain }}
+        <p class="text-xs text-gray-400 dark:text-gray-500 mt-1">Everyone signing in from this domain gets this access.</p>
       </div>
       <div class="flex items-end gap-3">
         <div>

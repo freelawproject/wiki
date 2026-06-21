@@ -5,6 +5,7 @@ from django.utils.text import slugify
 from wiki.lib.inheritance import resolve_effective_value
 from wiki.lib.path_utils import directory_path_conflicts_with_page
 from wiki.lib.permissions import can_view_directory
+from wiki.users.models import AllowedDomain
 
 from .models import Directory, DirectoryPermission
 
@@ -86,17 +87,30 @@ class DirectoryForm(forms.ModelForm):
             "in_llms_txt": forms.Select(attrs={"class": "input-text"}),
         }
 
-    def __init__(self, *args, is_root=False, **kwargs):
+    # Settings only an administrator (owner-level) may change.
+    ADMIN_ONLY_FIELDS = (
+        "visibility",
+        "editability",
+        "in_sitemap",
+        "in_llms_txt",
+    )
+
+    def __init__(self, *args, is_root=False, can_administer=True, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["editability"].required = False
         self.fields["in_llms_txt"].required = False
         self.fields["in_sitemap"].required = False
 
+        # Content-only editors can't touch visibility/editability/sitemap/llms.
+        if not can_administer:
+            for field_name in self.ADMIN_ONLY_FIELDS:
+                self.fields.pop(field_name, None)
+
         if is_root:
             # Root directory: remove inherit option and discoverability fields
             self._remove_inherit_choices()
-            del self.fields["in_sitemap"]
-            del self.fields["in_llms_txt"]
+            self.fields.pop("in_sitemap", None)
+            self.fields.pop("in_llms_txt", None)
         elif self.instance and self.instance.pk and self.instance.parent:
             self._add_inherit_choices(self.instance.parent)
         elif self.instance and self.instance.pk:
@@ -300,6 +314,13 @@ class DirectoryPermissionForm(forms.Form):
         queryset=Group.objects.all().order_by("name"),
         required=False,
         widget=forms.Select(attrs={"class": "input-text w-full"}),
+    )
+    allowed_domain = forms.ModelChoiceField(
+        queryset=AllowedDomain.objects.all().order_by("domain"),
+        required=False,
+        widget=forms.Select(
+            attrs={"class": "input-text w-full", "id": "id_allowed_domain"}
+        ),
     )
     permission_type = forms.ChoiceField(
         choices=DirectoryPermission.PermissionType.choices,
