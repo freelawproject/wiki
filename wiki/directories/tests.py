@@ -1542,24 +1542,28 @@ class TestMoveDirectoryFormSecurity:
 
 
 class TestMovePageFormSecurity:
-    def test_move_form_hides_private_directories(
+    def test_move_form_hides_unadministerable_directories(
         self, client, user, other_user, root_directory, page
     ):
-        """SECURITY: page move dropdown must not list private
-        directories the user cannot view."""
+        """SECURITY: the page-move dropdown lists only directories the user
+        may administer — never a private directory owned by someone else.
 
+        Moving is owner-only (it can change a page's inherited visibility),
+        so the actor here is the page owner; the destination is gated on
+        can_administer_directory, which is stricter than mere view access.
+        """
+
+        # A private directory owned by *other_user* — `user` can neither view
+        # nor administer it, so it must not appear as a move destination.
         Directory.objects.create(
             path="private-target",
             title="Private Target",
             parent=root_directory,
-            owner=user,
-            created_by=user,
+            owner=other_user,
+            created_by=other_user,
             visibility=Directory.Visibility.PRIVATE,
         )
-        # other_user needs edit permission on the page
-        page.editability = "internal"
-        page.save()
-        client.force_login(other_user)
+        client.force_login(user)  # page owner → may reach the move form
         r = client.get(
             reverse("page_move", kwargs={"path": "getting-started"})
         )

@@ -14,8 +14,8 @@
 
   <div class="text-sm text-gray-500 dark:text-gray-400 mb-6 space-y-2">
     <p>
-      Anyone on an allowed domain can request a sign-in link. Add individual
-      addresses for people outside those domains.
+      Control who can sign in, and what they see once they do. Each entry is
+      tagged with a tier:
     </p>
     <ul class="list-disc pl-5 space-y-1">
       <li><strong>Staff</strong> see internal content automatically.</li>
@@ -24,15 +24,16 @@
         anything shared with them, their group, or their domain.
       </li>
     </ul>
-    <p>
-      Only the system owner can change domains; managers can manage individual
-      addresses. The owner and managers are emailed about every change.
-    </p>
+    <p>The owner and managers are emailed about every change here.</p>
   </div>
 
   <!-- Allowed domains -->
   <section class="mb-10">
-    <h2 class="text-lg font-semibold font-sans mb-3">Allowed domains</h2>
+    <h2 class="text-lg font-semibold font-sans mb-1">Allowed domains</h2>
+    <p class="text-sm text-gray-500 dark:text-gray-400 mb-3">
+      Anyone with an email on these domains can request a sign-in link. Only
+      the system owner can add or remove domains.
+    </p>
 
     {% if is_owner %}
     <form method="post" action="{% url 'access_add_domain' %}" class="card flex flex-col sm:flex-row sm:items-end gap-3 py-3.5 px-5 mb-4">
@@ -55,10 +56,6 @@
       </div>
       <button type="submit" class="btn-primary text-sm shrink-0">Add</button>
     </form>
-    {% else %}
-    <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
-      Only the system owner can add or remove domains.
-    </p>
     {% endif %}
 
     {% if domains %}
@@ -91,7 +88,11 @@
 
   <!-- Allowed individual emails -->
   <section>
-    <h2 class="text-lg font-semibold font-sans mb-3">Allowed addresses</h2>
+    <h2 class="text-lg font-semibold font-sans mb-1">Allowed addresses</h2>
+    <p class="text-sm text-gray-500 dark:text-gray-400 mb-3">
+      Grant access to individual people outside your allowed domains. Owners
+      and managers can manage these; the person is emailed when added.
+    </p>
 
     <form method="post" action="{% url 'access_add_email' %}" class="card flex flex-col sm:flex-row sm:items-end gap-3 py-3.5 px-5 mb-4">
       {% csrf_token %}
