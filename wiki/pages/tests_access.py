@@ -190,3 +190,48 @@ class TestPageMoveIsOwnerOnly:
         assert r.status_code == 302
         page.refresh_from_db()
         assert page.directory_id == public.id
+
+    def test_edit_grant_cannot_reparent_via_edit_form(
+        self, client, user, guest
+    ):
+        """The page_edit location picker is a second reparenting path; a guest
+        editor must not be able to use it to flip effective visibility."""
+        internal, public = self._dirs(user)
+        page = Page.objects.create(
+            title="Secret",
+            slug="secret",
+            content="x",
+            directory=internal,
+            owner=user,
+            created_by=user,
+            updated_by=user,
+            visibility=Page.Visibility.INHERIT,
+        )
+        PageRevision.objects.create(
+            page=page,
+            title=page.title,
+            content=page.content,
+            change_message="init",
+            revision_number=1,
+            created_by=user,
+        )
+        PagePermission.objects.create(
+            page=page,
+            grant_domain="acme.com",
+            permission_type=PagePermission.PermissionType.EDIT,
+        )
+        client.force_login(guest)
+        # Guest edits content and tries to reparent to /public via the raw
+        # directory_path field that the edit view reads outside the form.
+        client.post(
+            reverse("page_edit", kwargs={"path": page.content_path}),
+            {
+                "title": "Secret",
+                "content": "edited by guest",
+                "change_message": "edit",
+                "directory_path": "public",
+            },
+        )
+        page.refresh_from_db()
+        # Content edit is allowed; the reparent is ignored.
+        assert page.directory_id == internal.id

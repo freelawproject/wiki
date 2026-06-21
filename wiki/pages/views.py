@@ -273,6 +273,7 @@ def _resolve_or_create_directory(dir_path, user, title_overrides=None):
                         directory=directory,
                         user=perm.user,
                         group=perm.group,
+                        grant_domain=perm.grant_domain,
                         permission_type=perm.permission_type,
                     )
             parent = directory
@@ -597,6 +598,8 @@ def page_create(request, path=""):
                 else _build_dir_segments(directory)
             ),
             "inherit_meta": getattr(form, "inherit_meta", {}),
+            # New pages always let the creator choose a location.
+            "show_location_picker": True,
         },
     )
 
@@ -654,12 +657,13 @@ def page_edit(request, path):
     else:
         form_directory = page.directory
 
+    can_administer = can_administer_page(request.user, page)
     form = PageForm(
         request.POST or None,
         instance=page,
         editing=True,
         directory=form_directory,
-        can_administer=can_administer_page(request.user, page),
+        can_administer=can_administer,
     )
     if request.method != "POST":
         form.initial["change_message"] = ""
@@ -667,15 +671,19 @@ def page_edit(request, path):
         page = form.save(commit=False)
         page.updated_by = request.user
 
-        # Handle directory change from location picker
-        dir_path = request.POST.get("directory_path", "").strip()
-        if dir_path:
-            title_overrides = _parse_directory_titles(request.POST)
-            page.directory = _resolve_or_create_directory(
-                dir_path, request.user, title_overrides
-            )
-        else:
-            page.directory = None
+        # Handle directory change from the location picker. Reparenting can
+        # change an inherit-visibility page's effective visibility, so it's an
+        # administration action: only administrators may move the page, and a
+        # content-only editor's POST leaves page.directory untouched.
+        if can_administer:
+            dir_path = request.POST.get("directory_path", "").strip()
+            if dir_path:
+                title_overrides = _parse_directory_titles(request.POST)
+                page.directory = _resolve_or_create_directory(
+                    dir_path, request.user, title_overrides
+                )
+            else:
+                page.directory = None
 
         with transaction.atomic():
             page.save()
@@ -720,6 +728,8 @@ def page_edit(request, path):
                 else _build_dir_segments(page.directory)
             ),
             "inherit_meta": getattr(form, "inherit_meta", {}),
+            # Reparenting is owner-only; hide the picker from content editors.
+            "show_location_picker": can_administer,
         },
     )
 

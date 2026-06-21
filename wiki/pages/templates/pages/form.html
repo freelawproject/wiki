@@ -21,7 +21,10 @@
         data-inherited-visibility="{{ inherit_meta.visibility.value|default:'' }}">
     {% csrf_token %}
 
-    {# Location picker #}
+    {# Location picker — only when the user may set/change the page's
+       directory (creation, or editing as an administrator). Reparenting can
+       change an inherit-visibility page's effective visibility. #}
+    {% if show_location_picker %}
     <div>
       <label class="block text-sm font-medium mb-1">Location</label>
       <input type="hidden" name="directory_path" id="directory-path-input"
@@ -45,6 +48,7 @@
         Navigate into directories or type to create a new one. Backspace removes segments.
       </p>
     </div>
+    {% endif %}
 
     <div>
       <label for="id_title" class="block text-sm font-medium mb-1">Title</label>

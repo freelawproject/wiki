@@ -247,6 +247,10 @@
     });
   }
 
+  // The location picker is only rendered when the user may reparent the page
+  // (page creation, or editing as an administrator). When it's absent, skip
+  // all picker wiring so the rest of the form JS still runs.
+  if (locationInput) {
   locationInput.addEventListener('input', function() {
     clearTimeout(searchTimeout);
     searchTimeout = setTimeout(function() { fetchSuggestions(locationInput.value.trim()); }, 150);
@@ -286,6 +290,7 @@
     if (!document.getElementById('location-picker').contains(e.target) && !dirDropdown.contains(e.target)) dirDropdown.classList.add('hidden');
   });
   renderChips();
+  }
 
   // ── Shared markdown editor (EasyMDE + preview + upload + mentions + wiki links)
   var editorConfig = JSON.parse(
