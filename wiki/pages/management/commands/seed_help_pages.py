@@ -549,10 +549,21 @@ within it and to child directories. For example, if a user
 "Engineering" directory, they can edit any page in that
 directory and its subdirectories.
 
-Access to a parent directory also implies access to its child
-directories. So if you grant someone View on "Engineering",
-they can also see "Engineering / DevOps" (unless that child
-directory is private and they have no grant on it specifically).
+> [!IMPORTANT]
+> A grant on a directory reaches **everything inside it,
+> regardless of visibility** — including **private** pages and
+> subdirectories, and anything added there **in the future**.
+> A grant means "let this user/group/domain in," and that can't
+> be switched off for a specific page or subdirectory underneath.
+> Marking a child **private** does **not** hide it from someone
+> who has a grant on a parent.
+>
+> So grant access on the **narrowest** directory that should be
+> shared — not a broad parent — and remember that anything later
+> filed under a shared directory becomes visible to everyone it's
+> shared with. To keep a pocket of content out, put it **outside**
+> the shared directory rather than relying on its visibility
+> setting.
 
 ### Applying permissions recursively
 
