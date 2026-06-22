@@ -19,6 +19,7 @@ from wiki.pages.tasks import (
     sync_page_view_counts,
     update_search_vectors,
 )
+from wiki.users.tasks import refresh_domain_favicons
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +81,11 @@ class Command(BaseCommand):
                 optimize_images,
                 settings.DAEMON_OPTIMIZE_IMAGES_INTERVAL,
                 "optimize_images",
+            ),
+            (
+                refresh_domain_favicons,
+                settings.DAEMON_REFRESH_FAVICONS_INTERVAL,
+                "refresh_domain_favicons",
             ),
         ]
 

@@ -31,7 +31,7 @@ from wiki.lib.inheritance import (
     resolve_effective_value,
 )
 from wiki.pages.models import Page, PagePermission
-from wiki.users.models import SystemConfig
+from wiki.users.models import AllowedDomain, SystemConfig
 
 
 def is_system_owner(user):
@@ -541,3 +541,99 @@ def reactivate_domain_grants(domain):
         model.objects.filter(
             grant_domain=domain, dormant_since__isnull=False
         ).update(dormant_since=None)
+
+
+# --- Domain-access badges -----------------------------------------------
+# Which outside domains can reach a page/directory, for the staff-only access
+# badges. "Active" = the grant is not dormant AND the domain is still on the
+# allowlist (a removed/dormant domain can't actually sign in, so it shows no
+# badge).
+
+
+def _build_dir_domain_resolver():
+    """Return ``resolve(dir_id) -> set[str]`` of active grant domains on a
+    directory and all its ancestors.
+
+    Loads the directory tree and all active directory-level domain grants in
+    two queries, then unions each chain in memory (memoized) — so annotating a
+    whole listing stays O(1) queries instead of walking ancestors per item.
+    """
+    parent_of = dict(Directory.objects.values_list("id", "parent_id"))
+    direct = {}
+    for dir_id, gd in DirectoryPermission.objects.filter(
+        grant_domain__isnull=False, dormant_since__isnull=True
+    ).values_list("directory_id", "grant_domain"):
+        direct.setdefault(dir_id, set()).add(gd)
+
+    cache = {}
+
+    def resolve(dir_id):
+        if dir_id in cache:
+            return cache[dir_id]
+        acc = set()
+        seen = set()
+        cur = dir_id
+        while cur is not None and cur not in seen:
+            seen.add(cur)
+            acc |= direct.get(cur, set())
+            cur = parent_of.get(cur)
+        cache[dir_id] = acc
+        return acc
+
+    return resolve
+
+
+def annotate_access_domains(pages=None, directories=None):
+    """Attach ``.access_domains`` (list[AllowedDomain]) to each page/directory.
+
+    The list is the outside domains that can reach the item via an active
+    grant on it or any ancestor directory, mapped to the live AllowedDomain
+    rows (so the badge can show each one's favicon). Bulk-queried; safe to
+    call with a whole listing. Call only for staff viewers.
+    """
+    pages = list(pages or [])
+    directories = list(directories or [])
+    resolve_dir = _build_dir_domain_resolver()
+
+    page_direct = {}
+    if pages:
+        for pid, gd in PagePermission.objects.filter(
+            page_id__in=[p.id for p in pages],
+            grant_domain__isnull=False,
+            dormant_since__isnull=True,
+        ).values_list("page_id", "grant_domain"):
+            page_direct.setdefault(pid, set()).add(gd)
+
+    needed = set()
+    page_sets = {}
+    for p in pages:
+        s = set(page_direct.get(p.id, set()))
+        if p.directory_id:
+            s |= resolve_dir(p.directory_id)
+        page_sets[p.id] = s
+        needed |= s
+    dir_sets = {}
+    for d in directories:
+        s = set(resolve_dir(d.id))
+        dir_sets[d.id] = s
+        needed |= s
+
+    by_domain = (
+        {
+            ad.domain: ad
+            for ad in AllowedDomain.objects.filter(domain__in=needed)
+        }
+        if needed
+        else {}
+    )
+
+    def to_rows(domain_set):
+        return sorted(
+            (by_domain[d] for d in domain_set if d in by_domain),
+            key=lambda ad: ad.domain,
+        )
+
+    for p in pages:
+        p.access_domains = to_rows(page_sets[p.id])
+    for d in directories:
+        d.access_domains = to_rows(dir_sets[d.id])

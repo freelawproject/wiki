@@ -3,9 +3,17 @@ import sys
 from django.conf import settings
 from django.contrib.auth.models import User
 from django.core.mail import send_mail
+from django.db.models import F, Q
 from django.urls import reverse
+from django.utils import timezone
 
-from wiki.users.models import AccessTier, SystemConfig
+from wiki.lib.favicons import store_favicon
+from wiki.users.models import AccessTier, AllowedDomain, SystemConfig
+
+# Re-fetch a domain's favicon at most this often; also retries failures.
+FAVICON_REFRESH_AFTER = timezone.timedelta(days=7)
+# Cap work per daemon cycle so a large allowlist doesn't stall the loop.
+FAVICON_REFRESH_BATCH = 25
 
 
 def owner_and_manager_emails():
@@ -117,3 +125,23 @@ def send_magic_link_email(email, raw_token):
         from_email=settings.DEFAULT_FROM_EMAIL,
         recipient_list=[email],
     )
+
+
+def refresh_domain_favicons():
+    """Daemon task: (re)fetch favicons for allowed domains.
+
+    Picks domains never checked or last checked more than
+    ``FAVICON_REFRESH_AFTER`` ago (oldest first), bounded to
+    ``FAVICON_REFRESH_BATCH`` per run, and refetches each. ``store_favicon``
+    is best-effort and always stamps ``favicon_checked_at``, so failures back
+    off rather than retrying every cycle.
+    """
+    cutoff = timezone.now() - FAVICON_REFRESH_AFTER
+    stale = AllowedDomain.objects.filter(
+        Q(favicon_checked_at__isnull=True) | Q(favicon_checked_at__lt=cutoff)
+    ).order_by(
+        # Never-checked domains first, then the least-recently checked.
+        F("favicon_checked_at").asc(nulls_first=True)
+    )[:FAVICON_REFRESH_BATCH]
+    for domain in stale:
+        store_favicon(domain)

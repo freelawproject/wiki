@@ -9,6 +9,7 @@ from django.urls import reverse
 from django.utils.text import slugify
 from django.views.decorators.cache import never_cache
 
+from wiki.lib.access import is_internal_user
 from wiki.lib.cache_headers import cache_for_anonymous
 from wiki.lib.edit_lock import (
     acquire_lock_for_directory,
@@ -23,6 +24,7 @@ from wiki.lib.inheritance import (
 from wiki.lib.markdown import render_markdown
 from wiki.lib.path_utils import directory_path_conflicts_with_page
 from wiki.lib.permissions import (
+    annotate_access_domains,
     can_administer_directory,
     can_edit_directory,
     can_view_directory,
@@ -162,6 +164,12 @@ def root_view(request):
     sort = _get_sort_config(request)
     subdirectories = _sort_directories(subdirectories, sort)
     visible_pages = _sort_pages(visible_pages, sort)
+
+    # Staff-only: domain-access badges for the listing + the directory header.
+    if is_internal_user(request.user):
+        annotate_access_domains(
+            pages=visible_pages, directories=[root, *subdirectories]
+        )
 
     rendered_description = ""
     if root.description:
@@ -303,6 +311,12 @@ def directory_detail(request, path):
     sort = _get_sort_config(request)
     subdirectories = _sort_directories(subdirectories, sort)
     visible_pages = _sort_pages(visible_pages, sort)
+
+    # Staff-only: domain-access badges for the listing + the directory header.
+    if is_internal_user(request.user):
+        annotate_access_domains(
+            pages=visible_pages, directories=[directory, *subdirectories]
+        )
 
     rendered_description = ""
     if directory.description:
