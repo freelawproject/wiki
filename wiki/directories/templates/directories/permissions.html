@@ -10,16 +10,24 @@
     <a href="{{ directory.get_absolute_url }}" class="btn-outline text-sm">Back</a>
   </div>
 
-  <div class="flex items-center justify-between mb-6">
-    <p class="text-sm text-gray-500 dark:text-gray-400">
-      Directory permissions are inherited by all pages and subdirectories within.
+  <div class="rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 px-4 py-3 mb-4 text-sm text-amber-800 dark:text-amber-200">
+    <p class="font-medium">Grants here apply to everything inside this directory.</p>
+    <p class="mt-1">
+      Anyone you grant — a user, group, or whole domain — can reach
+      <strong>every page and subdirectory within</strong>, including
+      <strong>private</strong> ones and anything added here <strong>later</strong>.
+      This can't be turned off for a specific sub-path, so grant access on the
+      narrowest directory that should be shared rather than a broad parent.
     </p>
+  </div>
+
+  <div class="flex items-center justify-end mb-6">
     {% if directory.path %}
-      <a href="{% url 'directory_apply_permissions' path=directory.path %}" class="btn-outline text-sm whitespace-nowrap ml-4">
+      <a href="{% url 'directory_apply_permissions' path=directory.path %}" class="btn-outline text-sm whitespace-nowrap">
         Apply to children
       </a>
     {% else %}
-      <a href="{% url 'directory_apply_permissions_root' %}" class="btn-outline text-sm whitespace-nowrap ml-4">
+      <a href="{% url 'directory_apply_permissions_root' %}" class="btn-outline text-sm whitespace-nowrap">
         Apply to children
       </a>
     {% endif %}
