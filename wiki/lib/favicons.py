@@ -66,9 +66,7 @@ class _SafeRedirectHandler(HTTPRedirectHandler):
         parsed = urlparse(newurl)
         if parsed.scheme != "https" or not _host_is_public(parsed.hostname):
             return None  # stop following; do not chase to an unsafe target
-        return super().redirect_request(
-            req, fp, code, msg, headers, newurl
-        )
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
 _opener = build_opener(_SafeRedirectHandler())
@@ -175,6 +173,4 @@ def store_favicon(allowed_domain):
         data = None
     allowed_domain.favicon_data = data
     allowed_domain.favicon_checked_at = timezone.now()
-    allowed_domain.save(
-        update_fields=["favicon_data", "favicon_checked_at"]
-    )
+    allowed_domain.save(update_fields=["favicon_data", "favicon_checked_at"])

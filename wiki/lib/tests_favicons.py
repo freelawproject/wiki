@@ -83,7 +83,9 @@ class TestFetchFavicon:
             assert favicons._host_is_public("evil.test") is False
 
     def test_fetch_refuses_non_public_host(self):
-        with mock.patch.object(favicons, "_host_is_public", return_value=False):
+        with mock.patch.object(
+            favicons, "_host_is_public", return_value=False
+        ):
             with pytest.raises(ValueError):
                 favicons._fetch("https://acme.com/favicon.ico", 1000)
 
@@ -188,11 +190,17 @@ class TestAnnotateAccessDomains:
     def test_inherited_and_direct_grants(self, user, acme):
         root = Directory.objects.create(path="", title="Home")
         parent = Directory.objects.create(
-            path="team", title="Team", parent=root, owner=user,
+            path="team",
+            title="Team",
+            parent=root,
+            owner=user,
             created_by=user,
         )
         child = Directory.objects.create(
-            path="team/sub", title="Sub", parent=parent, owner=user,
+            path="team/sub",
+            title="Sub",
+            parent=parent,
+            owner=user,
             created_by=user,
         )
         DirectoryPermission.objects.create(
@@ -260,9 +268,7 @@ class TestBadgeRenderingIsStaffOnly:
             grant_domain="acme.com",
             permission_type=PagePermission.PermissionType.VIEW,
         )
-        favicon_url = reverse(
-            "domain_favicon", kwargs={"domain": "acme.com"}
-        )
+        favicon_url = reverse("domain_favicon", kwargs={"domain": "acme.com"})
 
         # Staff viewer (user is free.law = staff) sees the favicon badge.
         client.force_login(user)
@@ -290,8 +296,7 @@ class TestRefreshDomainFavicons:
         stale = AllowedDomain.objects.create(
             domain="b.com",
             suffix="b",
-            favicon_checked_at=timezone.now()
-            - timezone.timedelta(days=30),
+            favicon_checked_at=timezone.now() - timezone.timedelta(days=30),
         )
         fresh = AllowedDomain.objects.create(
             domain="c.com", suffix="c", favicon_checked_at=timezone.now()
