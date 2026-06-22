@@ -190,6 +190,7 @@
                 {{ page.title }}
               </h3>
               <c-visibility-badge visibility="{{ page.visibility }}" />
+              <c-domain-access-badges :domains="page.access_domains" />
             </div>
             {% if page.headline %}
             <p class="text-sm text-gray-500 dark:text-gray-400 line-clamp-2 leading-relaxed">

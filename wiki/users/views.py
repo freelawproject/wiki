@@ -6,10 +6,12 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
 from django.db import transaction
 from django.db.models import Q
-from django.http import Http404, JsonResponse
+from django.http import Http404, HttpResponse, JsonResponse
 from django.shortcuts import redirect, render
+from django.views.decorators.cache import cache_control
 
-from wiki.lib.access import is_email_allowed
+from wiki.lib.access import is_email_allowed, is_internal_user
+from wiki.lib.favicons import store_favicon
 from wiki.lib.permissions import (
     is_system_owner,
     mark_domain_grants_dormant,
@@ -345,7 +347,7 @@ def access_add_domain(request):
         return redirect("access_list")
 
     domain = form.cleaned_data["domain"]
-    _, created = AllowedDomain.objects.get_or_create(
+    obj, created = AllowedDomain.objects.get_or_create(
         domain=domain,
         defaults={
             "suffix": form.cleaned_data["suffix"],
@@ -360,6 +362,9 @@ def access_add_domain(request):
     # Reactivate any content grants retained from a previous stint on the
     # allowlist so re-adding a domain restores its exact prior access.
     reactivate_domain_grants(domain)
+    # Best-effort: grab the favicon now so the access badge has it; the daemon
+    # backfills/retries if this fails (e.g. the fetch times out).
+    store_favicon(obj)
     messages.success(request, f"Domain {domain} is now allowed.")
     _announce_access_change(
         request, "added", "domain", domain, tier=form.cleaned_data["tier"]
@@ -403,6 +408,23 @@ def access_add_email(request):
         tier=form.cleaned_data["tier"],
     )
     return redirect("access_list")
+
+
+@cache_control(private=True, max_age=86400)
+def domain_favicon(request, domain):
+    """Serve a granting domain's stored favicon as a PNG.
+
+    Staff-only: the access badge only renders for staff, and gating the
+    endpoint keeps it from being an open allowlist-enumeration oracle.
+    Returns 404 (same as a missing domain) when no favicon is stored, so the
+    template falls back to the generic icon.
+    """
+    if not is_internal_user(request.user):
+        raise Http404
+    obj = AllowedDomain.objects.filter(domain=domain).first()
+    if obj is None or not obj.favicon_data:
+        raise Http404
+    return HttpResponse(bytes(obj.favicon_data), content_type="image/png")
 
 
 @login_required

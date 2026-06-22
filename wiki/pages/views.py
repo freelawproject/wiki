@@ -22,6 +22,7 @@ from django.views.decorators.http import require_POST
 
 from wiki.comments.models import PageComment
 from wiki.directories.models import Directory, DirectoryPermission
+from wiki.lib.access import is_internal_user
 from wiki.lib.cache_headers import cache_for_anonymous
 from wiki.lib.data_source import fetch_page_data, substitute_data_variables
 from wiki.lib.edit_lock import (
@@ -38,6 +39,7 @@ from wiki.lib.page_utils import (
 )
 from wiki.lib.path_utils import page_path_conflicts_with_directory
 from wiki.lib.permissions import (
+    annotate_access_domains,
     can_administer_page,
     can_edit_directory,
     can_edit_page,
@@ -447,6 +449,10 @@ def _render_page_detail(request, page):
         watchers = get_effective_watchers_for_page(page)
 
     people = _get_page_people(page)
+
+    # Staff-only: show which outside domains can reach this page.
+    if is_internal_user(request.user):
+        annotate_access_domains(pages=[page])
 
     can_edit = can_edit_page(request.user, page)
     can_administer = can_administer_page(request.user, page)

@@ -139,6 +139,22 @@ class AllowedDomain(models.Model):
         blank=True,
         help_text="Optional reminder of why this domain is allowed.",
     )
+    favicon_data = models.BinaryField(
+        null=True,
+        blank=True,
+        help_text=(
+            "The domain's favicon, fetched server-side and normalized to a "
+            "small PNG. Null when not yet fetched or unavailable."
+        ),
+    )
+    favicon_checked_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text=(
+            "When the favicon was last fetched (success or failure); drives "
+            "periodic refresh and retry."
+        ),
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -146,6 +162,10 @@ class AllowedDomain(models.Model):
 
     def __str__(self):
         return self.domain
+
+    @property
+    def has_favicon(self):
+        return self.favicon_data is not None
 
     @staticmethod
     def normalize(domain):

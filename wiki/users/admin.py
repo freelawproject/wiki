@@ -3,6 +3,7 @@ from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.contrib.auth.models import User
 
 from wiki.lib.access import is_email_allowed
+from wiki.lib.favicons import store_favicon
 from wiki.lib.permissions import (
     is_system_owner,
     mark_domain_grants_dormant,
@@ -189,6 +190,9 @@ class AllowedDomainAdmin(AccessRuleAdmin):
     # mark them dormant on removal and reactivate them on re-add.
     def _on_added(self, value):
         reactivate_domain_grants(value)
+        obj = AllowedDomain.objects.filter(domain=value).first()
+        if obj is not None:
+            store_favicon(obj)
 
     def _on_removed(self, value):
         mark_domain_grants_dormant(value)

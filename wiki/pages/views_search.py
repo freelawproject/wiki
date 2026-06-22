@@ -7,6 +7,8 @@ from django.db.models import Count
 from django.shortcuts import render
 
 from wiki.directories.models import Directory
+from wiki.lib.access import is_internal_user
+from wiki.lib.permissions import annotate_access_domains
 
 from .search import SORT_OPTIONS, search_pages
 from .search_parser import parse_query
@@ -147,6 +149,11 @@ def search_view(request):
     except (ValueError, TypeError):
         page_num = 1
     page_obj = paginator.get_page(page_num)
+
+    # Staff-only: annotate this page of results with the outside domains that
+    # can reach each result, for the access badges.
+    if is_internal_user(request.user):
+        annotate_access_domains(pages=list(page_obj.object_list))
 
     # Active filters for removable chips (URL-param-based only)
     active_filters = []

@@ -1,0 +1,32 @@
+{% comment %}
+  Domain-access badges — favicons of the outside domains granted access to a
+  page/directory (including via an ancestor directory). Staff-only: the views
+  set `access_domains` only for staff, so this renders nothing for everyone
+  else. Each badge shows the domain's favicon (or a fallback glyph) and a
+  tooltip naming the domain.
+
+  Usage: <c-domain-access-badges :domains="page.access_domains" />
+{% endcomment %}
+{% if domains %}
+<span class="inline-flex items-center gap-0.5 align-middle">
+  {% for d in domains|slice:":5" %}
+    {% if d.has_favicon %}
+    <img src="{% url 'domain_favicon' domain=d.domain %}" alt="" width="16" height="16"
+         class="w-4 h-4 rounded-sm cursor-help"
+         title="{{ d.domain }} can access this">
+    {% else %}
+    <span class="inline-flex items-center text-gray-400 dark:text-gray-500 cursor-help"
+          title="{{ d.domain }} can access this"
+          aria-label="{{ d.domain }} can access this">
+      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Zm0 0a8.949 8.949 0 0 0 4.951-1.488A3.987 3.987 0 0 0 13 16h-2a4 4 0 0 0-3.951 3.512M15 9.75a3 3 0 1 1-6 0 3 3 0 0 1 6 0ZM3.6 9h16.8M3.6 15h16.8" />
+      </svg>
+    </span>
+    {% endif %}
+  {% endfor %}
+  {% if domains|length > 5 %}
+  <span class="text-xs text-gray-400 dark:text-gray-500 cursor-help align-middle"
+        title="{% for d in domains|slice:'5:' %}{{ d.domain }}{% if not forloop.last %}, {% endif %}{% endfor %} can also access this">+{{ domains|length|add:'-5' }}</span>
+  {% endif %}
+</span>
+{% endif %}

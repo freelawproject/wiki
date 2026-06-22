@@ -8,7 +8,7 @@ from wiki.lib.monitoring import health_check, heartbeat, sentry_fail
 from wiki.lib.sitemap import DirectorySitemap, PageSitemap
 from wiki.lib.views import llms_txt, robots_txt
 from wiki.pages.views import recent_changes
-from wiki.users.views import logout_view
+from wiki.users.views import domain_favicon, logout_view
 
 sitemaps = {
     "pages": PageSitemap,
@@ -30,6 +30,11 @@ urlpatterns = [
     ),
     path("u/login/", include("wiki.users.urls")),
     path("u/logout/", logout_view, name="logout"),
+    path(
+        "u/domain-favicon/<str:domain>/",
+        domain_favicon,
+        name="domain_favicon",
+    ),
     path("u/settings/", include("wiki.users.urls_settings")),
     path("u/admins/", include("wiki.users.urls_admin")),
     path("u/review/", include("wiki.users.urls_review")),

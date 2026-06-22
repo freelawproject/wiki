@@ -50,6 +50,7 @@
     <h1>
       {{ directory.title|default:"Home" }}
       <c-visibility-badge visibility="{{ eff_visibility }}" />
+      <c-domain-access-badges :domains="directory.access_domains" />
     </h1>
     <div class="flex items-center gap-2 flex-shrink-0">
       {% if user.is_authenticated %}
@@ -126,6 +127,7 @@
       </svg>
       <span class="font-medium text-gray-900 dark:text-gray-100">{{ subdir.title }}</span>
       <c-visibility-badge visibility="{{ subdir.effective_visibility }}" />
+      <c-domain-access-badges :domains="subdir.access_domains" />
     </a>
     {% endfor %}
   </div>
@@ -174,6 +176,7 @@
       <a href="{{ page.get_absolute_url }}" class="flex-1 min-w-0 no-underline after:absolute after:inset-0">
         <span class="font-medium text-gray-900 dark:text-gray-100">{{ page.title }}</span>
         <c-visibility-badge visibility="{{ page.visibility }}" />
+        <c-domain-access-badges :domains="page.access_domains" />
         <span class="text-sm text-gray-400 dark:text-gray-500 ml-2">
           {{ page.updated_at|timesince }} ago
         </span>
