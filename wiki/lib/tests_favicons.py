@@ -67,6 +67,14 @@ class TestFetchFavicon:
         with mock.patch.object(favicons, "_fetch", return_value=b"not image"):
             assert favicons.fetch_favicon("acme.com") is None
 
+    def test_rejects_decompression_bomb_before_decoding(self):
+        # A header declaring a huge bitmap must be rejected before .load().
+        fake = mock.MagicMock()
+        fake.size = (20000, 20000)  # 400M px, far over MAX_DECODED_PIXELS
+        with mock.patch.object(favicons.Image, "open", return_value=fake):
+            assert favicons._rasterize_to_png(b"bomb") is None
+        fake.load.assert_not_called()
+
     def test_fetch_failure_returns_none(self):
         with mock.patch.object(
             favicons, "_fetch", side_effect=OSError("boom")
@@ -74,17 +82,36 @@ class TestFetchFavicon:
             assert favicons.fetch_favicon("acme.com") is None
 
     def test_ssrf_guard_rejects_private_host(self):
-        # _host_is_public must reject loopback/private/link-local.
+        # A domain resolving to loopback/private must not yield a pinned IP.
         with mock.patch.object(
             favicons.socket,
             "getaddrinfo",
             return_value=[(2, 1, 6, "", ("127.0.0.1", 0))],
         ):
-            assert favicons._host_is_public("evil.test") is False
+            assert favicons._resolve_public_ip("evil.test", 443) is None
+
+    def test_ssrf_guard_fails_closed_on_empty_resolution(self):
+        # An empty getaddrinfo result must fail closed, not fall through.
+        with mock.patch.object(
+            favicons.socket, "getaddrinfo", return_value=[]
+        ):
+            assert favicons._resolve_public_ip("evil.test", 443) is None
+
+    def test_resolve_public_ip_pins_public_address(self):
+        with mock.patch.object(
+            favicons.socket,
+            "getaddrinfo",
+            return_value=[(2, 1, 6, "", ("93.184.216.34", 0))],
+        ):
+            assert (
+                favicons._resolve_public_ip("example.com", 443)
+                == "93.184.216.34"
+            )
 
     def test_fetch_refuses_non_public_host(self):
+        # When the host won't resolve to a pinnable public IP, _fetch refuses.
         with mock.patch.object(
-            favicons, "_host_is_public", return_value=False
+            favicons, "_resolve_public_ip", return_value=None
         ):
             with pytest.raises(ValueError):
                 favicons._fetch("https://acme.com/favicon.ico", 1000)
@@ -292,13 +319,15 @@ class TestBadgeRenderingIsStaffOnly:
 
 class TestRefreshDomainFavicons:
     def test_selects_unchecked_and_stale_skips_fresh(self, db):
-        never = AllowedDomain.objects.create(domain="a.com", suffix="a")
-        stale = AllowedDomain.objects.create(
+        # Never-checked and stale rows are refreshed; a freshly-checked one
+        # is skipped.
+        AllowedDomain.objects.create(domain="a.com", suffix="a")
+        AllowedDomain.objects.create(
             domain="b.com",
             suffix="b",
             favicon_checked_at=timezone.now() - timezone.timedelta(days=30),
         )
-        fresh = AllowedDomain.objects.create(
+        AllowedDomain.objects.create(
             domain="c.com", suffix="c", favicon_checked_at=timezone.now()
         )
         seen = []
@@ -306,8 +335,7 @@ class TestRefreshDomainFavicons:
             favicons, "fetch_favicon", side_effect=lambda d: seen.append(d)
         ):
             refresh_domain_favicons()
-        assert "a.com" in seen and "b.com" in seen
-        assert "c.com" not in seen
-        # fresh row untouched
-        fresh.refresh_from_db()
-        assert fresh.domain == "c.com"
+        # Scope to this test's domains (the seeded free.law is also unchecked,
+        # so it's legitimately refreshed too): a.com/b.com in, c.com skipped.
+        test_domains = {"a.com", "b.com", "c.com"}
+        assert (set(seen) & test_domains) == {"a.com", "b.com"}
