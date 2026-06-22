@@ -63,6 +63,15 @@
       {% for d in domains %}
       <div class="card flex items-center justify-between gap-3 py-3 px-5">
         <div class="min-w-0">
+          {% if d.has_favicon %}
+          <img src="{% url 'domain_favicon' domain=d.domain %}" alt="" width="16" height="16" class="inline-block w-4 h-4 rounded-sm align-middle mr-0.5">
+          {% else %}
+          <span class="inline-flex items-center text-gray-400 dark:text-gray-500 align-middle mr-0.5" title="No favicon found" aria-label="No favicon found">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Zm0 0a8.949 8.949 0 0 0 4.951-1.488A3.987 3.987 0 0 0 13 16h-2a4 4 0 0 0-3.951 3.512M15 9.75a3 3 0 1 1-6 0 3 3 0 0 1 6 0ZM3.6 9h16.8M3.6 15h16.8" />
+            </svg>
+          </span>
+          {% endif %}
           <span class="font-medium">@{{ d.domain }}</span>
           <span class="{% if d.tier == 'staff' %}badge-purple{% else %}badge-gray{% endif %}">{{ d.get_tier_display }}</span>
           <span class="text-sm text-gray-400 dark:text-gray-500">handle suffix: -{{ d.suffix }}</span>
