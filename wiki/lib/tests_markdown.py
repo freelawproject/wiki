@@ -62,6 +62,19 @@ class TestStripMarkdown:
         assert "italic" in result
         assert "*" not in result
 
+    def test_strips_edge_of_word_underscore_emphasis(self):
+        result = strip_markdown("This is _italic_ and __bold__ text.")
+        assert "italic" in result
+        assert "bold" in result
+        assert "_" not in result
+
+    def test_preserves_intra_word_underscores(self):
+        # Identifiers like PRAY_AND_PAY / snake_case must not be mangled (#106).
+        assert strip_markdown("The PRAY_AND_PAY constant") == (
+            "The PRAY_AND_PAY constant"
+        )
+        assert "snake_case_name" in strip_markdown("a snake_case_name field")
+
     def test_strips_strikethrough(self):
         result = strip_markdown("This is ~~deleted~~ text.")
         assert "deleted" in result
@@ -112,6 +125,37 @@ class TestRenderMarkdownAutolink:
     def test_bare_http_url(self):
         html = render_markdown("See http://example.com for info.")
         assert 'href="http://example.com"' in html
+
+
+class TestRenderMarkdownEmphasis:
+    """Underscores in the middle of words must not become emphasis (#106)."""
+
+    def test_mid_word_underscores_not_emphasized(self):
+        html = render_markdown("The PRAY_AND_PAY constant is fixed.")
+        assert "PRAY_AND_PAY" in html
+        assert "<em>" not in html
+
+    def test_snake_case_preserved(self):
+        html = render_markdown("Set the snake_case_name field.")
+        assert "snake_case_name" in html
+        assert "<em>" not in html
+
+    def test_edge_of_word_underscore_still_italic(self):
+        html = render_markdown("This is _really_ important.")
+        assert "<em>really</em>" in html
+
+    def test_double_underscore_bold_known_limitation(self):
+        # Accepted trade-off of the middle-word-em extra (markdown2 #679):
+        # __double underscore bold__ is not rendered as <strong>. Authors
+        # should use **bold** instead. Documented here so the behavior is
+        # an explicit choice, not a silent regression.
+        html = render_markdown("This is __very__ important.")
+        assert "<strong>very</strong>" not in html
+
+    def test_star_emphasis_unaffected(self):
+        html = render_markdown("Use *stars* and **double stars**.")
+        assert "<em>stars</em>" in html
+        assert "<strong>double stars</strong>" in html
 
 
 class TestExtractSlugsFromInternalUrls:

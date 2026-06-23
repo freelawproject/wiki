@@ -539,7 +539,10 @@ _INLINE_CODE_RE = re.compile(r"`([^`]+)`")
 _HEADING_RE = re.compile(r"^#{1,6}\s+", re.MULTILINE)
 _IMAGE_RE = re.compile(r"!\[[^\]]*\]\([^)]*\)")
 _LINK_RE = re.compile(r"\[([^\]]+)\]\([^)]+\)")
-_BOLD_ITALIC_RE = re.compile(r"\*{1,3}|_{1,3}")
+# Asterisk emphasis is stripped anywhere, but underscore emphasis only at word
+# edges, so intra-word underscores in identifiers (PRAY_AND_PAY, snake_case)
+# survive in plain-text extraction — matching the renderer's middle-word-em.
+_BOLD_ITALIC_RE = re.compile(r"\*{1,3}|(?<!\w)_{1,3}|_{1,3}(?!\w)")
 _STRIKETHROUGH_RE = re.compile(r"~~")
 _HTML_TAG_RE = re.compile(r"<[^>]+>")
 _HR_RE = re.compile(r"^[-*_]{3,}\s*$", re.MULTILINE)
@@ -723,22 +726,28 @@ def render_markdown(content, viewer=None):
     content = resolve_wiki_links(content, viewer=viewer)
     html = markdown2.markdown(
         content,
-        extras=[
-            "fenced-code-blocks",
+        extras={
+            "fenced-code-blocks": None,
             # Emit the fence's language as a `language-<lang>` class on the
             # <code> element (and skip markdown2's own Pygments pass) so the
             # client-side highlight.js honors the requested language instead
             # of auto-detecting. A bare ```` ``` ```` fence gets no class and
             # still auto-detects; ```` ```plaintext ```` disables highlighting.
-            "highlightjs-lang",
-            "tables",
-            "header-ids",
-            "toc",
-            "strike",
-            "task_list",
-            "cuddled-lists",
-            "link-patterns",
-        ],
+            "highlightjs-lang": None,
+            "tables": None,
+            "header-ids": None,
+            "toc": None,
+            "strike": None,
+            "task_list": None,
+            "cuddled-lists": None,
+            "link-patterns": None,
+            # Disallow emphasis in the middle of words so identifiers like
+            # PRAY_AND_PAY or snake_case aren't mangled into PRAY<em>AND</em>PAY.
+            # Edge-of-word _italic_, *italic*, and **bold** still work. Known
+            # trade-off (markdown2 #679): __double-underscore bold__ no longer
+            # renders as <strong>; authors should use **bold** instead.
+            "middle-word-em": False,
+        },
         link_patterns=[(_AUTOLINK_RE, r"\1")],
     )
     toc = getattr(html, "toc_html", "")
