@@ -11,6 +11,7 @@ from django.utils import timezone
 from wiki.directories.models import Directory
 from wiki.lib.access import is_internal_user
 from wiki.lib.permissions import annotate_access_domains
+from wiki.lib.ratelimiter import ratelimit_search
 
 from .models import ZeroResultSearch
 from .search import SORT_OPTIONS, search_pages
@@ -129,6 +130,7 @@ def _record_zero_result_search(raw_query, user):
         bump()
 
 
+@ratelimit_search
 def search_view(request):
     """Full-text search across wiki pages."""
     raw_query = request.GET.get("q", "").strip()
