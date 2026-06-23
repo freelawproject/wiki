@@ -1,20 +1,7 @@
 """SEO utilities: description extraction, JSON-LD breadcrumbs, and Article schema."""
 
-import json
-
 from wiki.lib.markdown import strip_markdown
-
-# json.dumps does not escape "<", ">" or "&", so a "</script>" substring in any
-# user-controlled value (e.g. a directory title) would close the surrounding
-# <script type="application/ld+json"> element early and allow stored XSS.
-# Django's json_script() escapes these but hardcodes type="application/json",
-# which crawlers do not parse as JSON-LD, so we mirror its escape set here.
-_JSONLD_ESCAPES = {ord(c): chr(92) + f"u{ord(c):04x}" for c in "<>&"}
-
-
-def _dump_jsonld(schema: dict) -> str:
-    """Serialize a schema dict to a string safe for <script> embedding."""
-    return json.dumps(schema).translate(_JSONLD_ESCAPES)
+from wiki.lib.safe_json import dump_json_for_script
 
 
 def extract_description(markdown: str, max_length: int = 160) -> str:
@@ -62,7 +49,7 @@ def build_breadcrumbs_jsonld(
         "@type": "BreadcrumbList",
         "itemListElement": items,
     }
-    return _dump_jsonld(schema)
+    return dump_json_for_script(schema)
 
 
 def build_collection_jsonld(directory, description, base_url):
@@ -84,7 +71,7 @@ def build_collection_jsonld(directory, description, base_url):
             "url": "https://free.law",
         },
     }
-    return _dump_jsonld(schema)
+    return dump_json_for_script(schema)
 
 
 def build_article_jsonld(page, description, base_url):
@@ -106,4 +93,4 @@ def build_article_jsonld(page, description, base_url):
             "url": "https://free.law",
         },
     }
-    return _dump_jsonld(schema)
+    return dump_json_for_script(schema)
