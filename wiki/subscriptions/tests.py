@@ -998,6 +998,124 @@ class TestEditNotifiesSubscribers:
         assert "Dir sub test" in mail.outbox[0].body
 
 
+class TestNotifyActionWording:
+    """The action argument controls subject/body wording and links."""
+
+    def test_created_action(self, user, other_user, page):
+        PageSubscription.objects.create(user=other_user, page=page)
+        notify_subscribers(page.id, user.id, "Add new page", action="created")
+        assert len(mail.outbox) == 1
+        msg = mail.outbox[0]
+        assert "was created" in msg.subject
+        assert "created" in msg.body
+        # A new page has a working View link but no diff.
+        assert page.get_absolute_url() in msg.body
+        assert "Diff:" not in msg.body
+
+    def test_deleted_action(self, user, other_user, page):
+        PageSubscription.objects.create(user=other_user, page=page)
+        notify_subscribers(page.id, user.id, "", action="deleted")
+        assert len(mail.outbox) == 1
+        msg = mail.outbox[0]
+        assert "was deleted" in msg.subject
+        assert "deleted" in msg.body
+        # A deleted page would 404, so don't link to it or a diff.
+        assert "View:" not in msg.body
+        assert "Diff:" not in msg.body
+
+    def test_default_action_is_updated(self, user, other_user, page):
+        PageSubscription.objects.create(user=other_user, page=page)
+        notify_subscribers(page.id, user.id, "Change")
+        assert "was updated" in mail.outbox[0].subject
+
+
+class TestCreateNotifiesSubscribers:
+    """Integration: creating a page notifies directory subscribers."""
+
+    def test_create_notifies_directory_subscriber(
+        self, client, user, other_user, sub_directory
+    ):
+        DirectorySubscription.objects.create(
+            user=other_user, directory=sub_directory
+        )
+        client.force_login(user)
+        r = client.post(
+            reverse("page_create"),
+            {
+                "title": "Brand New Page",
+                "content": "Fresh content",
+                "visibility": "public",
+                "editability": "inherit",
+                "in_sitemap": "inherit",
+                "in_llms_txt": "inherit",
+                "change_message": "Add new page",
+                "directory_path": sub_directory.path,
+                "directory_titles": "{}",
+            },
+        )
+        assert r.status_code == 302
+        assert len(mail.outbox) == 1
+        assert other_user.email in mail.outbox[0].to
+        assert "was created" in mail.outbox[0].subject
+
+    def test_create_does_not_notify_creator(self, client, user, sub_directory):
+        """The creator is auto-subscribed but shouldn't email themselves."""
+        DirectorySubscription.objects.create(
+            user=user, directory=sub_directory
+        )
+        client.force_login(user)
+        r = client.post(
+            reverse("page_create"),
+            {
+                "title": "Solo Page",
+                "content": "Content",
+                "visibility": "public",
+                "editability": "inherit",
+                "in_sitemap": "inherit",
+                "in_llms_txt": "inherit",
+                "change_message": "Add new page",
+                "directory_path": sub_directory.path,
+                "directory_titles": "{}",
+            },
+        )
+        assert r.status_code == 302
+        assert len(mail.outbox) == 0
+
+
+class TestDeleteNotifiesSubscribers:
+    """Integration: deleting a page notifies subscribers."""
+
+    def test_delete_notifies_page_subscriber(
+        self, client, user, other_user, page
+    ):
+        PageSubscription.objects.create(user=other_user, page=page)
+        client.force_login(user)
+        r = client.post(
+            reverse("page_delete", kwargs={"path": page.content_path})
+        )
+        assert r.status_code == 302
+        assert len(mail.outbox) == 1
+        assert other_user.email in mail.outbox[0].to
+        assert "was deleted" in mail.outbox[0].subject
+
+    def test_delete_notifies_directory_subscriber(
+        self, client, user, other_user, sub_directory, page_in_directory
+    ):
+        DirectorySubscription.objects.create(
+            user=other_user, directory=sub_directory
+        )
+        client.force_login(user)
+        r = client.post(
+            reverse(
+                "page_delete",
+                kwargs={"path": page_in_directory.content_path},
+            )
+        )
+        assert r.status_code == 302
+        assert len(mail.outbox) == 1
+        assert other_user.email in mail.outbox[0].to
+
+
 # ── Template context tests ───────────────────────────────────────
 
 

@@ -586,6 +586,12 @@ def page_create(request, path=""):
             )
 
         _process_mentions_and_grants(page, request)
+        notify_subscribers(
+            page.id,
+            request.user.id,
+            page.change_message,
+            action="created",
+        )
 
         messages.success(request, f'Page "{page.title}" created.')
         return redirect(page.get_absolute_url())
@@ -845,6 +851,14 @@ def page_delete(request, path):
             page.directory.get_absolute_url()
             if page.directory
             else reverse("root")
+        )
+        # Notify before soft-deleting: the default Page manager hides deleted
+        # pages, so notify_subscribers() couldn't re-fetch the page afterward.
+        notify_subscribers(
+            page.id,
+            request.user.id,
+            "",
+            action="deleted",
         )
         page.soft_delete(request.user)
         messages.success(request, f'Page "{title}" deleted.')
