@@ -31,6 +31,7 @@ from wiki.pages.models import (
     PageViewTally,
     PendingUpload,
     SlugRedirect,
+    ZeroResultSearch,
 )
 from wiki.pages.tasks import (
     OPTIMIZE_BATCH_SIZE,
@@ -2869,6 +2870,93 @@ class TestSearchView:
         r = client.get(f"{reverse('search')}?q=badgeterm")
         # Building icon for internal (staff) visibility.
         assert b'title="Staff"' in r.content
+
+
+class TestZeroResultSearch:
+    """No-result searches are tallied anonymously by query + audience."""
+
+    def test_zero_result_search_is_recorded(self, client, user):
+        """A query that matches nothing creates a tally row.
+
+        The ``user`` fixture is on the staff-tier free.law domain.
+        """
+        client.force_login(user)
+        r = client.get(f"{reverse('search')}?q=nonexistentkeyword")
+        assert r.status_code == 200
+        row = ZeroResultSearch.objects.get(query="nonexistentkeyword")
+        assert row.count == 1
+        assert row.audience == ZeroResultSearch.Audience.STAFF
+
+    def test_search_with_results_is_not_recorded(self, client, user, page):
+        """A query that matches pages is not tallied."""
+        client.force_login(user)
+        client.get(f"{reverse('search')}?q=Welcome")
+        assert not ZeroResultSearch.objects.exists()
+
+    def test_empty_query_is_not_recorded(self, client, user):
+        """An empty query renders the form but records nothing."""
+        client.force_login(user)
+        client.get(reverse("search"))
+        assert not ZeroResultSearch.objects.exists()
+
+    def test_repeated_query_increments_count(self, client, user):
+        """The same no-result query bumps the count, not a new row."""
+        client.force_login(user)
+        for _ in range(3):
+            client.get(f"{reverse('search')}?q=stillmissing")
+        row = ZeroResultSearch.objects.get(query="stillmissing")
+        assert row.count == 3
+
+    def test_filter_tokens_are_stripped(self, client, user):
+        """Only free text is tallied; filter syntax (in:) is dropped."""
+        client.force_login(user)
+        client.get(f"{reverse('search')}?q=in:nonexistent missingword")
+        row = ZeroResultSearch.objects.get(audience="staff")
+        assert row.query == "missingword"
+
+    def test_filter_only_query_is_not_recorded(self, client, user):
+        """A zero result from a filter alone isn't a content gap."""
+        client.force_login(user)
+        client.get(f"{reverse('search')}?q=in:nonexistent")
+        assert not ZeroResultSearch.objects.exists()
+
+    def test_query_is_normalized(self, client, user):
+        """Case and surrounding/internal whitespace are normalized."""
+        client.force_login(user)
+        client.get(f"{reverse('search')}?q=  Apple   ZEBRA  ")
+        row = ZeroResultSearch.objects.get(query="apple zebra")
+        assert row.count == 1
+
+    def test_token_order_is_normalized(self, client, user):
+        """Re-orderings of the same tokens collapse into one tally."""
+        client.force_login(user)
+        client.get(f"{reverse('search')}?q=brown fox")
+        client.get(f"{reverse('search')}?q=fox brown")
+        row = ZeroResultSearch.objects.get(query="brown fox")
+        assert row.count == 2
+
+    def test_staff_and_public_tracked_separately(self, client, user):
+        """Same query from staff vs. public yields two distinct rows.
+
+        ``user`` is staff (free.law); the anonymous client is public.
+        """
+        client.get(f"{reverse('search')}?q=splitaudience")  # anonymous/public
+
+        client.force_login(user)
+        client.get(f"{reverse('search')}?q=splitaudience")  # staff
+
+        rows = ZeroResultSearch.objects.filter(query="splitaudience")
+        assert rows.count() == 2
+        assert set(rows.values_list("audience", flat=True)) == {
+            "staff",
+            "public",
+        }
+
+    def test_anonymous_search_recorded_as_public(self, client, db):
+        """Unauthenticated searches count as public."""
+        client.get(f"{reverse('search')}?q=anonmissing")
+        row = ZeroResultSearch.objects.get(query="anonmissing")
+        assert row.audience == ZeroResultSearch.Audience.PUBLIC
 
 
 class TestRawMarkdown:

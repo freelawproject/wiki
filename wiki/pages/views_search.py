@@ -3,13 +3,17 @@ from datetime import date
 
 from django.conf import settings
 from django.core.paginator import Paginator
-from django.db.models import Count
+from django.db import IntegrityError
+from django.db.models import Count, F
 from django.shortcuts import render
+from django.utils import timezone
 
 from wiki.directories.models import Directory
 from wiki.lib.access import is_internal_user
 from wiki.lib.permissions import annotate_access_domains
+from wiki.lib.ratelimiter import ratelimit_search
 
+from .models import ZeroResultSearch
 from .search import SORT_OPTIONS, search_pages
 from .search_parser import parse_query
 
@@ -89,6 +93,53 @@ def _build_query_text(parsed):
     return " ".join(parts)
 
 
+def _record_zero_result_search(query_text, user):
+    """Record an anonymous, aggregated tally of a no-result search.
+
+    ``query_text`` is the free-text portion of the query (filter tokens like
+    ``in:`` / ``owner:`` are already stripped by the caller), so a zero result
+    caused only by a filter that scoped everything out isn't mistaken for a
+    content gap, and can't be used to seed junk rows.
+
+    We keep only the normalized query, the audience (staff vs. public), and
+    counts — never the user. The (query, audience) pair is unique, so we
+    increment an existing row or create a new one. Concurrency-safe: the
+    ``update`` is atomic, and a racing ``create`` that loses the unique
+    constraint falls back to another atomic increment.
+
+    Normalization lowercases, collapses whitespace, and alphabetizes the
+    tokens so that re-orderings of the same words ("fox brown" / "brown fox")
+    collapse into a single tally.
+    """
+    normalized = " ".join(sorted(query_text.lower().split()))
+    if not normalized:
+        return
+    # Stay within the column's max_length without cutting a token in half
+    # (which would let two long queries collide on a shared 255-char prefix).
+    if len(normalized) > 255:
+        normalized = normalized[:255].rsplit(" ", 1)[0]
+
+    audience = (
+        ZeroResultSearch.Audience.STAFF
+        if is_internal_user(user)
+        else ZeroResultSearch.Audience.PUBLIC
+    )
+
+    def bump():
+        return ZeroResultSearch.objects.filter(
+            query=normalized, audience=audience
+        ).update(count=F("count") + 1, last_seen=timezone.now())
+
+    if bump():
+        return
+    try:
+        ZeroResultSearch.objects.create(query=normalized, audience=audience)
+    except IntegrityError:
+        # Another request created the row between our update and create.
+        bump()
+
+
+@ratelimit_search
 def search_view(request):
     """Full-text search across wiki pages."""
     raw_query = request.GET.get("q", "").strip()
@@ -139,6 +190,13 @@ def search_view(request):
         parsed.before_date = url_before
 
     qs, total_count = search_pages(parsed, user=request.user, sort=sort)
+
+    # A no-result search is a signal we're missing content; tally it
+    # anonymously so we can see what people look for but can't find. Record
+    # the free-text portion only (search_query_text), so filter-only misses
+    # don't masquerade as content gaps.
+    if total_count == 0:
+        _record_zero_result_search(search_query_text, request.user)
 
     # Compute facets from the full queryset (before pagination)
     facets = _compute_facets(qs)
