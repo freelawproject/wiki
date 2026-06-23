@@ -74,6 +74,18 @@ class TestPreviewDoesNotLeakInternalTitles:
         assert internal.title not in body
         assert internal.get_absolute_url() not in body
 
+    def test_anonymous_preview_redacts_internal_link(self, client, user):
+        """The preview endpoint is open to anonymous users (issue #107), so a
+        logged-out previewer must not resolve an internal page's title/URL."""
+        internal = self._internal_page(user, "Confidential Roadmap")
+        r = client.post(
+            reverse("page_preview"), {"content": f"See #{internal.slug}"}
+        )
+        assert r.status_code == 200
+        body = r.content.decode()
+        assert internal.title not in body
+        assert internal.get_absolute_url() not in body
+
     def test_staff_preview_resolves_link(self, client, user):
         internal = self._internal_page(user, "Staff Roadmap")
         client.force_login(user)

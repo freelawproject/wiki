@@ -10,6 +10,7 @@ from django.views.decorators.http import require_POST
 from wiki.comments.forms import CommentForm
 from wiki.comments.models import PageComment
 from wiki.comments.tasks import notify_owner_of_comment
+from wiki.lib.markdown import render_markdown
 from wiki.lib.page_utils import get_page_from_path
 from wiki.lib.permissions import can_edit_page, can_view_page
 from wiki.pages.diff_utils import unified_diff
@@ -142,6 +143,10 @@ def proposal_review(request, path, pk):
     proposal = get_object_or_404(ChangeProposal, pk=pk, page=page)
 
     diff_html = unified_diff(page.content, proposal.proposed_content)
+    # Render as the reviewer so wiki-link resolution respects their access.
+    proposed_html = render_markdown(
+        proposal.proposed_content, viewer=request.user
+    )
 
     return render(
         request,
@@ -150,6 +155,7 @@ def proposal_review(request, path, pk):
             "page": page,
             "proposal": proposal,
             "diff_html": diff_html,
+            "proposed_html": proposed_html,
         },
     )
 
