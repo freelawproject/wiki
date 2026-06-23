@@ -756,6 +756,39 @@ class TestCollectionJsonLd:
         assert '"@type": "CollectionPage"' not in content
 
 
+@pytest.mark.django_db
+class TestJsonLdScriptEscaping:
+    """JSON-LD blobs must not let user content break out of the <script>."""
+
+    def test_builders_escape_script_breakout(self, sub_directory, page):
+        payload = "</script><script>alert(1)</script>"
+        for blob in (
+            build_collection_jsonld(sub_directory, payload, "https://x"),
+            build_article_jsonld(page, payload, "https://x"),
+            build_breadcrumbs_jsonld([(payload, "/c/x")], "https://x"),
+        ):
+            assert "</script>" not in blob
+            assert "<" not in blob and ">" not in blob
+            # Still valid JSON that decodes back to the original text.
+            assert payload in json.dumps(json.loads(blob))
+
+    def test_malicious_title_does_not_break_out(
+        self, client, root_directory, user, owner_user
+    ):
+        directory = Directory.objects.create(
+            path="xss-dir",
+            title="</script><script>alert(document.cookie)</script>",
+            parent=root_directory,
+            owner=user,
+            created_by=user,
+            visibility=Directory.Visibility.PUBLIC,
+        )
+        client.force_login(owner_user)
+        response = client.get(directory.get_absolute_url())
+        content = response.content.decode()
+        assert "<script>alert(document.cookie)</script>" not in content
+
+
 # ── Directory SEO description ────────────────────────────────────────
 
 
