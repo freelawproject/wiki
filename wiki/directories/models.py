@@ -42,6 +42,12 @@ class Directory(models.Model):
         blank=True,
         help_text="Markdown description shown on directory page.",
     )
+    seo_description = models.CharField(
+        max_length=300,
+        blank=True,
+        help_text="Short summary for search engines and social cards. "
+        "If blank, auto-generated from the directory description.",
+    )
     parent = models.ForeignKey(
         "self",
         on_delete=models.CASCADE,
