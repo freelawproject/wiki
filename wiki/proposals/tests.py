@@ -211,6 +211,30 @@ class TestProposalReview:
         assert r.status_code == 200
         assert b"Diff" in r.content
 
+    def test_review_renders_proposed_content_preview(
+        self, client, user, other_user, page
+    ):
+        """The review page renders the proposed markdown so the reviewer can
+        preview it, not just read the raw diff (issue #110)."""
+        proposal = ChangeProposal.objects.create(
+            page=page,
+            proposed_by=other_user,
+            proposed_title=page.title,
+            proposed_content="## Proposed Heading\n\nBody text.",
+            change_message="Minor fix",
+        )
+        client.force_login(user)
+        r = client.get(
+            reverse(
+                "proposal_review",
+                kwargs={"path": page.slug, "pk": proposal.pk},
+            )
+        )
+        assert r.status_code == 200
+        assert b"Preview" in r.content
+        assert b"Proposed Heading" in r.content
+        assert b"<h2" in r.content
+
     def test_review_requires_edit_permission(self, client, other_user, page):
         proposal = ChangeProposal.objects.create(
             page=page,
