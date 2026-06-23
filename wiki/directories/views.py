@@ -31,7 +31,11 @@ from wiki.lib.permissions import (
     can_view_page,
 )
 from wiki.lib.ratelimiter import ratelimit_search
-from wiki.lib.seo import build_breadcrumbs_jsonld, extract_description
+from wiki.lib.seo import (
+    build_breadcrumbs_jsonld,
+    build_collection_jsonld,
+    extract_description,
+)
 from wiki.lib.users import user_by_handle
 from wiki.pages.diff_utils import unified_diff
 from wiki.pages.models import Page, PagePermission
@@ -180,11 +184,17 @@ def root_view(request):
     # SEO — root always has explicit values, but use resolve for consistency
     is_public = root.visibility == "public"
     breadcrumbs = [("Home", reverse("root"))]
-    directory_description = extract_description(root.description)
+    directory_description = root.seo_description or extract_description(
+        root.description
+    )
     breadcrumbs_json = ""
+    collection_json = ""
     if is_public:
         breadcrumbs_json = build_breadcrumbs_jsonld(
             breadcrumbs, django_settings.BASE_URL
+        )
+        collection_json = build_collection_jsonld(
+            root, directory_description, django_settings.BASE_URL
         )
     else:
         request.seo_noindex = True
@@ -213,6 +223,7 @@ def root_view(request):
             "is_public": is_public,
             "directory_description": directory_description,
             "breadcrumbs_json": breadcrumbs_json,
+            "collection_json": collection_json,
             "canonical_url": canonical_url,
             "is_dir_subscribed": is_dir_subscribed,
         },
@@ -328,11 +339,17 @@ def directory_detail(request, path):
     eff_visibility, _ = resolve_effective_value(directory, "visibility")
     is_public = eff_visibility == "public"
     breadcrumbs = directory.get_breadcrumbs(viewer=request.user)
-    directory_description = extract_description(directory.description)
+    directory_description = directory.seo_description or extract_description(
+        directory.description
+    )
     breadcrumbs_json = ""
+    collection_json = ""
     if is_public:
         breadcrumbs_json = build_breadcrumbs_jsonld(
             breadcrumbs, django_settings.BASE_URL
+        )
+        collection_json = build_collection_jsonld(
+            directory, directory_description, django_settings.BASE_URL
         )
     else:
         request.seo_noindex = True
@@ -363,6 +380,7 @@ def directory_detail(request, path):
             "is_public": is_public,
             "directory_description": directory_description,
             "breadcrumbs_json": breadcrumbs_json,
+            "collection_json": collection_json,
             "canonical_url": canonical_url,
             "is_dir_subscribed": is_dir_subscribed,
         },

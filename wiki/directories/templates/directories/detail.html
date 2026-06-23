@@ -25,7 +25,7 @@
 
 {% block opengraph %}
 <meta property="og:title" content="{{ directory.title|default:'Home' }}"/>
-<meta property="og:description" content="{{ directory_description|default:'Free Law Project internal wiki' }}"/>
+<meta property="og:description" content="{{ directory_description|default:'Free Law Project wiki covering legal technology, open legal data, and organizational knowledge.' }}"/>
 {% if canonical_url %}<meta property="og:url" content="{{ canonical_url }}"/>{% endif %}
 <meta property="og:type" content="website"/>
 <meta property="og:site_name" content="FLP Wiki"/>
@@ -35,6 +35,9 @@
 {% block structured_data %}
 {% if breadcrumbs_json %}
 <script type="application/ld+json">{{ breadcrumbs_json|safe }}</script>
+{% endif %}
+{% if collection_json %}
+<script type="application/ld+json">{{ collection_json|safe }}</script>
 {% endif %}
 {% endblock %}
 

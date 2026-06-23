@@ -53,6 +53,28 @@ def build_breadcrumbs_jsonld(
     return json.dumps(schema)
 
 
+def build_collection_jsonld(directory, description, base_url):
+    """Build a JSON-LD CollectionPage schema for a wiki directory.
+
+    Directories are listing pages, so CollectionPage is a better fit than
+    Article. Returns a JSON string suitable for embedding in a <script> tag.
+    """
+    schema = {
+        "@context": "https://schema.org",
+        "@type": "CollectionPage",
+        "name": directory.title,
+        "description": description,
+        "url": f"{base_url}{directory.get_absolute_url()}",
+        "dateModified": directory.updated_at.isoformat(),
+        "publisher": {
+            "@type": "Organization",
+            "name": "Free Law Project",
+            "url": "https://free.law",
+        },
+    }
+    return json.dumps(schema)
+
+
 def build_article_jsonld(page, description, base_url):
     """Build a JSON-LD Article schema for a wiki page.
 
