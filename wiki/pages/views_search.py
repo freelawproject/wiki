@@ -93,8 +93,13 @@ def _build_query_text(parsed):
     return " ".join(parts)
 
 
-def _record_zero_result_search(raw_query, user):
+def _record_zero_result_search(query_text, user):
     """Record an anonymous, aggregated tally of a no-result search.
+
+    ``query_text`` is the free-text portion of the query (filter tokens like
+    ``in:`` / ``owner:`` are already stripped by the caller), so a zero result
+    caused only by a filter that scoped everything out isn't mistaken for a
+    content gap, and can't be used to seed junk rows.
 
     We keep only the normalized query, the audience (staff vs. public), and
     counts — never the user. The (query, audience) pair is unique, so we
@@ -106,9 +111,13 @@ def _record_zero_result_search(raw_query, user):
     tokens so that re-orderings of the same words ("fox brown" / "brown fox")
     collapse into a single tally.
     """
-    normalized = " ".join(sorted(raw_query.lower().split()))[:255]
+    normalized = " ".join(sorted(query_text.lower().split()))
     if not normalized:
         return
+    # Stay within the column's max_length without cutting a token in half
+    # (which would let two long queries collide on a shared 255-char prefix).
+    if len(normalized) > 255:
+        normalized = normalized[:255].rsplit(" ", 1)[0]
 
     audience = (
         ZeroResultSearch.Audience.STAFF
@@ -183,9 +192,11 @@ def search_view(request):
     qs, total_count = search_pages(parsed, user=request.user, sort=sort)
 
     # A no-result search is a signal we're missing content; tally it
-    # anonymously so we can see what people look for but can't find.
+    # anonymously so we can see what people look for but can't find. Record
+    # the free-text portion only (search_query_text), so filter-only misses
+    # don't masquerade as content gaps.
     if total_count == 0:
-        _record_zero_result_search(raw_query, request.user)
+        _record_zero_result_search(search_query_text, request.user)
 
     # Compute facets from the full queryset (before pagination)
     facets = _compute_facets(qs)

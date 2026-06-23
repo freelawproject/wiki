@@ -2907,6 +2907,19 @@ class TestZeroResultSearch:
         row = ZeroResultSearch.objects.get(query="stillmissing")
         assert row.count == 3
 
+    def test_filter_tokens_are_stripped(self, client, user):
+        """Only free text is tallied; filter syntax (in:) is dropped."""
+        client.force_login(user)
+        client.get(f"{reverse('search')}?q=in:nonexistent missingword")
+        row = ZeroResultSearch.objects.get(audience="staff")
+        assert row.query == "missingword"
+
+    def test_filter_only_query_is_not_recorded(self, client, user):
+        """A zero result from a filter alone isn't a content gap."""
+        client.force_login(user)
+        client.get(f"{reverse('search')}?q=in:nonexistent")
+        assert not ZeroResultSearch.objects.exists()
+
     def test_query_is_normalized(self, client, user):
         """Case and surrounding/internal whitespace are normalized."""
         client.force_login(user)
