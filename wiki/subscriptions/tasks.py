@@ -14,36 +14,55 @@ from .utils import get_subscriber_info_for_page
 
 
 def notify_subscribers(
-    page_id, editor_id, change_message, prev_rev=None, new_rev=None
+    page_id,
+    editor_id,
+    change_message,
+    prev_rev=None,
+    new_rev=None,
+    action="updated",
 ):
     """Notify all subscribers about a page change.
 
-    Called synchronously after page save.
+    ``action`` is one of "created", "updated", or "deleted" and controls the
+    email wording. Called synchronously after a save, or *before* a
+    soft-delete: the default Page manager hides deleted rows, so the page
+    must still be visible when this runs (see page_delete).
     """
     page = Page.objects.get(id=page_id)
     editor = User.objects.get(id=editor_id)
 
     page_sub_user_ids, dir_sub_mapping = get_subscriber_info_for_page(page)
-
-    signer = Signer()
-    base = settings.BASE_URL
-    page_url = (
-        f"{base}{reverse('resolve_path', kwargs={'path': page.content_path})}"
-    )
-
-    # Build diff line if we have both revision numbers
-    diff_line = ""
-    if prev_rev is not None and new_rev is not None and prev_rev >= 1:
-        diff_path = reverse(
-            "page_diff",
-            kwargs={"path": page.content_path, "v1": prev_rev, "v2": new_rev},
-        )
-        diff_url = f"{base}{diff_path}"
-        diff_line = f"Diff: {diff_url}\n\n"
-
     all_user_ids = page_sub_user_ids | set(dir_sub_mapping.keys())
     if not all_user_ids:
         return
+
+    signer = Signer()
+    base = settings.BASE_URL
+    subject = f'[FLP Wiki] "{page.title}" was {action}'
+
+    # A "View" link to a deleted page would 404, and a diff only makes sense
+    # for an update between two revisions.
+    detail_lines = ""
+    if action != "deleted":
+        page_url = f"{base}{reverse('resolve_path', kwargs={'path': page.content_path})}"
+        detail_lines = f"View: {page_url}\n\n"
+        if (
+            action == "updated"
+            and prev_rev is not None
+            and new_rev is not None
+            and prev_rev >= 1
+        ):
+            diff_path = reverse(
+                "page_diff",
+                kwargs={
+                    "path": page.content_path,
+                    "v1": prev_rev,
+                    "v2": new_rev,
+                },
+            )
+            detail_lines += f"Diff: {base}{diff_path}\n\n"
+
+    change_line = f"Change: {change_message}\n\n" if change_message else ""
 
     users = {
         u.id: u
@@ -61,69 +80,47 @@ def notify_subscribers(
         if not can_view_page(user, page):
             continue
 
+        page_token = signer.sign(f"{uid}:{page.id}")
+        page_unsub = (
+            f"{base}{reverse('unsubscribe', kwargs={'token': page_token})}"
+        )
+        page_unsub_one_click = f"{base}{reverse('unsubscribe_one_click', kwargs={'token': page_token})}"
+
         if uid in page_sub_user_ids:
             # Direct page subscriber (page-level override takes priority)
-            token = signer.sign(f"{uid}:{page.id}")
-            unsub_landing = (
-                f"{base}{reverse('unsubscribe', kwargs={'token': token})}"
-            )
-            unsub_one_click = f"{base}{reverse('unsubscribe_one_click', kwargs={'token': token})}"
-
-            body = (
-                f"{display_name(editor)} "
-                f'updated "{page.title}".\n\n'
-                f"Change: {change_message or 'No description'}\n\n"
-                f"View: {page_url}\n\n"
-                f"{diff_line}"
-                f"Unsubscribe: {unsub_landing}"
-            )
-
-            msg = EmailMessage(
-                subject=f'[FLP Wiki] "{page.title}" was updated',
-                body=body,
-                from_email=settings.DEFAULT_FROM_EMAIL,
-                to=[user.email],
-                headers={
-                    "List-Unsubscribe": f"<{unsub_one_click}>",
-                    "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
-                },
-            )
-            msg.send()
-        elif uid in dir_sub_mapping:
+            footer = f"Unsubscribe: {page_unsub}"
+        else:
             # Directory-based subscriber
             directory = dir_sub_mapping[uid]
-            page_token = signer.sign(f"{uid}:{page.id}")
             dir_token = signer.sign(f"d:{uid}:{directory.id}")
-            page_unsub = (
-                f"{base}{reverse('unsubscribe', kwargs={'token': page_token})}"
-            )
             dir_unsub = (
                 f"{base}{reverse('unsubscribe', kwargs={'token': dir_token})}"
             )
-            page_unsub_one_click = f"{base}{reverse('unsubscribe_one_click', kwargs={'token': page_token})}"
-
-            body = (
-                f"{display_name(editor)} "
-                f'updated "{page.title}".\n\n'
-                f"Change: {change_message or 'No description'}\n\n"
-                f"View: {page_url}\n\n"
-                f"{diff_line}"
-                f'You received this because you\'re subscribed to "{directory.title}".\n\n'
+            footer = (
+                f"You received this because you're subscribed to "
+                f'"{directory.title}".\n\n'
                 f"Unsubscribe from this page: {page_unsub}\n"
                 f"Unsubscribe from {directory.title}: {dir_unsub}"
             )
 
-            msg = EmailMessage(
-                subject=f'[FLP Wiki] "{page.title}" was updated',
-                body=body,
-                from_email=settings.DEFAULT_FROM_EMAIL,
-                to=[user.email],
-                headers={
-                    "List-Unsubscribe": f"<{page_unsub_one_click}>",
-                    "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
-                },
-            )
-            msg.send()
+        body = (
+            f'{display_name(editor)} {action} "{page.title}".\n\n'
+            f"{change_line}"
+            f"{detail_lines}"
+            f"{footer}"
+        )
+
+        msg = EmailMessage(
+            subject=subject,
+            body=body,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            to=[user.email],
+            headers={
+                "List-Unsubscribe": f"<{page_unsub_one_click}>",
+                "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+            },
+        )
+        msg.send()
 
 
 def _get_content_snippet(content, username, context_lines=2):
