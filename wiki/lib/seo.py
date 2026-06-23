@@ -1,8 +1,7 @@
 """SEO utilities: description extraction, JSON-LD breadcrumbs, and Article schema."""
 
-import json
-
 from wiki.lib.markdown import strip_markdown
+from wiki.lib.safe_json import dump_json_for_script
 
 
 def extract_description(markdown: str, max_length: int = 160) -> str:
@@ -50,7 +49,29 @@ def build_breadcrumbs_jsonld(
         "@type": "BreadcrumbList",
         "itemListElement": items,
     }
-    return json.dumps(schema)
+    return dump_json_for_script(schema)
+
+
+def build_collection_jsonld(directory, description, base_url):
+    """Build a JSON-LD CollectionPage schema for a wiki directory.
+
+    Directories are listing pages, so CollectionPage is a better fit than
+    Article. Returns a JSON string suitable for embedding in a <script> tag.
+    """
+    schema = {
+        "@context": "https://schema.org",
+        "@type": "CollectionPage",
+        "name": directory.title,
+        "description": description,
+        "url": f"{base_url}{directory.get_absolute_url()}",
+        "dateModified": directory.updated_at.isoformat(),
+        "publisher": {
+            "@type": "Organization",
+            "name": "Free Law Project",
+            "url": "https://free.law",
+        },
+    }
+    return dump_json_for_script(schema)
 
 
 def build_article_jsonld(page, description, base_url):
@@ -72,4 +93,4 @@ def build_article_jsonld(page, description, base_url):
             "url": "https://free.law",
         },
     }
-    return json.dumps(schema)
+    return dump_json_for_script(schema)

@@ -12,6 +12,7 @@ from wiki.lib.middleware import SEOHeadersMiddleware
 from wiki.lib.seo import (
     build_article_jsonld,
     build_breadcrumbs_jsonld,
+    build_collection_jsonld,
     extract_description,
 )
 from wiki.pages.models import Page
@@ -714,3 +715,118 @@ class TestSitemapInSitemapField:
         response = client.get(reverse("django.contrib.sitemaps.views.sitemap"))
         content = response.content.decode()
         assert page.get_absolute_url() in content
+
+
+# ── CollectionPage JSON-LD ───────────────────────────────────────────
+
+
+@pytest.mark.django_db
+class TestCollectionJsonLd:
+    def test_basic_collection(self, sub_directory):
+        result = json.loads(
+            build_collection_jsonld(
+                sub_directory, "Test desc", "https://wiki.free.law"
+            )
+        )
+        assert result["@context"] == "https://schema.org"
+        assert result["@type"] == "CollectionPage"
+        assert result["name"] == sub_directory.title
+        assert result["description"] == "Test desc"
+        assert (
+            result["url"]
+            == f"https://wiki.free.law{sub_directory.get_absolute_url()}"
+        )
+        assert "dateModified" in result
+        assert result["publisher"]["name"] == "Free Law Project"
+
+    def test_public_directory_has_collection_jsonld(
+        self, client, sub_directory, owner_user
+    ):
+        client.force_login(owner_user)
+        response = client.get(sub_directory.get_absolute_url())
+        content = response.content.decode()
+        assert '"@type": "CollectionPage"' in content
+
+    def test_private_directory_no_collection_jsonld(
+        self, client, private_directory, user
+    ):
+        client.force_login(user)
+        response = client.get(private_directory.get_absolute_url())
+        content = response.content.decode()
+        assert '"@type": "CollectionPage"' not in content
+
+
+@pytest.mark.django_db
+class TestJsonLdScriptEscaping:
+    """JSON-LD blobs must not let user content break out of the <script>."""
+
+    def test_builders_escape_script_breakout(self, sub_directory, page):
+        payload = "</script><script>alert(1)</script>"
+        for blob in (
+            build_collection_jsonld(sub_directory, payload, "https://x"),
+            build_article_jsonld(page, payload, "https://x"),
+            build_breadcrumbs_jsonld([(payload, "/c/x")], "https://x"),
+        ):
+            assert "</script>" not in blob
+            assert "<" not in blob and ">" not in blob
+            # Still valid JSON that decodes back to the original text.
+            assert payload in json.dumps(json.loads(blob))
+
+    def test_malicious_title_does_not_break_out(
+        self, client, root_directory, user, owner_user
+    ):
+        directory = Directory.objects.create(
+            path="xss-dir",
+            title="</script><script>alert(document.cookie)</script>",
+            parent=root_directory,
+            owner=user,
+            created_by=user,
+            visibility=Directory.Visibility.PUBLIC,
+        )
+        client.force_login(owner_user)
+        response = client.get(directory.get_absolute_url())
+        content = response.content.decode()
+        assert "<script>alert(document.cookie)</script>" not in content
+
+
+# ── Directory SEO description ────────────────────────────────────────
+
+
+@pytest.mark.django_db
+class TestDirectorySeoDescription:
+    def test_seo_description_used_in_meta(
+        self, client, root_directory, user, owner_user
+    ):
+        """When seo_description is set, it should appear in the dir's meta."""
+        directory = Directory.objects.create(
+            path="described-dir",
+            title="Described Dir",
+            parent=root_directory,
+            description="Some long markdown description for fallback.",
+            seo_description="Custom directory summary",
+            owner=user,
+            created_by=user,
+            visibility=Directory.Visibility.PUBLIC,
+        )
+        client.force_login(owner_user)
+        response = client.get(directory.get_absolute_url())
+        content = response.content.decode()
+        assert "Custom directory summary" in content
+
+    def test_falls_back_to_extracted_description(
+        self, client, root_directory, user, owner_user
+    ):
+        """When seo_description is blank, it's auto-extracted from desc."""
+        directory = Directory.objects.create(
+            path="fallback-dir",
+            title="Fallback Dir",
+            parent=root_directory,
+            description="Auto extracted directory blurb.",
+            owner=user,
+            created_by=user,
+            visibility=Directory.Visibility.PUBLIC,
+        )
+        client.force_login(owner_user)
+        response = client.get(directory.get_absolute_url())
+        content = response.content.decode()
+        assert "Auto extracted directory blurb." in content

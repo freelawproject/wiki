@@ -61,6 +61,7 @@ class DirectoryForm(forms.ModelForm):
         fields = [
             "title",
             "description",
+            "seo_description",
             "visibility",
             "editability",
             "in_sitemap",
@@ -79,6 +80,13 @@ class DirectoryForm(forms.ModelForm):
                     "rows": 6,
                     "id": "markdown-editor",
                     "placeholder": "Markdown description...",
+                }
+            ),
+            "seo_description": forms.TextInput(
+                attrs={
+                    "class": "input-text w-full",
+                    "placeholder": "Brief summary for search engines...",
+                    "autocomplete": "off",
                 }
             ),
             "visibility": forms.Select(attrs={"class": "input-text"}),
@@ -182,6 +190,7 @@ class DirectoryCreateForm(forms.ModelForm):
         fields = [
             "title",
             "description",
+            "seo_description",
             "visibility",
             "editability",
             "in_sitemap",
@@ -201,6 +210,13 @@ class DirectoryCreateForm(forms.ModelForm):
                     "rows": 6,
                     "id": "markdown-editor",
                     "placeholder": "Markdown description (optional)...",
+                }
+            ),
+            "seo_description": forms.TextInput(
+                attrs={
+                    "class": "input-text w-full",
+                    "placeholder": "Brief summary for search engines...",
+                    "autocomplete": "off",
                 }
             ),
             "visibility": forms.Select(attrs={"class": "input-text"}),
