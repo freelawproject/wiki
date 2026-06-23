@@ -16,6 +16,11 @@ ratelimit_search = ratelimit(key="user_or_ip", rate="30/m", block=True)
 ratelimit_view_count = ratelimit(
     key="ip", rate="120/m", method=["POST"], block=True
 )
+# Markdown preview is unauthenticated (anonymous users propose changes and
+# preview them) and rendering is CPU-bound, so cap how fast it can be hit.
+ratelimit_preview = ratelimit(
+    key="user_or_ip", rate="30/m", method=["POST"], block=True
+)
 # Caps how fast a single user can create or move pages. Directory-scoped
 # slugs let multiple pages share a name across dirs, so mass-creating
 # colliding slugs could force expensive synchronous link-rewrites on

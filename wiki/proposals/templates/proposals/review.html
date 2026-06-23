@@ -27,16 +27,28 @@
   </div>
   {% endif %}
 
-  {% if diff_html %}
-  <div class="mb-6">
-    <h2 class="text-lg font-semibold mb-2">Diff</h2>
-    <div class="font-mono text-sm overflow-x-auto border border-gray-200 dark:border-gray-700 rounded-lg p-3">
-      {{ diff_html|safe }}
+  <div x-data="proposalPreview" class="mb-6">
+    <div class="flex border-b border-gray-200 dark:border-gray-700 mb-3">
+      <button type="button" @click="showDiff" :class="diffTabClass"
+              class="px-4 py-2 text-sm font-medium border-b-2">Diff</button>
+      <button type="button" @click="showPreview" :class="previewTabClass"
+              class="px-4 py-2 text-sm font-medium border-b-2">Preview</button>
+    </div>
+
+    <div x-show="isDiff">
+      {% if diff_html %}
+      <div class="font-mono text-sm overflow-x-auto border border-gray-200 dark:border-gray-700 rounded-lg p-3">
+        {{ diff_html|safe }}
+      </div>
+      {% else %}
+      <p class="text-gray-500 dark:text-gray-400 italic">No content changes.</p>
+      {% endif %}
+    </div>
+
+    <div x-show="isPreview" x-cloak class="wiki-content card min-h-[200px] p-4">
+      {{ proposed_html|safe }}
     </div>
   </div>
-  {% else %}
-  <p class="text-gray-500 dark:text-gray-400 mb-6 italic">No content changes.</p>
-  {% endif %}
 
   {% if proposal.status == "pending" %}
   <div x-data="proposalReview" class="space-y-4">

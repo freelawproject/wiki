@@ -600,4 +600,23 @@ document.addEventListener('alpine:init', () => {
       return this.showDeny ? 'Cancel' : 'Deny Proposal'
     },
   }))
+
+  // Diff / Preview tab toggle on the proposal review page.
+  Alpine.data('proposalPreview', () => ({
+    view: 'diff',
+    showDiff() { this.view = 'diff' },
+    showPreview() { this.view = 'preview' },
+    get isDiff() { return this.view === 'diff' },
+    get isPreview() { return this.view === 'preview' },
+    get diffTabClass() {
+      return this.view === 'diff'
+        ? 'border-primary-500 text-primary-600 dark:text-primary-400'
+        : 'border-transparent text-gray-500 dark:text-gray-400'
+    },
+    get previewTabClass() {
+      return this.view === 'preview'
+        ? 'border-primary-500 text-primary-600 dark:text-primary-400'
+        : 'border-transparent text-gray-500 dark:text-gray-400'
+    },
+  }))
 })
