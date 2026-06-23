@@ -921,6 +921,44 @@ class TestOneClickUnsubscribe:
         ).exists()
 
 
+class TestUnsubscribeForDeletedPage:
+    """Delete notifications link to unsubscribe URLs that are clicked after
+    the page is soft-deleted, so the handlers must resolve soft-deleted
+    pages (Page.all_objects) rather than silently no-op."""
+
+    def test_one_click_unsubscribes_deleted_page(self, client, user, page):
+        PageSubscription.objects.create(user=user, page=page)
+        page.soft_delete(user)
+        signer = Signer()
+        token = signer.sign(f"{user.id}:{page.id}")
+        r = client.post(
+            reverse("unsubscribe_one_click", kwargs={"token": token})
+        )
+        assert r.status_code == 200
+        assert PageSubscription.objects.filter(
+            user=user, page=page, status=U
+        ).exists()
+
+    def test_landing_get_renders_for_deleted_page(self, client, user, page):
+        PageSubscription.objects.create(user=user, page=page)
+        page.soft_delete(user)
+        signer = Signer()
+        token = signer.sign(f"{user.id}:{page.id}")
+        r = client.get(reverse("unsubscribe", kwargs={"token": token}))
+        assert r.status_code == 200
+
+    def test_landing_post_unsubscribes_deleted_page(self, client, user, page):
+        PageSubscription.objects.create(user=user, page=page)
+        page.soft_delete(user)
+        signer = Signer()
+        token = signer.sign(f"{user.id}:{page.id}")
+        r = client.post(reverse("unsubscribe", kwargs={"token": token}))
+        assert r.status_code == 302
+        assert PageSubscription.objects.filter(
+            user=user, page=page, status=U
+        ).exists()
+
+
 # ── Integration tests ────────────────────────────────────────────
 
 

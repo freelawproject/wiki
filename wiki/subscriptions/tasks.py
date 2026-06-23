@@ -24,7 +24,9 @@ def notify_subscribers(
     """Notify all subscribers about a page change.
 
     ``action`` is one of "created", "updated", or "deleted" and controls the
-    email wording. Called synchronously after a page is saved or deleted.
+    email wording. Called synchronously after a save, or *before* a
+    soft-delete: the default Page manager hides deleted rows, so the page
+    must still be visible when this runs (see page_delete).
     """
     page = Page.objects.get(id=page_id)
     editor = User.objects.get(id=editor_id)

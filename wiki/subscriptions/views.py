@@ -119,7 +119,9 @@ def _unsubscribe_page(request, user_id, page_id):
     """Handle page unsubscribe from email link."""
     if request.method == "POST":
         user = User.objects.filter(id=user_id).first()
-        page = Page.objects.filter(id=page_id).first()
+        # Use all_objects: delete notifications link here, so the page is
+        # often soft-deleted by the time the recipient clicks.
+        page = Page.all_objects.filter(id=page_id).first()
         if user and page:
             PageSubscription.objects.update_or_create(
                 user=user,
@@ -129,7 +131,7 @@ def _unsubscribe_page(request, user_id, page_id):
         messages.success(request, "You've been unsubscribed.")
         return redirect("root")
 
-    page = get_object_or_404(Page, id=page_id)
+    page = get_object_or_404(Page.all_objects, id=page_id)
     return render(
         request,
         "subscriptions/unsubscribe.html",
@@ -223,7 +225,9 @@ def unsubscribe_one_click(request, token):
         return HttpResponse("Invalid token", status=400)
 
     user = User.objects.filter(id=user_id).first()
-    page = Page.objects.filter(id=page_id).first()
+    # Use all_objects: delete notifications link here, so the page is
+    # often soft-deleted by the time the recipient clicks.
+    page = Page.all_objects.filter(id=page_id).first()
     if user and page:
         PageSubscription.objects.update_or_create(
             user=user,
