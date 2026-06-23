@@ -7,6 +7,7 @@ from .models import (
     PageRevision,
     PageViewTally,
     SlugRedirect,
+    ZeroResultSearch,
 )
 
 
@@ -202,6 +203,21 @@ class PageViewTallyAdmin(admin.ModelAdmin):
     readonly_fields = ["page", "count", "created_at"]
     list_select_related = ["page"]
     date_hierarchy = "created_at"
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(ZeroResultSearch)
+class ZeroResultSearchAdmin(admin.ModelAdmin):
+    list_display = ["query", "audience", "count", "first_seen", "last_seen"]
+    list_filter = ["audience", "last_seen"]
+    search_fields = ["query"]
+    readonly_fields = ["query", "audience", "count", "first_seen", "last_seen"]
+    date_hierarchy = "last_seen"
 
     def has_add_permission(self, request):
         return False

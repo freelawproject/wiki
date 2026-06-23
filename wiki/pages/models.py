@@ -529,3 +529,44 @@ class PageViewTally(models.Model):
         indexes = [
             models.Index(fields=["page", "created_at"]),
         ]
+
+
+class ZeroResultSearch(models.Model):
+    """A search query that returned no results.
+
+    These are a signal about content we're missing: what people look for but
+    can't find. Rows are aggregated by (normalized query, audience) and carry
+    a running count so the admin can surface the most common gaps, separating
+    staff searches from public ones.
+
+    Intentionally anonymous: we keep no user, IP, or session — only the
+    normalized query text, whether the searcher was staff or public, and how
+    often and how recently it happened.
+    """
+
+    class Audience(models.TextChoices):
+        STAFF = "staff", "Staff"
+        PUBLIC = "public", "Public"
+
+    query = models.CharField(
+        max_length=255,
+        help_text="Normalized query text: lowercased, whitespace-collapsed, "
+        "and tokens alphabetized so word order doesn't matter.",
+    )
+    audience = models.CharField(max_length=10, choices=Audience.choices)
+    count = models.PositiveIntegerField(default=1)
+    first_seen = models.DateTimeField(auto_now_add=True)
+    last_seen = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["query", "audience"],
+                name="unique_zero_result_query_audience",
+            ),
+        ]
+        ordering = ["-count", "-last_seen"]
+        verbose_name_plural = "zero result searches"
+
+    def __str__(self):
+        return f"{self.query} ({self.audience}): {self.count}"
