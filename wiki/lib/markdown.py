@@ -725,6 +725,12 @@ def render_markdown(content, viewer=None):
         content,
         extras=[
             "fenced-code-blocks",
+            # Emit the fence's language as a `language-<lang>` class on the
+            # <code> element (and skip markdown2's own Pygments pass) so the
+            # client-side highlight.js honors the requested language instead
+            # of auto-detecting. A bare ```` ``` ```` fence gets no class and
+            # still auto-detects; ```` ```plaintext ```` disables highlighting.
+            "highlightjs-lang",
             "tables",
             "header-ids",
             "toc",
