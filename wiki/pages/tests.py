@@ -676,11 +676,14 @@ class TestPreviewEndpoint:
         assert r.status_code == 200
         assert b"<h2" in r.content
 
-    def test_preview_requires_login(self, client, db):
-        """Anon access is rejected — rendering resolves #dir/slug and
-        would leak the existence of private pages via URL paths."""
-        r = client.post(reverse("page_preview"), {"content": "test"})
-        assert r.status_code == 302  # redirected to login
+    def test_preview_allows_anonymous(self, client, db):
+        """Anon access renders the preview (issue #107): the proposal form is
+        open to guests, so its Preview tab must be too. Rendering happens as
+        the anonymous viewer, which resolves only public pages, so nothing
+        private leaks (see TestPreviewDoesNotLeakInternalTitles)."""
+        r = client.post(reverse("page_preview"), {"content": "## Hello"})
+        assert r.status_code == 200
+        assert b"<h2" in r.content
 
 
 class TestRecordPageView:

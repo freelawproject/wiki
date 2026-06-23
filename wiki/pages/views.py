@@ -49,6 +49,7 @@ from wiki.lib.permissions import (
 )
 from wiki.lib.ratelimiter import (
     ratelimit_page_write,
+    ratelimit_preview,
     ratelimit_search,
     ratelimit_upload,
     ratelimit_view_count,
@@ -1246,14 +1247,18 @@ def record_page_view(request):
 
 
 @require_POST
-@login_required
+@ratelimit_preview
 def page_preview_htmx(request):
     """Return rendered markdown preview for HTMX requests.
 
-    Gated on auth, and rendered *as the requesting viewer*: wiki-link
+    Open to anonymous users: the proposal form is accessible without login,
+    so its Preview tab must be too (otherwise it renders a login page — see
+    issue #107). Rendering happens *as the requesting viewer*: wiki-link
     resolution emits the target page's title and URL, so previewing must not
     resolve references to pages this user can't view — otherwise a guest
     could enumerate internal page titles/URLs by previewing ``#guessed-slug``.
+    For anonymous viewers this resolves only public pages, which they can
+    already see, so there is nothing to leak.
     """
     content = request.POST.get("content", "")
     rendered = render_markdown(content, viewer=request.user)
