@@ -1130,6 +1130,23 @@ class TestMarkdownRendering:
         html = str(render_markdown(md))
         assert "print" in html
 
+    def test_fenced_code_block_language_class(self):
+        """The fence's language is emitted as a class so highlight.js
+        honors it instead of auto-detecting (issue #89)."""
+        html = str(render_markdown("```python\nprint('hello')\n```"))
+        assert 'class="python language-python"' in html
+
+    def test_fenced_code_block_plaintext_disables_highlighting(self):
+        """```plaintext``` carries language-plaintext so highlight.js
+        renders it without syntax highlighting (issue #89)."""
+        html = str(render_markdown("```plaintext\nfooo\n```"))
+        assert 'class="plaintext language-plaintext"' in html
+
+    def test_fenced_code_block_without_language_has_no_class(self):
+        """A bare fence gets no language class (highlight.js auto-detects)."""
+        html = str(render_markdown("```\nfooo\n```"))
+        assert "<code>" in html
+
     def test_tables(self):
         md = "| A | B |\n|---|---|\n| 1 | 2 |"
         html = str(render_markdown(md))
