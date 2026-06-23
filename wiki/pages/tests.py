@@ -103,6 +103,25 @@ class TestPageCreate:
         page = Page.objects.get(slug="subtest")
         assert PageSubscription.objects.filter(user=user, page=page).exists()
 
+    def test_dir_segments_json_escapes_malicious_title(
+        self, client, user, root_directory
+    ):
+        """A directory title can't break out of the dirSegments JSON island."""
+        evil = Directory.objects.create(
+            path="evil",
+            title="</script><script>alert(document.cookie)</script>",
+            parent=root_directory,
+            owner=user,
+            created_by=user,
+            visibility=Directory.Visibility.PUBLIC,
+        )
+        client.force_login(user)
+        r = client.get(
+            reverse("page_create_in_dir", kwargs={"path": evil.path})
+        )
+        content = r.content.decode()
+        assert "<script>alert(document.cookie)</script>" not in content
+
     def test_create_in_directory(self, client, user, sub_directory):
         client.force_login(user)
         r = client.post(

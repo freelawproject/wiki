@@ -53,6 +53,7 @@ from wiki.lib.ratelimiter import (
     ratelimit_upload,
     ratelimit_view_count,
 )
+from wiki.lib.safe_json import dump_json_for_script
 from wiki.lib.seo import (
     build_article_jsonld,
     build_breadcrumbs_jsonld,
@@ -154,10 +155,9 @@ def _build_dir_segments_from_post(post_data):
     Used when re-rendering the form after validation failure so the
     location picker preserves the user's directory selection.
 
-    The result is serialised with ``json.dumps()`` and rendered via
-    ``|safe`` inside a ``<script>`` block, so every user-supplied
-    string is passed through ``escape()`` to neutralise any embedded
-    ``</script>`` sequences that would break out of the JSON island.
+    The result is serialised with ``dump_json_for_script()`` and rendered
+    via ``|safe`` inside a ``<script>`` block; that helper neutralises any
+    embedded ``</script>`` sequences, so titles/paths are stored verbatim.
     """
     dir_path = post_data.get("directory_path", "").strip()
     if not dir_path:
@@ -175,7 +175,7 @@ def _build_dir_segments_from_post(post_data):
             title = title_overrides[current_path]
         else:
             title = slug.replace("-", " ").title()
-        segments.append({"path": escape(current_path), "title": escape(title)})
+        segments.append({"path": current_path, "title": title})
     return segments
 
 
@@ -604,7 +604,7 @@ def page_create(request, path=""):
             "directory": directory,
             "editing": False,
             "breadcrumbs": breadcrumbs,
-            "dir_segments_json": json.dumps(
+            "dir_segments_json": dump_json_for_script(
                 _build_dir_segments_from_post(request.POST)
                 if request.method == "POST"
                 else _build_dir_segments(directory)
@@ -734,7 +734,7 @@ def page_edit(request, path):
             "page": page,
             "editing": True,
             "breadcrumbs": breadcrumbs,
-            "dir_segments_json": json.dumps(
+            "dir_segments_json": dump_json_for_script(
                 _build_dir_segments_from_post(request.POST)
                 if request.method == "POST"
                 else _build_dir_segments(page.directory)
