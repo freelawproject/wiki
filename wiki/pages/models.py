@@ -8,6 +8,11 @@ from django.utils.text import slugify
 
 from wiki.lib.path_utils import page_path_conflicts_with_directory
 
+# Explicit text search config so stemming works ("demos" matches "demo")
+# regardless of the Postgres server's default_text_search_config, which
+# varies with the build's locale (e.g. "simple" on some CI images).
+SEARCH_CONFIG = "english"
+
 
 class ActivePageManager(models.Manager):
     """Default manager — excludes soft-deleted pages."""
@@ -294,8 +299,10 @@ class Page(models.Model):
     def _update_search_vector(self):
         """Update the search_vector for this page in the DB."""
         Page.all_objects.filter(pk=self.pk).update(
-            search_vector=SearchVector("title", weight="A")
-            + SearchVector("content", weight="B")
+            search_vector=SearchVector(
+                "title", weight="A", config=SEARCH_CONFIG
+            )
+            + SearchVector("content", weight="B", config=SEARCH_CONFIG)
         )
 
     @property
