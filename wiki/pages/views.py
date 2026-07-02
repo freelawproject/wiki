@@ -1,4 +1,5 @@
 import json
+import logging
 import re
 import uuid
 from datetime import datetime
@@ -81,6 +82,13 @@ from .models import (
     PendingUpload,
     SlugRedirect,
 )
+from .ocr import (
+    MAX_IMAGE_BYTES,
+    SUPPORTED_IMAGE_TYPES,
+    describe_image,
+)
+
+logger = logging.getLogger(__name__)
 
 FILE_REF_RE = re.compile(r"/files/(\d+)/")
 
@@ -1339,7 +1347,13 @@ def file_upload_htmx(request):
         content_type=uploaded_file.content_type or "",
     )
 
-    return JsonResponse({"markdown": _file_upload_markdown(upload)})
+    return JsonResponse(
+        {
+            "markdown": _file_upload_markdown(
+                upload, alt_text=_generate_alt_text(upload)
+            )
+        }
+    )
 
 
 @require_POST
@@ -1446,10 +1460,45 @@ def confirm_upload(request):
         upload.save()
         pending.delete()
 
-    return JsonResponse({"markdown": _file_upload_markdown(upload)})
+    return JsonResponse(
+        {
+            "markdown": _file_upload_markdown(
+                upload, alt_text=_generate_alt_text(upload)
+            )
+        }
+    )
 
 
-def _file_upload_markdown(upload):
+def _generate_alt_text(upload):
+    """Return AI alt text for an image upload, or None for the fallback.
+
+    Reads the file back from storage (local disk in dev, S3 in prod), so
+    check size/type first to avoid pulling a 1 GB video into memory just
+    to skip it. Never raises: the upload already succeeded, and a broken
+    AI call must not turn it into an error.
+    """
+    if upload.content_type not in SUPPORTED_IMAGE_TYPES:
+        return None
+    try:
+        if upload.file.size > MAX_IMAGE_BYTES:
+            return None
+        with upload.file.open("rb") as f:
+            image_bytes = f.read()
+    except Exception:
+        logger.warning(
+            "Could not read upload %s for alt text", upload.id, exc_info=True
+        )
+        return None
+    return describe_image(image_bytes, upload.content_type)
+
+
+def _sanitize_alt_text(alt_text):
+    """Make model-generated alt text safe inside ``![...]()`` markdown."""
+    alt_text = re.sub(r"\s+", " ", alt_text).strip()
+    return alt_text.replace("[", "").replace("]", "")
+
+
+def _file_upload_markdown(upload, alt_text=None):
     """Return markdown syntax for a FileUpload."""
     file_url = reverse(
         "file_serve",
@@ -1459,7 +1508,8 @@ def _file_upload_markdown(upload):
         },
     )
     if upload.content_type and upload.content_type.startswith("image/"):
-        return f"![{upload.original_filename}]({file_url})"
+        alt = _sanitize_alt_text(alt_text) if alt_text else ""
+        return f"![{alt or upload.original_filename}]({file_url})"
     return f"[{upload.original_filename}]({file_url})"
 
 

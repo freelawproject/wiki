@@ -51,6 +51,25 @@ var initMarkdownEditor = (function() {
       );
     }
 
+    // Image types the server may describe with AI after the bytes land.
+    var AI_ALT_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+
+    function setPlaceholderStatus(cm, ph, text) {
+      // Stop the animated dots so the status message sticks.
+      clearInterval(ph.interval);
+      cm.replaceRange(text,
+        { line: ph.line, ch: 0 },
+        { line: ph.line, ch: cm.getLine(ph.line).length }
+      );
+    }
+
+    // After the bytes are sent, the server may still spend a few seconds
+    // generating alt text for images — tell the user what the wait is.
+    function showReadingStatus(cm, ph, file) {
+      if (AI_ALT_TYPES.indexOf(file.type) === -1) return;
+      setPlaceholderStatus(cm, ph, '🔍 Reading ' + file.name + '…');
+    }
+
     function replacePlaceholder(cm, ph, markdown) {
       clearInterval(ph.interval);
       cm.replaceRange(markdown,
@@ -106,6 +125,7 @@ var initMarkdownEditor = (function() {
           }
 
           // Step 3: Confirm with Django
+          showReadingStatus(cm, ph, file);
           fetch(config.urls.confirmUpload, {
             method: 'POST',
             headers: { 'X-CSRFToken': csrfToken, 'Content-Type': 'application/json' },
@@ -142,7 +162,10 @@ var initMarkdownEditor = (function() {
 
       xhr.upload.addEventListener('progress', function(e) {
         if (!e.lengthComputable) return;
-        updatePlaceholderProgress(cm, ph, file.name, Math.round(e.loaded / e.total * 100));
+        var pct = Math.round(e.loaded / e.total * 100);
+        updatePlaceholderProgress(cm, ph, file.name, pct);
+        // Bytes are sent; the response may still wait on AI alt text.
+        if (pct >= 100) showReadingStatus(cm, ph, file);
       });
 
       xhr.addEventListener('load', function() {

@@ -4,11 +4,15 @@ import io
 import json
 from datetime import timedelta
 
+import anthropic
+import httpx
 import pytest
 import time_machine
 from django.contrib.auth.models import AnonymousUser, User
 from django.contrib.sessions.models import Session
 from django.core import mail
+from django.core.files.base import ContentFile
+from django.core.files.storage import default_storage
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.management import call_command
 from django.test import Client
@@ -33,6 +37,7 @@ from wiki.pages.models import (
     SlugRedirect,
     ZeroResultSearch,
 )
+from wiki.pages.ocr import describe_image
 from wiki.pages.tasks import (
     OPTIMIZE_BATCH_SIZE,
     optimize_images,
@@ -1000,6 +1005,264 @@ def _mock_s3_client():
                 pass
 
     return MockS3Client()
+
+
+# ── AI alt text for image uploads ─────────────────────────────
+
+
+def _fail_if_called(*args, **kwargs):
+    raise AssertionError("should not have been called")
+
+
+class TestUploadAltText:
+    """The upload endpoints put AI-generated alt text in the markdown."""
+
+    def test_image_upload_uses_ai_alt_text(self, client, user):
+        client.force_login(user)
+        img = SimpleUploadedFile(
+            "chart.png", _make_png(), content_type="image/png"
+        )
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(
+                "wiki.pages.views.describe_image",
+                lambda image_bytes, content_type: "A bar chart of signups",
+            )
+            r = client.post(reverse("file_upload"), {"file": img})
+        data = json.loads(r.content)
+        assert data["markdown"].startswith("![A bar chart of signups](")
+
+    def test_falls_back_to_filename_when_skipped(self, client, user):
+        client.force_login(user)
+        img = SimpleUploadedFile(
+            "chart.png", _make_png(), content_type="image/png"
+        )
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(
+                "wiki.pages.views.describe_image",
+                lambda image_bytes, content_type: None,
+            )
+            r = client.post(reverse("file_upload"), {"file": img})
+        data = json.loads(r.content)
+        assert data["markdown"].startswith("![chart.png](")
+
+    def test_alt_text_is_sanitized_for_markdown(self, client, user):
+        client.force_login(user)
+        img = SimpleUploadedFile(
+            "chart.png", _make_png(), content_type="image/png"
+        )
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(
+                "wiki.pages.views.describe_image",
+                lambda image_bytes, content_type: "A [chart]\nwith   lines",
+            )
+            r = client.post(reverse("file_upload"), {"file": img})
+        data = json.loads(r.content)
+        assert data["markdown"].startswith("![A chart with lines](")
+
+    def test_non_image_skips_ai_call(self, client, user):
+        client.force_login(user)
+        doc = SimpleUploadedFile(
+            "notes.txt", b"hello", content_type="text/plain"
+        )
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr("wiki.pages.views.describe_image", _fail_if_called)
+            r = client.post(reverse("file_upload"), {"file": doc})
+        assert r.status_code == 200
+
+    def test_oversized_image_skips_ai_call(self, client, user):
+        client.force_login(user)
+        img = SimpleUploadedFile(
+            "big.png", _make_png(), content_type="image/png"
+        )
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr("wiki.pages.views.MAX_IMAGE_BYTES", 10)
+            mp.setattr("wiki.pages.views.describe_image", _fail_if_called)
+            r = client.post(reverse("file_upload"), {"file": img})
+        data = json.loads(r.content)
+        assert data["markdown"].startswith("![big.png](")
+
+    def test_ai_call_receives_file_bytes(self, client, user):
+        client.force_login(user)
+        png_bytes = _make_png()
+        img = SimpleUploadedFile(
+            "chart.png", png_bytes, content_type="image/png"
+        )
+        calls = []
+
+        def record(image_bytes, content_type):
+            calls.append((image_bytes, content_type))
+            return "A chart"
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr("wiki.pages.views.describe_image", record)
+            client.post(reverse("file_upload"), {"file": img})
+        assert calls == [(png_bytes, "image/png")]
+
+    def test_confirm_upload_uses_ai_alt_text(self, client, user, settings):
+        """The S3 confirm flow reads the file back and describes it."""
+        settings.AWS_PRIVATE_STORAGE_BUCKET_NAME = "test-bucket"
+        client.force_login(user)
+        s3_key = default_storage.save(
+            "uploads/2026/07/abc_diagram.png", ContentFile(_make_png())
+        )
+        pending = PendingUpload.objects.create(
+            s3_key=s3_key,
+            original_filename="diagram.png",
+            content_type="image/png",
+            expected_size=1024,
+            uploaded_by=user,
+        )
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(
+                "wiki.pages.views.get_s3_client", lambda: _mock_s3_client()
+            )
+            mp.setattr(
+                "wiki.pages.views.describe_image",
+                lambda image_bytes, content_type: "An architecture diagram",
+            )
+            r = client.post(
+                reverse("confirm_upload"),
+                json.dumps({"pending_id": str(pending.id)}),
+                content_type="application/json",
+            )
+        data = json.loads(r.content)
+        assert data["markdown"].startswith("![An architecture diagram](")
+
+    def test_unreadable_file_falls_back(self, client, user, settings):
+        """A file that can't be read back must not break the upload."""
+        settings.AWS_PRIVATE_STORAGE_BUCKET_NAME = "test-bucket"
+        client.force_login(user)
+        pending = PendingUpload.objects.create(
+            s3_key="uploads/2026/07/does-not-exist.png",
+            original_filename="photo.png",
+            content_type="image/png",
+            expected_size=1024,
+            uploaded_by=user,
+        )
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr(
+                "wiki.pages.views.get_s3_client", lambda: _mock_s3_client()
+            )
+            mp.setattr("wiki.pages.views.describe_image", _fail_if_called)
+            r = client.post(
+                reverse("confirm_upload"),
+                json.dumps({"pending_id": str(pending.id)}),
+                content_type="application/json",
+            )
+        assert r.status_code == 200
+        data = json.loads(r.content)
+        assert data["markdown"].startswith("![photo.png](")
+
+
+class _FakeBlock:
+    type = "text"
+
+    def __init__(self, text):
+        self.text = text
+
+
+class _FakeResponse:
+    def __init__(self, text, stop_reason="end_turn"):
+        self.stop_reason = stop_reason
+        self.content = [_FakeBlock(text)]
+
+
+class _FakeAnthropic:
+    """Stands in for anthropic.Anthropic; records the create() kwargs."""
+
+    last_create_kwargs = None
+
+    def __init__(self, response=None, error=None):
+        self._response = response
+        self._error = error
+
+    def __call__(self, **client_kwargs):
+        # Mimic the anthropic.Anthropic(...) constructor.
+        return self
+
+    @property
+    def messages(self):
+        return self
+
+    def create(self, **kwargs):
+        _FakeAnthropic.last_create_kwargs = kwargs
+        if self._error is not None:
+            raise self._error
+        return self._response
+
+
+class TestDescribeImage:
+    """Unit tests for the Anthropic call in wiki/pages/ocr.py."""
+
+    def test_no_api_key_skips_without_api_call(self, settings):
+        settings.ANTHROPIC_API_KEY = ""
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr("wiki.pages.ocr.anthropic.Anthropic", _fail_if_called)
+            assert describe_image(b"bytes", "image/png") is None
+
+    def test_unsupported_type_skips_without_api_call(self, settings):
+        settings.ANTHROPIC_API_KEY = "test-key"
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr("wiki.pages.ocr.anthropic.Anthropic", _fail_if_called)
+            assert describe_image(b"<svg/>", "image/svg+xml") is None
+
+    def test_oversized_image_skips_without_api_call(self, settings):
+        settings.ANTHROPIC_API_KEY = "test-key"
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr("wiki.pages.ocr.anthropic.Anthropic", _fail_if_called)
+            mp.setattr("wiki.pages.ocr.MAX_IMAGE_BYTES", 10)
+            assert describe_image(b"x" * 11, "image/png") is None
+
+    def test_happy_path_returns_alt_text(self, settings):
+        settings.ANTHROPIC_API_KEY = "test-key"
+        settings.ANTHROPIC_OCR_MODEL = "test-model"
+        fake = _FakeAnthropic(
+            response=_FakeResponse(json.dumps({"alt_text": " A red square "}))
+        )
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr("wiki.pages.ocr.anthropic.Anthropic", fake)
+            assert describe_image(b"png-bytes", "image/png") == "A red square"
+
+        kwargs = _FakeAnthropic.last_create_kwargs
+        assert kwargs["model"] == "test-model"
+        image_block = kwargs["messages"][0]["content"][0]
+        assert image_block["type"] == "image"
+        assert image_block["source"]["media_type"] == "image/png"
+
+    def test_api_error_returns_none(self, settings):
+        settings.ANTHROPIC_API_KEY = "test-key"
+        error = anthropic.APIConnectionError(
+            request=httpx.Request("POST", "https://api.anthropic.com")
+        )
+        fake = _FakeAnthropic(error=error)
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr("wiki.pages.ocr.anthropic.Anthropic", fake)
+            assert describe_image(b"png-bytes", "image/png") is None
+
+    def test_refusal_returns_none(self, settings):
+        settings.ANTHROPIC_API_KEY = "test-key"
+        fake = _FakeAnthropic(
+            response=_FakeResponse("", stop_reason="refusal")
+        )
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr("wiki.pages.ocr.anthropic.Anthropic", fake)
+            assert describe_image(b"png-bytes", "image/png") is None
+
+    def test_invalid_json_returns_none(self, settings):
+        settings.ANTHROPIC_API_KEY = "test-key"
+        fake = _FakeAnthropic(response=_FakeResponse("not json"))
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr("wiki.pages.ocr.anthropic.Anthropic", fake)
+            assert describe_image(b"png-bytes", "image/png") is None
+
+    def test_empty_alt_text_returns_none(self, settings):
+        settings.ANTHROPIC_API_KEY = "test-key"
+        fake = _FakeAnthropic(
+            response=_FakeResponse(json.dumps({"alt_text": "  "}))
+        )
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr("wiki.pages.ocr.anthropic.Anthropic", fake)
+            assert describe_image(b"png-bytes", "image/png") is None
 
 
 class TestPageSearchAutocomplete:

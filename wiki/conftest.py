@@ -8,6 +8,17 @@ from wiki.pages.models import Page, PageRevision
 from wiki.users.models import SystemConfig, UserProfile
 
 
+@pytest.fixture(autouse=True)
+def _no_anthropic_api(settings):
+    """Keep tests off the real Anthropic API.
+
+    A developer's ``.env.dev`` may carry a real ANTHROPIC_API_KEY for
+    manual testing; blank it so unmocked upload tests never make live
+    calls. Tests that exercise the OCR path set their own key.
+    """
+    settings.ANTHROPIC_API_KEY = ""
+
+
 @pytest.fixture
 def user(db):
     """A regular @free.law user with profile."""
