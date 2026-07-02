@@ -20,7 +20,7 @@ from wiki.lib.inheritance import (
 )
 from wiki.lib.permissions import viewable_pages_q
 
-from .models import Page
+from .models import SEARCH_CONFIG, Page
 
 SORT_OPTIONS = [
     ("relevance", "Relevance"),
@@ -40,9 +40,13 @@ def _build_search_query(parsed):
     """
     queries = []
     if parsed.text:
-        queries.append(SearchQuery(parsed.text, search_type="plain"))
+        queries.append(
+            SearchQuery(parsed.text, search_type="plain", config=SEARCH_CONFIG)
+        )
     for phrase in parsed.phrases:
-        queries.append(SearchQuery(phrase, search_type="phrase"))
+        queries.append(
+            SearchQuery(phrase, search_type="phrase", config=SEARCH_CONFIG)
+        )
 
     if not queries:
         return None
@@ -141,6 +145,7 @@ def search_pages(parsed, user=None, sort="relevance"):
             headline=SearchHeadline(
                 "content",
                 query,
+                config=SEARCH_CONFIG,
                 start_sel="<mark>",
                 stop_sel="</mark>",
                 max_words=60,

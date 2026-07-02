@@ -11,6 +11,7 @@ from django.contrib.sessions.models import Session
 from django.core import mail
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.management import call_command
+from django.db import connection
 from django.test import Client
 from django.urls import reverse
 from django.utils import timezone
@@ -2892,6 +2893,47 @@ class TestSearchView:
         r = client.get(f"{reverse('search')}?q=badgeterm")
         # Building icon for internal (staff) visibility.
         assert b'title="Staff"' in r.content
+
+
+class TestSearchStemming:
+    """Stemming must work regardless of the server's
+    default_text_search_config, which varies by environment (issue #123)."""
+
+    def test_stemming_survives_simple_server_default(self, client, user):
+        # SET LOCAL reverts when the test's wrapping transaction rolls
+        # back, so other tests are unaffected.
+        with connection.cursor() as cursor:
+            cursor.execute("SET LOCAL default_text_search_config = 'simple'")
+        Page.objects.create(
+            title="Recorded Demos",
+            content="A collection of demos we have recorded.",
+            owner=user,
+            created_by=user,
+            updated_by=user,
+            visibility=Page.Visibility.PUBLIC,
+        )
+        client.force_login(user)
+        r = client.get(f"{reverse('search')}?q=demo")
+        assert r.status_code == 200
+        assert "Recorded Demos" in r.content.decode()
+
+    def test_phrase_stemming_survives_simple_server_default(
+        self, client, user
+    ):
+        with connection.cursor() as cursor:
+            cursor.execute("SET LOCAL default_text_search_config = 'simple'")
+        Page.objects.create(
+            title="Training Sessions",
+            content="We give recorded demos to new employees.",
+            owner=user,
+            created_by=user,
+            updated_by=user,
+            visibility=Page.Visibility.PUBLIC,
+        )
+        client.force_login(user)
+        r = client.get(f'{reverse("search")}?q="recorded demo"')
+        assert r.status_code == 200
+        assert "Training Sessions" in r.content.decode()
 
 
 class TestSearchVisibilityNormalization:
