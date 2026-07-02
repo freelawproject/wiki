@@ -2894,6 +2894,86 @@ class TestSearchView:
         assert b'title="Staff"' in r.content
 
 
+class TestSearchVisibilityNormalization:
+    """Search treats visibility as effective values: pages set to "inherit"
+    resolve to their directory's visibility in facets, filters, and result
+    badges — "inherit" is never surfaced as a visibility."""
+
+    @pytest.fixture
+    def inherited_private_page(self, user, private_directory):
+        return Page.objects.create(
+            title="Inherited Private Page",
+            content="effvisterm content",
+            directory=private_directory,
+            owner=user,
+            created_by=user,
+            updated_by=user,
+            visibility=Page.Visibility.INHERIT,
+        )
+
+    @pytest.fixture
+    def explicit_public_page(self, user, root_directory):
+        return Page.objects.create(
+            title="Explicit Public Page",
+            content="effvisterm content",
+            directory=root_directory,
+            owner=user,
+            created_by=user,
+            updated_by=user,
+            visibility=Page.Visibility.PUBLIC,
+        )
+
+    def test_facets_resolve_inherit_to_effective_visibility(
+        self, client, user, inherited_private_page, explicit_public_page
+    ):
+        """The visibility facet should count inheriting pages under their
+        directory's effective visibility, never offer "inherit"."""
+        client.force_login(user)
+        r = client.get(f"{reverse('search')}?q=effvisterm")
+        facet_values = {
+            f["visibility"]: f["count"]
+            for f in r.context["facets"]["visibility"]
+        }
+        assert "inherit" not in facet_values
+        assert facet_values == {"public": 1, "private": 1}
+
+    def test_private_filter_includes_inherited_private(
+        self, client, user, inherited_private_page, explicit_public_page
+    ):
+        client.force_login(user)
+        r = client.get(f"{reverse('search')}?q=effvisterm&visibility=private")
+        content = r.content.decode()
+        assert "Inherited Private Page" in content
+        assert "Explicit Public Page" not in content
+
+    def test_public_filter_excludes_inherited_private(
+        self, client, user, inherited_private_page, explicit_public_page
+    ):
+        client.force_login(user)
+        r = client.get(f"{reverse('search')}?q=effvisterm&visibility=public")
+        content = r.content.decode()
+        assert "Explicit Public Page" in content
+        assert "Inherited Private Page" not in content
+
+    def test_inherit_filter_matches_nothing(
+        self, client, user, inherited_private_page, explicit_public_page
+    ):
+        """ "inherit" is not an effective visibility, so filtering on it
+        should return no results rather than a mix of public and private."""
+        client.force_login(user)
+        r = client.get(f"{reverse('search')}?q=effvisterm is:inherit")
+        assert r.context["total_count"] == 0
+
+    def test_inherited_private_page_shows_lock_icon(
+        self, client, user, inherited_private_page
+    ):
+        """Result badges should reflect effective visibility, so a page
+        inheriting "private" gets the lock icon."""
+        client.force_login(user)
+        r = client.get(f"{reverse('search')}?q=effvisterm")
+        assert b'title="Private"' in r.content
+
+
 class TestZeroResultSearch:
     """No-result searches are tallied anonymously by query + audience."""
 
