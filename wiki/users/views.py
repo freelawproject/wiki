@@ -43,11 +43,19 @@ from wiki.users.tasks import (
 
 
 def _safe_next_url(request, url):
-    """Return ``url`` if it's a safe same-host redirect target, else ""."""
-    if url and url_has_allowed_host_and_scheme(
-        url,
-        allowed_hosts={request.get_host()},
-        require_https=request.is_secure(),
+    """Return ``url`` if it's a safe same-host redirect target, else "".
+
+    The leading-slash check keeps bare strings (e.g. "admin_list") out of
+    ``redirect()``, which would otherwise reverse() them as pattern names.
+    """
+    if (
+        url
+        and url.startswith("/")
+        and url_has_allowed_host_and_scheme(
+            url,
+            allowed_hosts={request.get_host()},
+            require_https=request.is_secure(),
+        )
     ):
         return url
     return ""

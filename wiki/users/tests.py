@@ -202,6 +202,24 @@ class TestNextRedirect:
         assert r.status_code == 302
         assert r.url == "/c/some-page/"
 
+    def test_verify_ignores_bare_pattern_name_next(self, client, db):
+        # SECURITY: a schemeless, hostless string like "admin_list" passes
+        # url_has_allowed_host_and_scheme but redirect() would reverse() it
+        # as a URL pattern name (or 500 on NoReverseMatch). Only real paths
+        # (leading slash) may pass through.
+        client.post(reverse("login"), {"email": "alice@free.law"})
+        token = re.search(r"token=([^&]+)", mail.outbox[0].body).group(1)
+        r = client.get(
+            reverse("verify"),
+            {
+                "token": token,
+                "email": "alice@free.law",
+                "next": "admin_list",
+            },
+        )
+        assert r.status_code == 302
+        assert r.url == reverse("root")
+
     def test_verify_ignores_offsite_next(self, client, db):
         # SECURITY: the verify link is attacker-composable, so an off-host
         # next must fall back to root instead of redirecting away.
