@@ -74,6 +74,21 @@ def _resolve_directory_value(directory, field_name):
     return _FIELD_DEFAULTS[field_name], directory
 
 
+def effective_value_from_map(raw_value, directory_id, resolved, field_name):
+    """Resolve a raw field value using a resolve_all_directory_settings map.
+
+    Returns ``raw_value`` when it's explicit; for "inherit", returns the
+    owning directory's effective value from ``resolved``, falling back to
+    the field default when there's no directory to inherit from.
+    """
+    if raw_value != "inherit":
+        return raw_value
+    entry = resolved.get(directory_id)
+    if entry is None:
+        return _FIELD_DEFAULTS[field_name]
+    return entry[0]
+
+
 def resolve_all_directory_settings(field_name):
     """Bulk resolve all directories for a single field.
 
