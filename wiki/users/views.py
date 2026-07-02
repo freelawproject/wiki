@@ -1,4 +1,5 @@
 import secrets
+from urllib.parse import urlencode
 
 from django.contrib import messages
 from django.contrib.auth import login, logout
@@ -8,6 +9,8 @@ from django.db import transaction
 from django.db.models import Q
 from django.http import Http404, HttpResponse, JsonResponse
 from django.shortcuts import redirect, render
+from django.urls import reverse
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.cache import cache_control
 
 from wiki.lib.access import is_email_allowed, is_internal_user
@@ -39,12 +42,34 @@ from wiki.users.tasks import (
 )
 
 
+def _safe_next_url(request, url):
+    """Return ``url`` if it's a safe same-host redirect target, else "".
+
+    The leading-slash check keeps bare strings (e.g. "admin_list") out of
+    ``redirect()``, which would otherwise reverse() them as pattern names.
+    """
+    if (
+        url
+        and url.startswith("/")
+        and url_has_allowed_host_and_scheme(
+            url,
+            allowed_hosts={request.get_host()},
+            require_https=request.is_secure(),
+        )
+    ):
+        return url
+    return ""
+
+
 # SECURITY: rate limit login POSTs to prevent magic link email spam.
 @ratelimit_login
 def login_view(request):
     """Show login form and send magic link email."""
+    next_url = _safe_next_url(
+        request, request.POST.get("next") or request.GET.get("next")
+    )
     if request.user.is_authenticated:
-        return redirect("root")
+        return redirect(next_url or "root")
 
     form = LoginForm(request.POST or None)
     if request.method == "POST" and form.is_valid():
@@ -81,16 +106,23 @@ def login_view(request):
                 raw_token = secrets.token_urlsafe(32)
                 profile.set_magic_token(raw_token)
                 profile.save()
-                send_magic_link_email(email, raw_token)
+                send_magic_link_email(email, raw_token, next_url=next_url)
 
         messages.success(
             request,
             "If that address is allowed to sign in, we've emailed a "
             "sign-in link. It expires in 15 minutes.",
         )
-        return redirect("login")
+        # Keep ?next= on the post-submit page so a retry (e.g. after a
+        # typo'd address) still lands the user on their original page.
+        login_url = reverse("login")
+        if next_url:
+            login_url += "?" + urlencode({"next": next_url})
+        return redirect(login_url)
 
-    return render(request, "users/login.html", {"form": form})
+    return render(
+        request, "users/login.html", {"form": form, "next_url": next_url}
+    )
 
 
 def verify_view(request):
@@ -138,7 +170,10 @@ def verify_view(request):
             backend="django.contrib.auth.backends.ModelBackend",
         )
         messages.success(request, "You're now signed in.")
-        return redirect("root")
+        # The link's next param is attacker-influenced (anyone can compose
+        # a verify URL), so only follow it to a same-host destination.
+        next_url = _safe_next_url(request, request.GET.get("next"))
+        return redirect(next_url or "root")
     else:
         messages.error(request, "This sign-in link has expired or is invalid.")
         return redirect("login")

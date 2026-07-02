@@ -147,6 +147,114 @@ class TestMagicLinkFlow:
         assert r.status_code == 302
 
 
+class TestNextRedirect:
+    """The ?next= target must survive the whole magic link round trip."""
+
+    def _magic_link_query(self):
+        """Parse the verify URL's query string out of the sent email."""
+        m = re.search(r"\?(\S+)", mail.outbox[0].body)
+        return m.group(1)
+
+    def test_login_page_renders_hidden_next_field(self, client, db):
+        r = client.get(reverse("login"), {"next": "/c/some-page/"})
+        assert b'name="next" value="/c/some-page/"' in r.content
+
+    def test_login_page_drops_offsite_next(self, client, db):
+        # SECURITY: an off-host next must not propagate (open redirect).
+        r = client.get(reverse("login"), {"next": "https://evil.example.com/"})
+        assert b'name="next"' not in r.content
+
+    def test_next_carried_into_magic_link(self, client, db):
+        client.post(
+            reverse("login"),
+            {"email": "alice@free.law", "next": "/c/some-page/"},
+        )
+        assert "next=%2Fc%2Fsome-page%2F" in self._magic_link_query()
+
+    def test_offsite_next_dropped_from_magic_link(self, client, db):
+        client.post(
+            reverse("login"),
+            {"email": "alice@free.law", "next": "https://evil.example.com/"},
+        )
+        assert "next=" not in self._magic_link_query()
+
+    def test_post_redirect_preserves_next(self, client, db):
+        r = client.post(
+            reverse("login"),
+            {"email": "alice@free.law", "next": "/c/some-page/"},
+        )
+        assert r.url == reverse("login") + "?next=%2Fc%2Fsome-page%2F"
+
+    def test_verify_redirects_to_next(self, client, db):
+        client.post(
+            reverse("login"),
+            {"email": "alice@free.law", "next": "/c/some-page/"},
+        )
+        token = re.search(r"token=([^&]+)", mail.outbox[0].body).group(1)
+        r = client.get(
+            reverse("verify"),
+            {
+                "token": token,
+                "email": "alice@free.law",
+                "next": "/c/some-page/",
+            },
+        )
+        assert r.status_code == 302
+        assert r.url == "/c/some-page/"
+
+    def test_verify_ignores_bare_pattern_name_next(self, client, db):
+        # SECURITY: a schemeless, hostless string like "admin_list" passes
+        # url_has_allowed_host_and_scheme but redirect() would reverse() it
+        # as a URL pattern name (or 500 on NoReverseMatch). Only real paths
+        # (leading slash) may pass through.
+        client.post(reverse("login"), {"email": "alice@free.law"})
+        token = re.search(r"token=([^&]+)", mail.outbox[0].body).group(1)
+        r = client.get(
+            reverse("verify"),
+            {
+                "token": token,
+                "email": "alice@free.law",
+                "next": "admin_list",
+            },
+        )
+        assert r.status_code == 302
+        assert r.url == reverse("root")
+
+    def test_verify_ignores_offsite_next(self, client, db):
+        # SECURITY: the verify link is attacker-composable, so an off-host
+        # next must fall back to root instead of redirecting away.
+        client.post(reverse("login"), {"email": "alice@free.law"})
+        token = re.search(r"token=([^&]+)", mail.outbox[0].body).group(1)
+        r = client.get(
+            reverse("verify"),
+            {
+                "token": token,
+                "email": "alice@free.law",
+                "next": "https://evil.example.com/",
+            },
+        )
+        assert r.status_code == 302
+        assert r.url == reverse("root")
+
+    def test_authenticated_user_follows_next_from_login(self, client, user):
+        client.force_login(user)
+        r = client.get(reverse("login"), {"next": "/c/some-page/"})
+        assert r.status_code == 302
+        assert r.url == "/c/some-page/"
+
+    def test_login_required_page_links_next_through_form(self, client, db):
+        # End to end: a protected page bounces to login?next=..., and that
+        # value must come back out of the rendered form.
+        settings_url = reverse("user_settings")
+        r = client.get(settings_url)
+        assert r.status_code == 302
+        login_url = r.url
+        assert "?next=" in login_url
+        r = client.get(login_url)
+        expected = f'name="next" value="{settings_url}"'
+        assert expected.encode() in r.content
+
+
 class TestLogout:
     def test_logout_via_post(self, client, user):
         client.force_login(user)

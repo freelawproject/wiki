@@ -132,7 +132,7 @@
           </button>
         </form>
       {% else %}
-        <a href="{% url 'login' %}" rel="nofollow" class="btn-outline text-sm py-1.5">Sign in</a>
+        <a href="{% url 'login' %}?next={{ request.get_full_path|urlencode }}" rel="nofollow" class="btn-outline text-sm py-1.5">Sign in</a>
       {% endif %}
     </nav>
   </div>

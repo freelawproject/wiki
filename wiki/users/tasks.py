@@ -1,4 +1,5 @@
 import sys
+from urllib.parse import urlencode
 
 from django.conf import settings
 from django.contrib.auth.models import User
@@ -92,16 +93,20 @@ def notify_email_access_granted(email):
     )
 
 
-def send_magic_link_email(email, raw_token):
+def send_magic_link_email(email, raw_token, next_url=""):
     """Send the magic link sign-in email.
 
     Called synchronously. Fast via SES in prod, instant via
     console backend in dev.
+
+    ``next_url`` (a same-host path, already validated by the caller) rides
+    along on the verify link so the user lands back on the page they
+    originally requested after signing in.
     """
-    verify_url = (
-        f"{settings.BASE_URL}{reverse('verify')}"
-        f"?token={raw_token}&email={email}"
-    )
+    params = {"token": raw_token, "email": email}
+    if next_url:
+        params["next"] = next_url
+    verify_url = f"{settings.BASE_URL}{reverse('verify')}?{urlencode(params)}"
 
     body = (
         f"Click the link below to sign in:\n\n"
