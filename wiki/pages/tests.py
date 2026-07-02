@@ -2964,6 +2964,32 @@ class TestSearchVisibilityNormalization:
         r = client.get(f"{reverse('search')}?q=effvisterm is:inherit")
         assert r.context["total_count"] == 0
 
+    def test_directoryless_inherit_page_counts_and_filters_as_public(
+        self, client, user
+    ):
+        """A page with no directory and visibility="inherit" resolves to
+        the field default (public). The Public facet count and the Public
+        filter must agree on it (PR #125 review)."""
+        Page.objects.create(
+            title="Orphaned Inherit Page",
+            content="effvisterm content",
+            owner=user,
+            created_by=user,
+            updated_by=user,
+            visibility=Page.Visibility.INHERIT,
+        )
+        client.force_login(user)
+        r = client.get(f"{reverse('search')}?q=effvisterm")
+        facet_values = {
+            f["visibility"]: f["count"]
+            for f in r.context["facets"]["visibility"]
+        }
+        assert facet_values == {"public": 1}
+
+        r = client.get(f"{reverse('search')}?q=effvisterm&visibility=public")
+        assert r.context["total_count"] == 1
+        assert "Orphaned Inherit Page" in r.content.decode()
+
     def test_inherited_private_page_shows_lock_icon(
         self, client, user, inherited_private_page
     ):

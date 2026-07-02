@@ -74,6 +74,11 @@ def _resolve_directory_value(directory, field_name):
     return _FIELD_DEFAULTS[field_name], directory
 
 
+def field_default(field_name):
+    """Return the fallback default used when inheritance can't resolve."""
+    return _FIELD_DEFAULTS[field_name]
+
+
 def effective_value_from_map(raw_value, directory_id, resolved, field_name):
     """Resolve a raw field value using a resolve_all_directory_settings map.
 
