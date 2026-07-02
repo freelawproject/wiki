@@ -10,6 +10,10 @@ from django.utils import timezone
 
 from wiki.directories.models import Directory
 from wiki.lib.access import is_internal_user
+from wiki.lib.inheritance import (
+    effective_value_from_map,
+    resolve_all_directory_settings,
+)
 from wiki.lib.permissions import annotate_access_domains
 from wiki.lib.ratelimiter import ratelimit_search
 
@@ -28,20 +32,40 @@ def _parse_url_date(value):
         return None
 
 
-def _compute_facets(qs):
-    """Compute directory and visibility facets from the queryset."""
+def _compute_facets(qs, resolved_visibility):
+    """Compute directory and visibility facets from the queryset.
+
+    Visibility counts use effective values — pages set to "inherit" count
+    toward their directory's resolved visibility, so the facet only ever
+    offers real visibilities (public/internal/private), never "inherit".
+    """
     directory_facets = (
         qs.exclude(directory__isnull=True)
         .values("directory__path", "directory__title")
         .annotate(count=Count("id"))
         .order_by("-count")[:10]
     )
-    visibility_facets = (
-        qs.values("visibility").annotate(count=Count("id")).order_by("-count")
-    )
+    visibility_counts = {}
+    rows = qs.values("visibility", "directory_id").annotate(count=Count("id"))
+    for row in rows:
+        effective = effective_value_from_map(
+            row["visibility"],
+            row["directory_id"],
+            resolved_visibility,
+            "visibility",
+        )
+        visibility_counts[effective] = (
+            visibility_counts.get(effective, 0) + row["count"]
+        )
+    visibility_facets = [
+        {"visibility": value, "count": count}
+        for value, count in sorted(
+            visibility_counts.items(), key=lambda item: -item[1]
+        )
+    ]
     return {
         "directories": list(directory_facets),
-        "visibility": list(visibility_facets),
+        "visibility": visibility_facets,
     }
 
 
@@ -199,7 +223,8 @@ def search_view(request):
         _record_zero_result_search(search_query_text, request.user)
 
     # Compute facets from the full queryset (before pagination)
-    facets = _compute_facets(qs)
+    resolved_visibility = resolve_all_directory_settings("visibility")
+    facets = _compute_facets(qs, resolved_visibility)
 
     paginator = Paginator(qs, settings.SEARCH_RESULTS_PER_PAGE)
     try:
@@ -207,6 +232,16 @@ def search_view(request):
     except (ValueError, TypeError):
         page_num = 1
     page_obj = paginator.get_page(page_num)
+
+    # Resolve inherited visibility so result badges reflect the effective
+    # value, not the raw "inherit" setting.
+    for result in page_obj.object_list:
+        result.effective_visibility = effective_value_from_map(
+            result.visibility,
+            result.directory_id,
+            resolved_visibility,
+            "visibility",
+        )
 
     # Staff-only: annotate this page of results with the outside domains that
     # can reach each result, for the access badges.

@@ -14,7 +14,10 @@ from django.contrib.postgres.search import (
 )
 from django.db.models import F, Q, Value
 
-from wiki.lib.inheritance import resolve_all_directory_settings
+from wiki.lib.inheritance import (
+    field_default,
+    resolve_all_directory_settings,
+)
 from wiki.lib.permissions import viewable_pages_q
 
 from .models import Page
@@ -70,17 +73,25 @@ def _apply_filters(qs, parsed):
         qs = qs.filter(owner_q)
 
     if parsed.visibility:
-        # Include both explicit and inherited matches
+        # Filter on effective visibility: explicit matches plus pages that
+        # inherit the value from their directory. "inherit" itself is never
+        # an effective visibility, so filtering on it matches nothing.
         resolved = resolve_all_directory_settings("visibility")
         matching_dir_ids = {
             dir_id
             for dir_id, (eff_value, _, _) in resolved.items()
             if eff_value == parsed.visibility
         }
-        qs = qs.filter(
-            Q(visibility=parsed.visibility)
-            | Q(visibility="inherit", directory_id__in=matching_dir_ids)
-        )
+        vis_q = Q(visibility="inherit", directory_id__in=matching_dir_ids)
+        if parsed.visibility == field_default("visibility"):
+            # Directory-less inherit pages have no parent to resolve from
+            # and fall back to the field default — mirror viewable_pages_q
+            # and effective_value_from_map so the facet count and the
+            # filtered results agree.
+            vis_q |= Q(visibility="inherit", directory__isnull=True)
+        if parsed.visibility != "inherit":
+            vis_q |= Q(visibility=parsed.visibility)
+        qs = qs.filter(vis_q)
 
     if parsed.before_date:
         qs = qs.filter(updated_at__date__lte=parsed.before_date)

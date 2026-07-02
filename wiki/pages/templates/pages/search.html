@@ -189,7 +189,7 @@
               <h3 class="text-base font-medium text-gray-900 dark:text-gray-100 group-hover:text-primary-700 dark:group-hover:text-primary-400 transition-colors">
                 {{ page.title }}
               </h3>
-              <c-visibility-badge visibility="{{ page.visibility }}" />
+              <c-visibility-badge visibility="{{ page.effective_visibility }}" />
               <c-domain-access-badges :domains="page.access_domains" />
             </div>
             {% if page.headline %}
