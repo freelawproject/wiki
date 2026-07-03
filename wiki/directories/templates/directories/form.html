@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% load static wiki_tags %}
+{% load static upload_tags wiki_tags %}
 
 {% block title %}{% if creating %}New Subdirectory{% else %}Edit Directory: {{ directory.title }}{% endif %} - FLP Wiki{% endblock %}
 
@@ -114,6 +114,7 @@
 <script type="application/json" id="editor-config">
 {
   "csrfToken": "{{ csrf_token }}",
+  "aiAltTypes": {% ai_image_types %},
   "directUpload": {% if not DEBUG %}true{% else %}false{% endif %},
   "urls": {
     "presignUpload": "{% url 'presign_upload' %}",

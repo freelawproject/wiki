@@ -25,30 +25,53 @@ var initMarkdownEditor = (function() {
     // ── File upload (defined early so toolbar action can reference it) ──
     var editor; // forward declaration
 
-    // Shared helpers for placeholder management
+    // Shared helpers for placeholder management. One spinner animates for
+    // the placeholder's whole life — paste/upload, S3 transfer, and the
+    // server's AI pass — while each phase just swaps the message beside it.
+    var SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+
+    function renderPlaceholder(cm, ph) {
+      var line = cm.getLine(ph.line);
+      if (line === undefined) return; // line was deleted; nothing to draw on
+      cm.replaceRange(SPINNER_FRAMES[ph.frame] + ' ' + ph.text,
+        { line: ph.line, ch: 0 },
+        { line: ph.line, ch: line.length }
+      );
+    }
+
     function insertPlaceholder(cm, filename) {
       var cursor = cm.getCursor();
-      var text = '⏳ Uploading ' + filename + '...';
-      cm.replaceRange(text + '\n', cursor);
-      var line = cursor.line;
-      var dots = 0;
-      var interval = setInterval(function() {
-        dots = (dots + 1) % 4;
-        var t = '⏳ Uploading ' + filename + '.'.repeat(dots + 1);
-        cm.replaceRange(t,
-          { line: line, ch: 0 },
-          { line: line, ch: cm.getLine(line).length }
-        );
-      }, 400);
-      return { line: line, interval: interval };
+      var ph = {
+        line: cursor.line,
+        frame: 0,
+        text: 'Uploading ' + filename + '…'
+      };
+      cm.replaceRange(SPINNER_FRAMES[0] + ' ' + ph.text + '\n', cursor);
+      ph.interval = setInterval(function() {
+        ph.frame = (ph.frame + 1) % SPINNER_FRAMES.length;
+        renderPlaceholder(cm, ph);
+      }, 120);
+      return ph;
     }
 
     function updatePlaceholderProgress(cm, ph, filename, pct) {
-      var text = '⏳ Uploading ' + filename + ' (' + pct + '%)';
-      cm.replaceRange(text,
-        { line: ph.line, ch: 0 },
-        { line: ph.line, ch: cm.getLine(ph.line).length }
-      );
+      ph.text = 'Uploading ' + filename + ' (' + pct + '%)';
+      renderPlaceholder(cm, ph);
+    }
+
+    // Image types the server may describe with AI after the bytes land.
+    // Rendered into editor-config by the ai_image_types template tag, so
+    // wiki/pages/ocr.py's SUPPORTED_IMAGE_TYPES stays the single source.
+    var AI_ALT_TYPES = config.aiAltTypes || [];
+
+    // After the bytes are sent, the server still has work to do before it
+    // returns the markdown — a few seconds of AI description for images,
+    // a quick finalization for everything else.
+    function showProcessingStatus(cm, ph, file) {
+      ph.text = (AI_ALT_TYPES.indexOf(file.type) !== -1)
+        ? 'Generating image description…'
+        : 'Finishing ' + file.name + '…';
+      renderPlaceholder(cm, ph);
     }
 
     function replacePlaceholder(cm, ph, markdown) {
@@ -106,6 +129,7 @@ var initMarkdownEditor = (function() {
           }
 
           // Step 3: Confirm with Django
+          showProcessingStatus(cm, ph, file);
           fetch(config.urls.confirmUpload, {
             method: 'POST',
             headers: { 'X-CSRFToken': csrfToken, 'Content-Type': 'application/json' },
@@ -140,9 +164,20 @@ var initMarkdownEditor = (function() {
       xhr.open('POST', config.urls.fileUpload);
       xhr.setRequestHeader('X-CSRFToken', csrfToken);
 
+      // Browsers skip xhr.upload events entirely when the transfer is
+      // near-instant (the normal case for this same-machine dev path),
+      // so percentages only appear for uploads slow enough to watch...
       xhr.upload.addEventListener('progress', function(e) {
         if (!e.lengthComputable) return;
-        updatePlaceholderProgress(cm, ph, file.name, Math.round(e.loaded / e.total * 100));
+        var pct = Math.round(e.loaded / e.total * 100);
+        if (pct < 100) updatePlaceholderProgress(cm, ph, file.name, pct);
+      });
+
+      // ...and the processing status is shown right after send() below
+      // rather than from an upload event. If progress events did fire,
+      // this flips the text back once the bytes are done.
+      xhr.upload.addEventListener('load', function() {
+        showProcessingStatus(cm, ph, file);
       });
 
       xhr.addEventListener('load', function() {
@@ -164,6 +199,9 @@ var initMarkdownEditor = (function() {
       var fd = new FormData();
       fd.append('file', file);
       xhr.send(fd);
+      // Same-machine transfer is effectively instant; the wait the user
+      // actually experiences is the server's AI pass, so show it now.
+      showProcessingStatus(cm, ph, file);
     }
 
     var MAX_IMAGE_SIZE = 20 * 1024 * 1024; // 20 MB
