@@ -12,7 +12,7 @@ from django.db.models import F, Sum
 from django.utils import timezone
 from PIL import Image
 
-from .models import FileUpload, Page, PageViewTally
+from .models import SEARCH_CONFIG, FileUpload, Page, PageViewTally
 
 logger = logging.getLogger(__name__)
 
@@ -44,8 +44,8 @@ def update_search_vectors():
     Returns the number of pages updated.
     """
     count = Page.objects.update(
-        search_vector=SearchVector("title", weight="A")
-        + SearchVector("content", weight="B")
+        search_vector=SearchVector("title", weight="A", config=SEARCH_CONFIG)
+        + SearchVector("content", weight="B", config=SEARCH_CONFIG)
     )
     return count
 

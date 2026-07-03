@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% load static %}
+{% load static upload_tags %}
 
 {% block title %}Feedback for "{{ page.title }}" - FLP Wiki{% endblock %}
 
@@ -105,6 +105,7 @@
 <script type="application/json" id="editor-config">
 {
   "csrfToken": "{{ csrf_token }}",
+  "aiAltTypes": {% ai_image_types %},
   "directUpload": {% if not DEBUG %}true{% else %}false{% endif %},
   "urls": {
     "presignUpload": "{% url 'presign_upload' %}",

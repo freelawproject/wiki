@@ -4,6 +4,7 @@ from .project.email import *
 from .project.logging import *
 from .project.security import *
 from .project.testing import *
+from .third_party.anthropic import *
 from .third_party.aws import *
 from .third_party.cloudfront import *
 from .third_party.sentry import *
