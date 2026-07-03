@@ -25,49 +25,51 @@ var initMarkdownEditor = (function() {
     // ── File upload (defined early so toolbar action can reference it) ──
     var editor; // forward declaration
 
-    // Shared helpers for placeholder management
+    // Shared helpers for placeholder management. One spinner animates for
+    // the placeholder's whole life — paste/upload, S3 transfer, and the
+    // server's AI pass — while each phase just swaps the message beside it.
+    var SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+
+    function renderPlaceholder(cm, ph) {
+      var line = cm.getLine(ph.line);
+      if (line === undefined) return; // line was deleted; nothing to draw on
+      cm.replaceRange(SPINNER_FRAMES[ph.frame] + ' ' + ph.text,
+        { line: ph.line, ch: 0 },
+        { line: ph.line, ch: line.length }
+      );
+    }
+
     function insertPlaceholder(cm, filename) {
       var cursor = cm.getCursor();
-      var text = '⏳ Uploading ' + filename + '...';
-      cm.replaceRange(text + '\n', cursor);
-      var line = cursor.line;
-      var dots = 0;
-      var interval = setInterval(function() {
-        dots = (dots + 1) % 4;
-        var t = '⏳ Uploading ' + filename + '.'.repeat(dots + 1);
-        cm.replaceRange(t,
-          { line: line, ch: 0 },
-          { line: line, ch: cm.getLine(line).length }
-        );
-      }, 400);
-      return { line: line, interval: interval };
+      var ph = {
+        line: cursor.line,
+        frame: 0,
+        text: 'Uploading ' + filename + '…'
+      };
+      cm.replaceRange(SPINNER_FRAMES[0] + ' ' + ph.text + '\n', cursor);
+      ph.interval = setInterval(function() {
+        ph.frame = (ph.frame + 1) % SPINNER_FRAMES.length;
+        renderPlaceholder(cm, ph);
+      }, 120);
+      return ph;
     }
 
     function updatePlaceholderProgress(cm, ph, filename, pct) {
-      var text = '⏳ Uploading ' + filename + ' (' + pct + '%)';
-      cm.replaceRange(text,
-        { line: ph.line, ch: 0 },
-        { line: ph.line, ch: cm.getLine(ph.line).length }
-      );
+      ph.text = 'Uploading ' + filename + ' (' + pct + '%)';
+      renderPlaceholder(cm, ph);
     }
 
     // Image types the server may describe with AI after the bytes land.
     var AI_ALT_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
 
-    function setPlaceholderStatus(cm, ph, text) {
-      // Stop the animated dots so the status message sticks.
-      clearInterval(ph.interval);
-      cm.replaceRange(text,
-        { line: ph.line, ch: 0 },
-        { line: ph.line, ch: cm.getLine(ph.line).length }
-      );
-    }
-
-    // After the bytes are sent, the server may still spend a few seconds
-    // generating alt text for images — tell the user what the wait is.
-    function showReadingStatus(cm, ph, file) {
-      if (AI_ALT_TYPES.indexOf(file.type) === -1) return;
-      setPlaceholderStatus(cm, ph, '🔍 Reading ' + file.name + '…');
+    // After the bytes are sent, the server still has work to do before it
+    // returns the markdown — a few seconds of AI description for images,
+    // a quick finalization for everything else.
+    function showProcessingStatus(cm, ph, file) {
+      ph.text = (AI_ALT_TYPES.indexOf(file.type) !== -1)
+        ? 'Reading ' + file.name + '…'
+        : 'Finishing ' + file.name + '…';
+      renderPlaceholder(cm, ph);
     }
 
     function replacePlaceholder(cm, ph, markdown) {
@@ -125,7 +127,7 @@ var initMarkdownEditor = (function() {
           }
 
           // Step 3: Confirm with Django
-          showReadingStatus(cm, ph, file);
+          showProcessingStatus(cm, ph, file);
           fetch(config.urls.confirmUpload, {
             method: 'POST',
             headers: { 'X-CSRFToken': csrfToken, 'Content-Type': 'application/json' },
@@ -163,9 +165,12 @@ var initMarkdownEditor = (function() {
       xhr.upload.addEventListener('progress', function(e) {
         if (!e.lengthComputable) return;
         var pct = Math.round(e.loaded / e.total * 100);
-        updatePlaceholderProgress(cm, ph, file.name, pct);
-        // Bytes are sent; the response may still wait on AI alt text.
-        if (pct >= 100) showReadingStatus(cm, ph, file);
+        if (pct >= 100) {
+          // Bytes are sent; the response may still wait on AI alt text.
+          showProcessingStatus(cm, ph, file);
+        } else {
+          updatePlaceholderProgress(cm, ph, file.name, pct);
+        }
       });
 
       xhr.addEventListener('load', function() {
