@@ -67,7 +67,7 @@ var initMarkdownEditor = (function() {
     // a quick finalization for everything else.
     function showProcessingStatus(cm, ph, file) {
       ph.text = (AI_ALT_TYPES.indexOf(file.type) !== -1)
-        ? 'Reading ' + file.name + '…'
+        ? 'Generating image description…'
         : 'Finishing ' + file.name + '…';
       renderPlaceholder(cm, ph);
     }
