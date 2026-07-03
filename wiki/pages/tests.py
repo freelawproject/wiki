@@ -1901,10 +1901,17 @@ class TestUserSearchAPI:
         data = __import__("json").loads(r.content)
         assert data == []
 
-    def test_user_search_includes_self(self, client, user):
-        """You can find yourself, e.g. to add yourself to a group (#130)."""
+    def test_user_search_excludes_self(self, client, user):
         client.force_login(user)
         r = client.get(f"{reverse('user_search')}?q=alice")
+        data = json.loads(r.content)
+        usernames = [u["username"] for u in data]
+        assert "alice" not in usernames
+
+    def test_user_search_include_self_param(self, client, user):
+        """include_self=1 returns yourself, e.g. for group membership (#130)."""
+        client.force_login(user)
+        r = client.get(f"{reverse('user_search')}?q=alice&include_self=1")
         data = json.loads(r.content)
         usernames = [u["username"] for u in data]
         assert "alice" in usernames

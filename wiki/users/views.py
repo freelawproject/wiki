@@ -517,14 +517,17 @@ def user_search_htmx(request):
         return JsonResponse([], safe=False)
 
     # Match the typed @-handle (or a display name). The inner join on
-    # profile means every result has a handle.
-    # The requesting user is included: this endpoint also feeds the group
-    # member and permission-grant autocompletes, where picking yourself is
-    # legitimate (see issue #130).
+    # profile means every result has a handle. The requesting user is
+    # excluded by default (you don't @-mention yourself), but callers like
+    # the group member form pass include_self=1 since adding yourself to a
+    # group is legitimate (see issue #130).
     users = User.objects.filter(
         Q(profile__handle__istartswith=q)
         | Q(profile__display_name__icontains=q)
-    ).select_related("profile")[:10]
+    )
+    if request.GET.get("include_self") != "1":
+        users = users.exclude(pk=request.user.pk)
+    users = users.select_related("profile")[:10]
 
     results = []
     for u in users:
