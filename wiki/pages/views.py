@@ -1484,12 +1484,14 @@ def _generate_alt_text(upload):
             return None
         with upload.file.open("rb") as f:
             image_bytes = f.read()
+        return describe_image(image_bytes, upload.content_type)
     except Exception:
         logger.warning(
-            "Could not read upload %s for alt text", upload.id, exc_info=True
+            "Alt text generation failed for upload %s",
+            upload.id,
+            exc_info=True,
         )
         return None
-    return describe_image(image_bytes, upload.content_type)
 
 
 def _sanitize_alt_text(alt_text):

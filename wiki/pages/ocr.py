@@ -17,7 +17,8 @@ from django.conf import settings
 
 logger = logging.getLogger(__name__)
 
-# Image types the Anthropic API accepts as input.
+# Image types the Anthropic API accepts as input. Mirrored by
+# AI_ALT_TYPES in wiki/assets/static-global/js/markdown-editor.js.
 SUPPORTED_IMAGE_TYPES = {
     "image/jpeg",
     "image/png",
@@ -108,7 +109,9 @@ def describe_image(image_bytes, content_type):
     text = next((b.text for b in response.content if b.type == "text"), "")
     try:
         alt_text = json.loads(text)["alt_text"].strip()
-    except (json.JSONDecodeError, KeyError, AttributeError):
+    except (json.JSONDecodeError, KeyError, AttributeError, TypeError):
+        # TypeError covers valid JSON that isn't an object (e.g. a bare
+        # list or number) — the schema forbids it, but don't bet on that.
         logger.warning("Alt text response was not valid JSON: %r", text[:200])
         return None
     return alt_text or None

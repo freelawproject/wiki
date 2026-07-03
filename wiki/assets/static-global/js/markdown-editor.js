@@ -60,6 +60,8 @@ var initMarkdownEditor = (function() {
     }
 
     // Image types the server may describe with AI after the bytes land.
+    // Mirrors SUPPORTED_IMAGE_TYPES in wiki/pages/ocr.py; drift only
+    // affects which status message shows, not behavior.
     var AI_ALT_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
 
     // After the bytes are sent, the server still has work to do before it
@@ -164,13 +166,14 @@ var initMarkdownEditor = (function() {
 
       xhr.upload.addEventListener('progress', function(e) {
         if (!e.lengthComputable) return;
-        var pct = Math.round(e.loaded / e.total * 100);
-        if (pct >= 100) {
-          // Bytes are sent; the response may still wait on AI alt text.
-          showProcessingStatus(cm, ph, file);
-        } else {
-          updatePlaceholderProgress(cm, ph, file.name, pct);
-        }
+        updatePlaceholderProgress(cm, ph, file.name, Math.round(e.loaded / e.total * 100));
+      });
+
+      // Fires when the byte transfer completes, before the response —
+      // which may still wait on AI alt text. Unlike a 100% progress
+      // tick, this is guaranteed even on fast localhost uploads.
+      xhr.upload.addEventListener('load', function() {
+        showProcessingStatus(cm, ph, file);
       });
 
       xhr.addEventListener('load', function() {

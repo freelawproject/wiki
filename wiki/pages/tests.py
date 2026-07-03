@@ -1059,6 +1059,23 @@ class TestUploadAltText:
         data = json.loads(r.content)
         assert data["markdown"].startswith("![A chart with lines](")
 
+    def test_describe_image_exception_falls_back(self, client, user):
+        """A bug in the AI path must not turn a good upload into a 500."""
+        client.force_login(user)
+        img = SimpleUploadedFile(
+            "chart.png", _make_png(), content_type="image/png"
+        )
+
+        def boom(image_bytes, content_type):
+            raise RuntimeError("unexpected AI failure")
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr("wiki.pages.views.describe_image", boom)
+            r = client.post(reverse("file_upload"), {"file": img})
+        assert r.status_code == 200
+        data = json.loads(r.content)
+        assert data["markdown"].startswith("![chart.png](")
+
     def test_non_image_skips_ai_call(self, client, user):
         client.force_login(user)
         doc = SimpleUploadedFile(
@@ -1113,9 +1130,7 @@ class TestUploadAltText:
             uploaded_by=user,
         )
         with pytest.MonkeyPatch.context() as mp:
-            mp.setattr(
-                "wiki.pages.views.get_s3_client", lambda: _mock_s3_client()
-            )
+            mp.setattr("wiki.pages.views.get_s3_client", _mock_s3_client)
             mp.setattr(
                 "wiki.pages.views.describe_image",
                 lambda image_bytes, content_type: "An architecture diagram",
@@ -1140,9 +1155,7 @@ class TestUploadAltText:
             uploaded_by=user,
         )
         with pytest.MonkeyPatch.context() as mp:
-            mp.setattr(
-                "wiki.pages.views.get_s3_client", lambda: _mock_s3_client()
-            )
+            mp.setattr("wiki.pages.views.get_s3_client", _mock_s3_client)
             mp.setattr("wiki.pages.views.describe_image", _fail_if_called)
             r = client.post(
                 reverse("confirm_upload"),
@@ -1251,6 +1264,14 @@ class TestDescribeImage:
     def test_invalid_json_returns_none(self, settings):
         settings.ANTHROPIC_API_KEY = "test-key"
         fake = _FakeAnthropic(response=_FakeResponse("not json"))
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setattr("wiki.pages.ocr.anthropic.Anthropic", fake)
+            assert describe_image(b"png-bytes", "image/png") is None
+
+    def test_non_object_json_returns_none(self, settings):
+        """Valid JSON that isn't an object must not raise TypeError."""
+        settings.ANTHROPIC_API_KEY = "test-key"
+        fake = _FakeAnthropic(response=_FakeResponse("[]"))
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr("wiki.pages.ocr.anthropic.Anthropic", fake)
             assert describe_image(b"png-bytes", "image/png") is None

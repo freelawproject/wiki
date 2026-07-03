@@ -1,5 +1,8 @@
 import environ
 
+# Keeps the settings assembly's `import *` from also dragging in `env`.
+__all__ = ["ANTHROPIC_API_KEY", "ANTHROPIC_OCR_MODEL"]
+
 env = environ.FileAwareEnv()
 
 # API key for the Anthropic API, used to generate alt text for image
