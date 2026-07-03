@@ -1908,6 +1908,14 @@ class TestUserSearchAPI:
         usernames = [u["username"] for u in data]
         assert "alice" not in usernames
 
+    def test_user_search_include_self_param(self, client, user):
+        """include_self=1 returns yourself, e.g. for group membership (#130)."""
+        client.force_login(user)
+        r = client.get(f"{reverse('user_search')}?q=alice&include_self=1")
+        data = json.loads(r.content)
+        usernames = [u["username"] for u in data]
+        assert "alice" in usernames
+
 
 class TestPagePermissions:
     def test_permissions_requires_login(self, client, page):

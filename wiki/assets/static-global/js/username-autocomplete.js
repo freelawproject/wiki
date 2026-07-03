@@ -10,7 +10,9 @@
   var dropdown = document.getElementById('username-dropdown');
   if (!input || !dropdown) return;
 
-  var userSearchUrl = JSON.parse(document.getElementById('username-autocomplete-config').textContent).userSearchUrl;
+  var config = JSON.parse(document.getElementById('username-autocomplete-config').textContent);
+  var userSearchUrl = config.userSearchUrl;
+  var includeSelf = config.includeSelf ? '&include_self=1' : '';
 
   var timer = null;
 
@@ -18,7 +20,7 @@
     if (query.length < 1) { dropdown.classList.add('hidden'); return; }
     clearTimeout(timer);
     timer = setTimeout(function() {
-      fetch(userSearchUrl + '?q=' + encodeURIComponent(query))
+      fetch(userSearchUrl + '?q=' + encodeURIComponent(query) + includeSelf)
         .then(function(r) { return r.json(); })
         .then(function(results) {
           if (!results.length) { dropdown.classList.add('hidden'); return; }
