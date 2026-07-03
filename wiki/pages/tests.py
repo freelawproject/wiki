@@ -2,6 +2,7 @@
 
 import io
 import json
+import re
 from datetime import timedelta
 
 import anthropic
@@ -37,7 +38,7 @@ from wiki.pages.models import (
     SlugRedirect,
     ZeroResultSearch,
 )
-from wiki.pages.ocr import describe_image
+from wiki.pages.ocr import SUPPORTED_IMAGE_TYPES, describe_image
 from wiki.pages.tasks import (
     OPTIMIZE_BATCH_SIZE,
     optimize_images,
@@ -1075,6 +1076,20 @@ class TestUploadAltText:
         assert r.status_code == 200
         data = json.loads(r.content)
         assert data["markdown"].startswith("![chart.png](")
+
+    def test_editor_config_carries_ai_image_types(self, client, user):
+        """The editor learns which types get AI alt text from the server."""
+        client.force_login(user)
+        content = client.get(reverse("page_create")).content.decode()
+        match = re.search(
+            r'<script type="application/json" id="editor-config">\s*(\{.*?\})'
+            r"\s*</script>",
+            content,
+            re.DOTALL,
+        )
+        assert match, "editor-config block missing"
+        editor_config = json.loads(match.group(1))
+        assert editor_config["aiAltTypes"] == sorted(SUPPORTED_IMAGE_TYPES)
 
     def test_non_image_skips_ai_call(self, client, user):
         client.force_login(user)

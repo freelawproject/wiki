@@ -60,9 +60,9 @@ var initMarkdownEditor = (function() {
     }
 
     // Image types the server may describe with AI after the bytes land.
-    // Mirrors SUPPORTED_IMAGE_TYPES in wiki/pages/ocr.py; drift only
-    // affects which status message shows, not behavior.
-    var AI_ALT_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+    // Rendered into editor-config by the ai_image_types template tag, so
+    // wiki/pages/ocr.py's SUPPORTED_IMAGE_TYPES stays the single source.
+    var AI_ALT_TYPES = config.aiAltTypes || [];
 
     // After the bytes are sent, the server still has work to do before it
     // returns the markdown — a few seconds of AI description for images,
@@ -164,14 +164,18 @@ var initMarkdownEditor = (function() {
       xhr.open('POST', config.urls.fileUpload);
       xhr.setRequestHeader('X-CSRFToken', csrfToken);
 
+      // Browsers skip xhr.upload events entirely when the transfer is
+      // near-instant (the normal case for this same-machine dev path),
+      // so percentages only appear for uploads slow enough to watch...
       xhr.upload.addEventListener('progress', function(e) {
         if (!e.lengthComputable) return;
-        updatePlaceholderProgress(cm, ph, file.name, Math.round(e.loaded / e.total * 100));
+        var pct = Math.round(e.loaded / e.total * 100);
+        if (pct < 100) updatePlaceholderProgress(cm, ph, file.name, pct);
       });
 
-      // Fires when the byte transfer completes, before the response —
-      // which may still wait on AI alt text. Unlike a 100% progress
-      // tick, this is guaranteed even on fast localhost uploads.
+      // ...and the processing status is shown right after send() below
+      // rather than from an upload event. If progress events did fire,
+      // this flips the text back once the bytes are done.
       xhr.upload.addEventListener('load', function() {
         showProcessingStatus(cm, ph, file);
       });
@@ -195,6 +199,9 @@ var initMarkdownEditor = (function() {
       var fd = new FormData();
       fd.append('file', file);
       xhr.send(fd);
+      // Same-machine transfer is effectively instant; the wait the user
+      // actually experiences is the server's AI pass, so show it now.
+      showProcessingStatus(cm, ph, file);
     }
 
     var MAX_IMAGE_SIZE = 20 * 1024 * 1024; // 20 MB

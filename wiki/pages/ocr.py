@@ -17,8 +17,9 @@ from django.conf import settings
 
 logger = logging.getLogger(__name__)
 
-# Image types the Anthropic API accepts as input. Mirrored by
-# AI_ALT_TYPES in wiki/assets/static-global/js/markdown-editor.js.
+# Image types the Anthropic API accepts as input. The editor reads this
+# list from editor-config via the ai_image_types template tag to decide
+# which uploads get the "Generating image description" status.
 SUPPORTED_IMAGE_TYPES = {
     "image/jpeg",
     "image/png",
