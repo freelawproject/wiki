@@ -79,6 +79,18 @@ class TestGroupDetail:
         assert r.status_code == 302
         assert group.user_set.filter(pk=other_user.pk).exists()
 
+    def test_add_self(self, client, user, group):
+        """A manager can add themselves to a group (#130)."""
+        user.is_staff = True
+        user.save()
+        client.force_login(user)
+        r = client.post(
+            reverse("group_add_member", kwargs={"pk": group.pk}),
+            {"username": user.profile.handle},
+        )
+        assert r.status_code == 302
+        assert group.user_set.filter(pk=user.pk).exists()
+
     def test_add_nonexistent_user(self, client, user, group):
         user.is_staff = True
         user.save()

@@ -1601,12 +1601,13 @@ class TestUserSearchAPI:
         data = __import__("json").loads(r.content)
         assert data == []
 
-    def test_user_search_excludes_self(self, client, user):
+    def test_user_search_includes_self(self, client, user):
+        """You can find yourself, e.g. to add yourself to a group (#130)."""
         client.force_login(user)
         r = client.get(f"{reverse('user_search')}?q=alice")
         data = json.loads(r.content)
         usernames = [u["username"] for u in data]
-        assert "alice" not in usernames
+        assert "alice" in usernames
 
 
 class TestPagePermissions:

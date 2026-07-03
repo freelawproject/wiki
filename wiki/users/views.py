@@ -518,14 +518,13 @@ def user_search_htmx(request):
 
     # Match the typed @-handle (or a display name). The inner join on
     # profile means every result has a handle.
-    users = (
-        User.objects.filter(
-            Q(profile__handle__istartswith=q)
-            | Q(profile__display_name__icontains=q)
-        )
-        .exclude(pk=request.user.pk)
-        .select_related("profile")[:10]
-    )
+    # The requesting user is included: this endpoint also feeds the group
+    # member and permission-grant autocompletes, where picking yourself is
+    # legitimate (see issue #130).
+    users = User.objects.filter(
+        Q(profile__handle__istartswith=q)
+        | Q(profile__display_name__icontains=q)
+    ).select_related("profile")[:10]
 
     results = []
     for u in users:
