@@ -727,6 +727,10 @@ class TestConvertCodeTabs:
         html = f"<p>{{% tabs %}}</p>\n{self.PYTHON_PRE}"
         assert _convert_code_tabs(html) == html
 
+    def test_empty_group_left_untouched(self):
+        html = "<p>{% tabs %}</p>\n<p>{% endtabs %}</p>"
+        assert _convert_code_tabs(html) == html
+
     def test_unclosed_marker_with_many_blocks_is_fast(self):
         """Regression guard against catastrophic regex backtracking.
 

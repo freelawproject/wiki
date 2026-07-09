@@ -39,16 +39,14 @@ _BUTTON_LINK_RE = re.compile(
     r"\s*\{button(?:-(outline|danger))?\}",
 )
 
-# Matches a {% tabs %}…{% endtabs %} group of fenced code blocks (runs on
-# sanitized HTML, where the markers render as bare <p> tags). Only matches
-# when nothing but <pre> blocks sits between the markers, so malformed
-# groups keep their visible markers instead of silently half-converting.
-# The tempered dot ((?!</pre>).) keeps each <pre> unit unambiguous so a
-# missing {% endtabs %} can't trigger exponential backtracking (ReDoS).
+# Matches a {% tabs %}…{% endtabs %} marker pair (runs on sanitized HTML,
+# where the markers render as bare <p> tags). Deliberately just a single
+# lazy group with no nested quantifiers — regex-based validation of the
+# enclosed <pre> blocks risks exponential backtracking (CodeQL); the
+# "only code blocks between markers" rule is checked by
+# _contains_only_pre_blocks with a linear string scan instead.
 _CODE_TABS_RE = re.compile(
-    r"<p>\{%\s*tabs\s*%\}</p>\s*"
-    r"((?:<pre>(?:(?!</pre>).)*</pre>\s*)+)"
-    r"<p>\{%\s*endtabs\s*%\}</p>",
+    r"<p>\{%\s*tabs\s*%\}</p>(.*?)<p>\{%\s*endtabs\s*%\}</p>",
     re.DOTALL | re.IGNORECASE,
 )
 
@@ -732,6 +730,25 @@ def _convert_button_links(html):
     return _BUTTON_LINK_RE.sub(replace_button, html)
 
 
+def _contains_only_pre_blocks(fragment):
+    """Return True when fragment is one or more <pre>…</pre> blocks.
+
+    Only whitespace may separate the blocks. A linear string scan rather
+    than a regex, so pathological inputs can't trigger backtracking.
+    """
+    rest = fragment
+    if not rest:
+        return False
+    while rest:
+        if not rest.startswith("<pre>"):
+            return False
+        end = rest.find("</pre>")
+        if end == -1:
+            return False
+        rest = rest[end + len("</pre>") :].lstrip()
+    return True
+
+
 def _convert_code_tabs(html):
     """Convert {% tabs %}…{% endtabs %} code-fence groups to tab containers.
 
@@ -744,6 +761,8 @@ def _convert_code_tabs(html):
 
     def replace_tabs(match):
         blocks = match.group(1).strip()
+        if not _contains_only_pre_blocks(blocks):
+            return match.group(0)
         return f'<div class="code-tabs">\n{blocks}\n</div>'
 
     return _CODE_TABS_RE.sub(replace_tabs, html)
