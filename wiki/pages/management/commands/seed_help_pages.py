@@ -312,6 +312,33 @@ def hello():
 ```
 ````
 
+### Tabbed code blocks
+
+To show the same example in several languages, wrap ordinary code
+fences in `{% tabs %}` and `{% endtabs %}` markers. Each fence becomes
+a tab, labeled by its language. Use ` ```curl ` for a cURL tab — it
+highlights as shell but gets a cURL label.
+
+````markdown
+{% tabs %}
+
+```curl
+curl https://example.com/api/
+```
+
+```python
+import requests
+requests.get("https://example.com/api/")
+```
+
+{% endtabs %}
+````
+
+Picking a tab switches every tab group on the page to that language,
+and the wiki remembers your choice on future pages. Only code fences
+may appear between the markers — anything else leaves the group
+unconverted so you can spot the mistake.
+
 ### Tables
 
 ```markdown

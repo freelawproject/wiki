@@ -12,6 +12,7 @@ from wiki.lib.markdown import (
     _add_nofollow_to_non_public_links,
     _convert_alerts,
     _convert_button_links,
+    _convert_code_tabs,
     extract_all_wiki_slugs,
     extract_slugs_from_internal_urls,
     render_markdown,
@@ -653,6 +654,134 @@ class TestStripMarkdownButtons:
     def test_strips_button_danger(self):
         result = strip_markdown("[Delete](/x){button-danger}")
         assert "{button-danger}" not in result
+
+
+class TestConvertCodeTabs:
+    """{% tabs %} groups of code blocks should become tab containers."""
+
+    PYTHON_PRE = (
+        '<pre><code class="python language-python">import requests\n'
+        "</code></pre>"
+    )
+    CURL_PRE = (
+        '<pre><code class="curl language-curl">curl -L https://x\n'
+        "</code></pre>"
+    )
+
+    def test_basic_group(self):
+        html = (
+            "<p>{% tabs %}</p>\n\n"
+            f"{self.PYTHON_PRE}\n\n{self.CURL_PRE}\n\n"
+            "<p>{% endtabs %}</p>"
+        )
+        result = _convert_code_tabs(html)
+        assert '<div class="code-tabs">' in result
+        assert result.count("<pre>") == 2
+        assert "{% tabs %}" not in result
+        assert "{% endtabs %}" not in result
+
+    def test_marker_spacing_variants(self):
+        html = (
+            f"<p>{{%tabs%}}</p>\n{self.PYTHON_PRE}\n<p>{{%  endtabs  %}}</p>"
+        )
+        result = _convert_code_tabs(html)
+        assert '<div class="code-tabs">' in result
+        assert "{%" not in result
+
+    def test_single_block_converts(self):
+        html = (
+            f"<p>{{% tabs %}}</p>\n{self.PYTHON_PRE}\n<p>{{% endtabs %}}</p>"
+        )
+        result = _convert_code_tabs(html)
+        assert '<div class="code-tabs">' in result
+
+    def test_multiple_groups(self):
+        group = (
+            f"<p>{{% tabs %}}</p>\n{self.PYTHON_PRE}\n<p>{{% endtabs %}}</p>"
+        )
+        html = f"{group}\n<p>Between.</p>\n{group}"
+        result = _convert_code_tabs(html)
+        assert result.count('<div class="code-tabs">') == 2
+        assert "<p>Between.</p>" in result
+
+    def test_non_code_content_left_untouched(self):
+        html = (
+            "<p>{% tabs %}</p>\n"
+            "<p>Stray paragraph.</p>\n"
+            f"{self.PYTHON_PRE}\n"
+            "<p>{% endtabs %}</p>"
+        )
+        assert _convert_code_tabs(html) == html
+
+    def test_content_after_blocks_left_untouched(self):
+        html = (
+            "<p>{% tabs %}</p>\n"
+            f"{self.PYTHON_PRE}\n"
+            "<p>Stray paragraph.</p>\n"
+            "<p>{% endtabs %}</p>"
+        )
+        assert _convert_code_tabs(html) == html
+
+    def test_unclosed_marker_left_untouched(self):
+        html = f"<p>{{% tabs %}}</p>\n{self.PYTHON_PRE}"
+        assert _convert_code_tabs(html) == html
+
+
+class TestCodeTabsEndToEnd:
+    """Test {% tabs %} rendering through the full render_markdown pipeline."""
+
+    def test_tabs_render(self):
+        md = (
+            "{% tabs %}\n\n"
+            "```python\nimport requests\n```\n\n"
+            "```curl\ncurl -L https://example.com\n```\n\n"
+            "{% endtabs %}\n"
+        )
+        html = render_markdown(md)
+        assert '<div class="code-tabs">' in html
+        assert "language-python" in html
+        assert "language-curl" in html
+        assert "{% tabs %}" not in html
+
+    def test_mixed_content(self):
+        md = (
+            "Intro text.\n\n"
+            "{% tabs %}\n\n```python\nx = 1\n```\n\n{% endtabs %}\n\n"
+            "Outro text.\n"
+        )
+        html = render_markdown(md)
+        assert '<div class="code-tabs">' in html
+        assert "Intro text." in html
+        assert "Outro text." in html
+
+    def test_markers_inside_fence_left_untouched(self):
+        md = "```\n{% tabs %}\n{% endtabs %}\n```\n"
+        html = render_markdown(md)
+        assert "code-tabs" not in html
+        assert "{% tabs %}" in html
+
+    def test_text_between_fences_not_converted(self):
+        md = (
+            "{% tabs %}\n\n"
+            "```python\nx = 1\n```\n\n"
+            "Some stray text.\n\n"
+            "{% endtabs %}\n"
+        )
+        html = render_markdown(md)
+        assert "code-tabs" not in html
+        assert "{% tabs %}" in html
+
+
+class TestStripMarkdownCodeTabs:
+    """strip_markdown should remove {% tabs %} markers."""
+
+    def test_strips_tab_markers(self):
+        md = "Before.\n\n{% tabs %}\n\n```python\nx = 1\n```\n\n{% endtabs %}\n\nAfter."
+        result = strip_markdown(md)
+        assert "{% tabs %}" not in result
+        assert "{% endtabs %}" not in result
+        assert "Before." in result
+        assert "After." in result
 
 
 class TestAddNofollowToNonPublicLinks:

@@ -39,6 +39,17 @@ _BUTTON_LINK_RE = re.compile(
     r"\s*\{button(?:-(outline|danger))?\}",
 )
 
+# Matches a {% tabs %}…{% endtabs %} group of fenced code blocks (runs on
+# sanitized HTML, where the markers render as bare <p> tags). Only matches
+# when nothing but <pre> blocks sits between the markers, so malformed
+# groups keep their visible markers instead of silently half-converting.
+_CODE_TABS_RE = re.compile(
+    r"<p>\{%\s*tabs\s*%\}</p>\s*"
+    r"((?:<pre>.*?</pre>\s*)+)"
+    r"<p>\{%\s*endtabs\s*%\}</p>",
+    re.DOTALL | re.IGNORECASE,
+)
+
 _SLUG_CHARS = r"[a-z0-9]+(?:-[a-z0-9]+)*"
 
 # Captures a wiki-link target: an optional directory path, the page slug,
@@ -551,6 +562,9 @@ _ALERT_MARKER_STRIP_RE = re.compile(
     r"\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*", re.IGNORECASE
 )
 _BUTTON_SUFFIX_STRIP_RE = re.compile(r"\{button(?:-(outline|danger))?\}")
+_TABS_MARKER_STRIP_RE = re.compile(
+    r"^\{%\s*(?:end)?tabs\s*%\}\s*$", re.MULTILINE | re.IGNORECASE
+)
 _UL_RE = re.compile(r"^[\s]*[-*+]\s+", re.MULTILINE)
 _OL_RE = re.compile(r"^[\s]*\d+\.\s+", re.MULTILINE)
 _WHITESPACE_RE = re.compile(r"\s+")
@@ -578,6 +592,7 @@ def strip_markdown(text: str) -> str:
     text = _BLOCKQUOTE_RE.sub("", text)
     text = _ALERT_MARKER_STRIP_RE.sub("", text)
     text = _BUTTON_SUFFIX_STRIP_RE.sub("", text)
+    text = _TABS_MARKER_STRIP_RE.sub("", text)
     text = _UL_RE.sub("", text)
     text = _OL_RE.sub("", text)
     text = _WHITESPACE_RE.sub(" ", text).strip()
@@ -715,6 +730,23 @@ def _convert_button_links(html):
     return _BUTTON_LINK_RE.sub(replace_button, html)
 
 
+def _convert_code_tabs(html):
+    """Convert {% tabs %}…{% endtabs %} code-fence groups to tab containers.
+
+    Wraps the enclosed <pre> blocks in <div class="code-tabs">; the tab bar
+    itself is built client-side by code-blocks.js from each block's
+    language-* class. Runs after sanitization so injected HTML is already
+    stripped. Groups containing anything other than code blocks are left
+    untouched, keeping the markers visible as an authoring hint.
+    """
+
+    def replace_tabs(match):
+        blocks = match.group(1).strip()
+        return f'<div class="code-tabs">\n{blocks}\n</div>'
+
+    return _CODE_TABS_RE.sub(replace_tabs, html)
+
+
 def render_markdown(content, viewer=None):
     """Render markdown content to HTML with wiki link resolution and TOC.
 
@@ -755,6 +787,7 @@ def render_markdown(content, viewer=None):
     processed = _add_nofollow_to_non_public_links(sanitized)
     processed = _convert_alerts(processed)
     processed = _convert_button_links(processed)
+    processed = _convert_code_tabs(processed)
     result = MarkdownResult(processed)
     result.toc_html = _sanitize(toc) if toc else ""
     return result

@@ -347,10 +347,8 @@ var initMarkdownEditor = (function() {
           body: 'content=' + encodeURIComponent(editor.value()),
         }).then(function(r) { return r.text(); }).then(function(html) {
           previewPane.innerHTML = html;
-          if (typeof hljs !== 'undefined') {
-            previewPane.querySelectorAll('pre code').forEach(function(block) {
-              hljs.highlightElement(block);
-            });
+          if (typeof window.enhanceCodeBlocks === 'function') {
+            window.enhanceCodeBlocks(previewPane);
           }
         });
       });
