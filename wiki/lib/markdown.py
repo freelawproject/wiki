@@ -43,9 +43,11 @@ _BUTTON_LINK_RE = re.compile(
 # sanitized HTML, where the markers render as bare <p> tags). Only matches
 # when nothing but <pre> blocks sits between the markers, so malformed
 # groups keep their visible markers instead of silently half-converting.
+# The tempered dot ((?!</pre>).) keeps each <pre> unit unambiguous so a
+# missing {% endtabs %} can't trigger exponential backtracking (ReDoS).
 _CODE_TABS_RE = re.compile(
     r"<p>\{%\s*tabs\s*%\}</p>\s*"
-    r"((?:<pre>.*?</pre>\s*)+)"
+    r"((?:<pre>(?:(?!</pre>).)*</pre>\s*)+)"
     r"<p>\{%\s*endtabs\s*%\}</p>",
     re.DOTALL | re.IGNORECASE,
 )

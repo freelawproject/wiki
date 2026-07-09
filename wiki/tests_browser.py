@@ -685,6 +685,12 @@ _TABS_GROUP_SHORT = (
     "```python\nimport httpx\n```\n\n"
     "{% endtabs %}"
 )
+_TABS_GROUP_PLAIN = (
+    "{% tabs %}\n\n"
+    "```\nfirst plain block\n```\n\n"
+    "```\nsecond plain block\n```\n\n"
+    "{% endtabs %}"
+)
 
 
 @pytest.fixture
@@ -717,7 +723,11 @@ def tabbed_pages(browser_user, dir_tree):
         "API Examples",
         f"Intro.\n\n{_TABS_GROUP_FULL}\n\nMiddle.\n\n{_TABS_GROUP_SHORT}\n",
     )
-    second = make("more-examples", "More Examples", _TABS_GROUP_FULL)
+    second = make(
+        "more-examples",
+        "More Examples",
+        f"{_TABS_GROUP_FULL}\n\n{_TABS_GROUP_PLAIN}\n",
+    )
     return first, second
 
 
@@ -808,6 +818,31 @@ class TestCodeTabs:
         tabs = preview.locator("[role='tab']")
         expect(tabs).to_have_text(["cURL", "Python", "JavaScript"])
         expect(tabs.nth(0)).to_have_attribute("aria-selected", "true")
+
+    def test_unlabeled_tab_click_activates_clicked_tab(
+        self, browser_page, live_server, browser_user, tabbed_pages
+    ):
+        """Bare ``` fences have no language: clicking such a tab must
+        activate the clicked tab, not reset the group to its first tab
+        (regression: index lookup used to require a language)."""
+        _force_login(browser_page, live_server, browser_user)
+        self._goto(browser_page, live_server, tabbed_pages[1])
+
+        plain = browser_page.locator(".code-tabs").nth(1)
+        tabs = plain.locator("[role='tab']")
+        expect(tabs).to_have_text(["Text", "Text"])
+
+        tabs.nth(1).click()
+        expect(tabs.nth(1)).to_have_attribute("aria-selected", "true")
+        expect(plain.locator(".code-block-wrapper").nth(1)).to_be_visible()
+        expect(plain.locator(".code-block-wrapper").nth(0)).to_be_hidden()
+
+        # A language-less selection is local: the labeled group keeps its
+        # own selection.
+        labeled = browser_page.locator(".code-tabs").nth(0)
+        expect(labeled.get_by_role("tab", name="cURL")).to_have_attribute(
+            "aria-selected", "true"
+        )
 
     def test_copy_button_copies_active_tab(
         self, browser_page, live_server, browser_user, tabbed_pages

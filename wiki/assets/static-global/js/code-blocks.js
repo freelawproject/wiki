@@ -81,6 +81,10 @@
     if (code.dataset.enhanced) return;
     code.dataset.enhanced = 'true';
 
+    // Record the authored language before highlighting: hljs auto-detection
+    // adds a language-* class to bare blocks, which would fake a tab label.
+    code.dataset.lang = langOf(code);
+
     if (typeof hljs !== 'undefined') {
       hljs.highlightElement(code);
     }
@@ -121,24 +125,25 @@
 
   // ── Tabbed code groups ─────────────────────────────────────────────
 
+  var groupCount = 0;
+
   function groupPanels(group) {
     return [].slice.call(group.children).filter(function (el) {
       return el.classList.contains('code-block-wrapper');
     });
   }
 
-  function activateGroup(group, lang) {
+  function tabIndexForLang(group, lang) {
+    var tabs = group.querySelectorAll('[role="tab"]');
+    for (var i = 0; i < tabs.length; i++) {
+      if (tabs[i].dataset.lang === lang) return i;
+    }
+    return -1;
+  }
+
+  function activateGroup(group, index) {
     var tabs = group.querySelectorAll('[role="tab"]');
     var panels = groupPanels(group);
-    var index = 0;
-    if (lang) {
-      for (var i = 0; i < tabs.length; i++) {
-        if (tabs[i].dataset.lang === lang) {
-          index = i;
-          break;
-        }
-      }
-    }
     tabs.forEach(function (tab, i) {
       var active = i === index;
       tab.setAttribute('aria-selected', active ? 'true' : 'false');
@@ -148,13 +153,10 @@
     });
   }
 
-  function groupHasLang(group, lang) {
-    return !!group.querySelector('[role="tab"][data-lang="' + lang + '"]');
-  }
-
   function selectLang(lang) {
     document.querySelectorAll('.code-tabs').forEach(function (group) {
-      if (groupHasLang(group, lang)) activateGroup(group, lang);
+      var index = tabIndexForLang(group, lang);
+      if (index !== -1) activateGroup(group, index);
     });
   }
 
@@ -162,26 +164,32 @@
     if (group.querySelector('.code-tabs-bar')) return;
     var panels = groupPanels(group);
     if (!panels.length) return;
+    var groupId = ++groupCount;
 
     var bar = document.createElement('div');
     bar.className = 'code-tabs-bar';
     bar.setAttribute('role', 'tablist');
     bar.setAttribute('aria-label', 'Code examples');
 
-    panels.forEach(function (panel) {
+    panels.forEach(function (panel, i) {
       var code = panel.querySelector('pre code');
-      var lang = code ? langOf(code) : '';
+      var lang = (code && code.dataset.lang) || '';
       var tab = document.createElement('button');
       tab.type = 'button';
+      tab.id = 'code-tab-' + groupId + '-' + i;
       tab.setAttribute('role', 'tab');
+      tab.setAttribute('aria-controls', 'code-tabpanel-' + groupId + '-' + i);
       tab.dataset.lang = lang;
       tab.textContent = labelFor(lang);
+      panel.id = 'code-tabpanel-' + groupId + '-' + i;
+      panel.setAttribute('role', 'tabpanel');
+      panel.setAttribute('aria-labelledby', tab.id);
       tab.addEventListener('click', function () {
         if (lang) {
           rememberLang(lang);
           selectLang(lang);
         } else {
-          activateGroup(group, lang);
+          activateGroup(group, i);
         }
       });
       bar.appendChild(tab);
@@ -202,7 +210,8 @@
     group.insertBefore(bar, group.firstChild);
 
     var remembered = storedLang();
-    activateGroup(group, remembered && groupHasLang(group, remembered) ? remembered : null);
+    var index = remembered ? tabIndexForLang(group, remembered) : -1;
+    activateGroup(group, index === -1 ? 0 : index);
   }
 
   // ── Entry point ────────────────────────────────────────────────────

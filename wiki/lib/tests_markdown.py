@@ -1,5 +1,6 @@
 """Tests for markdown utilities: strip_markdown, render_markdown, internal URL extraction."""
 
+import time
 from unittest.mock import patch
 
 import pytest
@@ -725,6 +726,18 @@ class TestConvertCodeTabs:
     def test_unclosed_marker_left_untouched(self):
         html = f"<p>{{% tabs %}}</p>\n{self.PYTHON_PRE}"
         assert _convert_code_tabs(html) == html
+
+    def test_unclosed_marker_with_many_blocks_is_fast(self):
+        """Regression guard against catastrophic regex backtracking.
+
+        An unclosed {% tabs %} followed by many code blocks must fail to
+        match in linear time; the pre-tempered-dot regex took exponential
+        time on this input (CodeQL alert #10).
+        """
+        html = "<p>{% tabs %}</p>" + "<pre><code>x</code></pre>" * 40
+        start = time.monotonic()
+        assert _convert_code_tabs(html) == html
+        assert time.monotonic() - start < 1.0
 
 
 class TestCodeTabsEndToEnd:
