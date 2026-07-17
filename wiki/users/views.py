@@ -22,7 +22,7 @@ from wiki.lib.permissions import (
 )
 from wiki.lib.ratelimiter import ratelimit_login
 from wiki.lib.sessions import end_sessions_for_users, revoke_disallowed
-from wiki.lib.users import assign_handle
+from wiki.lib.users import provision_user
 from wiki.users.forms import (
     AllowedDomainForm,
     AllowedEmailForm,
@@ -79,21 +79,9 @@ def login_view(request):
         # The response is identical in every case (below) so the form never
         # reveals whether an address is on the allowlist or has been archived.
         if is_email_allowed(email):
-            user, _ = User.objects.get_or_create(
-                username=email,
-                defaults={"email": email},
-            )
-            if user.is_active:
-                profile, profile_created = UserProfile.objects.get_or_create(
-                    user=user
-                )
-                if profile_created:
-                    profile.gravatar_url = UserProfile.gravatar_url_for_email(
-                        email
-                    )
-                # Assign a unique public handle on first sign-in.
-                if not profile.handle:
-                    assign_handle(profile)
+            user = provision_user(email)
+            if user is not None:
+                profile = user.profile
 
                 # First user to log in becomes system owner and admin.
                 if not SystemConfig.objects.exists():

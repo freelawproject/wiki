@@ -31,6 +31,7 @@ dependencies = [
   "django-waffle",
   "factory-boy",
   "gunicorn",
+  "httpx",
   "markdown2",
   "nh3",
   "pillow",

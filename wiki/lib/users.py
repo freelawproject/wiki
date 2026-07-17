@@ -9,6 +9,7 @@ suffix). See ``assign_handle``.
 
 import re
 
+from django.contrib.auth.models import User
 from django.db import IntegrityError, transaction
 
 from wiki.users.models import AllowedDomain, UserProfile
@@ -133,6 +134,36 @@ def assign_handle(profile):
         except IntegrityError:
             # Lost the race for this handle; try the next candidate.
             continue
+
+
+def provision_user(email):
+    """Get or create the wiki account for an allowlisted ``email``.
+
+    Shared by magic-link login and the API's CourtListener-token auth
+    (``wiki/lib/cl_oauth.py``) so both entry points mint identical
+    accounts: the User row (username = email), its profile with a
+    gravatar, and a public handle. Callers MUST have checked
+    ``is_email_allowed`` first — this handles only the mechanical parts.
+
+    Returns the User, or None when the account exists but is archived
+    (``is_active=False``); archived users must not regain access through
+    any sign-in path.
+    """
+    user, _ = User.objects.get_or_create(
+        username=email,
+        defaults={"email": email},
+    )
+    if not user.is_active:
+        return None
+
+    profile, profile_created = UserProfile.objects.get_or_create(user=user)
+    if profile_created:
+        profile.gravatar_url = UserProfile.gravatar_url_for_email(email)
+        profile.save(update_fields=["gravatar_url"])
+    # Assign a unique public handle on first sign-in.
+    if not profile.handle:
+        assign_handle(profile)
+    return user
 
 
 def user_by_handle(handle):
