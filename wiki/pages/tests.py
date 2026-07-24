@@ -741,6 +741,25 @@ class TestPublicHistory:
         )
         assert r.status_code == 404
 
+    def test_private_page_history_404s_not_redirects(
+        self, client, private_page
+    ):
+        """A private page with the flag off must 404 for anonymous, like a
+        missing page — a login redirect would leak that the page exists."""
+        r = client.get(
+            reverse("page_history", kwargs={"path": private_page.content_path})
+        )
+        assert r.status_code == 404
+
+    def test_private_page_diff_404s_not_redirects(self, client, private_page):
+        r = client.get(
+            reverse(
+                "page_diff",
+                kwargs={"path": private_page.content_path, "v1": 1, "v2": 1},
+            )
+        )
+        assert r.status_code == 404
+
     def test_revert_still_requires_login(self, client, public_history_page):
         r = client.get(
             reverse(

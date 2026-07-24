@@ -1061,11 +1061,13 @@ def page_history(request, path):
     """Show revision history for a page."""
     page = get_page_from_path(path)
 
-    if not request.user.is_authenticated and not page.history_is_public:
-        return redirect_to_login(request.get_full_path())
-
+    # Viewability first — an unviewable page must 404 like a missing one
+    # so anonymous probes can't distinguish private pages from absent ones.
     if not can_view_page(request.user, page):
         raise Http404
+
+    if not request.user.is_authenticated and not page.history_is_public:
+        return redirect_to_login(request.get_full_path())
 
     revisions = page.revisions.select_related("created_by").all()
     diff_base = reverse(
@@ -1110,11 +1112,13 @@ def page_diff(request, path, v1, v2):
     """Show diff between two versions."""
     page = get_page_from_path(path)
 
-    if not request.user.is_authenticated and not page.history_is_public:
-        return redirect_to_login(request.get_full_path())
-
+    # Viewability first — an unviewable page must 404 like a missing one
+    # so anonymous probes can't distinguish private pages from absent ones.
     if not can_view_page(request.user, page):
         raise Http404
+
+    if not request.user.is_authenticated and not page.history_is_public:
+        return redirect_to_login(request.get_full_path())
 
     rev1 = get_object_or_404(PageRevision, page=page, revision_number=v1)
     rev2 = get_object_or_404(PageRevision, page=page, revision_number=v2)
