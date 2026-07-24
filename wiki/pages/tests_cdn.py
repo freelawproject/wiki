@@ -183,3 +183,27 @@ def test_history_toggle_invalidates_feed_url(mock_invalidate, page):
     page.save(update_fields=["history_is_public"])
     paths = mock_invalidate.call_args.args[0]
     assert reverse("page_feed", kwargs={"path": page.content_path}) in paths
+
+
+@pytest.mark.django_db(transaction=True)
+def test_create_revision_invalidates_feed_url(mock_invalidate, page, user):
+    """Creating a revision should invalidate the page's feed URL.
+
+    Revisions can be created without a Page.save() firing (e.g., via
+    QuerySet.update() in import_api_docs), so a dedicated PageRevision
+    signal is needed to purge the feed.
+    """
+    mock_invalidate.reset_mock()
+    with transaction.atomic():
+        page.create_revision(user, "Manual revision")
+        # Inside the transaction, invalidation must NOT have fired.
+        mock_invalidate.assert_not_called()
+
+    # After commit, the feed URL should be invalidated.
+    mock_invalidate.assert_called()
+    feed_url = reverse("page_feed", kwargs={"path": page.content_path})
+    # Check that the feed URL appears in ANY of the calls
+    all_paths = []
+    for call in mock_invalidate.call_args_list:
+        all_paths.extend(call.args[0])
+    assert feed_url in all_paths
