@@ -123,6 +123,9 @@ def _get_visible_option_labels(listbox):
     """
     expect(listbox).to_be_visible()
     options = listbox.locator("[role='option']")
+    # count() is a non-waiting snapshot — anchor on the first option so
+    # the count can't be taken before the options attach.
+    expect(options.first).to_be_visible()
     texts = []
     for i in range(options.count()):
         opt = options.nth(i)
