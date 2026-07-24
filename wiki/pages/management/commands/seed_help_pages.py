@@ -965,6 +965,20 @@ page also see its revision list and diffs, including who made each
 change and the change messages. Reverting always requires signing
 in with edit access.
 
+Making history public on a publicly-visible page also enables two
+ways for readers to follow changes without an account:
+
+- **Email subscriptions** — a "Subscribe by Email" link appears for
+  visitors. Subscribing is double opt-in (a confirmation link is
+  emailed first), and every notification includes an unsubscribe
+  link. See #notifications-guide.
+- **RSS feed** — add `.rss` to the page's URL (like `.md` for raw
+  markdown) to get a feed of the page's revisions, one entry per
+  change with a link to the diff.
+
+Turning public history back off pauses email notifications and
+disables the feed; existing subscriptions resume if it's re-enabled.
+
 ### Comparing revisions (diffing)
 
 From the history view, select any two revisions using the radio
@@ -1069,6 +1083,21 @@ receive email notifications whenever that page is updated.
 - You are **automatically subscribed** to pages you create or edit
 - Click **Unsubscribe** to stop receiving notifications
 - The list of current watchers is shown on the page detail view
+
+### Email subscriptions without an account
+
+Pages with **public history** (see #revisions-guide) can be
+followed by anyone — no wiki account needed:
+
+- **Subscribe by Email** appears in the Actions menu for visitors.
+  Enter an email address and click the confirmation link that
+  arrives (links expire after 3 days). Every notification includes
+  a one-click unsubscribe link.
+- **RSS**: add `.rss` to the page's URL for a feed of revisions.
+
+If a page's history is later made private, email notifications
+pause and the feed turns off; subscriptions resume automatically
+if history is made public again.
 
 ### Directory subscriptions
 

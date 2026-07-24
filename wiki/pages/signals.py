@@ -38,13 +38,20 @@ def _parent_listing_paths(directory):
 
 
 def _page_url_variants(content_path):
-    """Return both slash-forms of a page URL.
+    """Return every cached URL a page lives at.
 
     A page lives at ``/c/<path>``; some links/sitemaps emit it that way,
-    others append a slash. Cache both.
+    others append a slash — CloudFront caches them as separate keys. The
+    ``.md`` raw-markdown and ``.rss`` revision-feed URLs are anonymously
+    cached too and must drop out with the page HTML.
     """
     base = reverse("resolve_path", kwargs={"path": content_path})
-    return [base, f"{base}/"]
+    return [
+        base,
+        f"{base}/",
+        reverse("page_raw_markdown", kwargs={"path": content_path}),
+        reverse("page_feed", kwargs={"path": content_path}),
+    ]
 
 
 @receiver(pre_save, sender=Page)

@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+
+{% block title %}Unsubscribe - FLP Wiki{% endblock %}
+
+{% block content %}
+<div class="max-w-sm mx-auto mt-16">
+  <div class="card text-center">
+    <h1 class="text-2xl mb-4">Unsubscribe</h1>
+    {% if sub %}
+    <p class="text-gray-500 dark:text-gray-400 mb-6">
+      Stop receiving email updates for <strong>"{{ sub.page.title }}"</strong>?
+    </p>
+    <form method="post">
+      {% csrf_token %}
+      <button type="submit" class="btn-primary w-full justify-center">
+        Confirm Unsubscribe
+      </button>
+    </form>
+    {% else %}
+    <p class="text-gray-500 dark:text-gray-400">
+      You're already unsubscribed — nothing more to do.
+    </p>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

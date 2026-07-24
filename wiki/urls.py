@@ -8,6 +8,7 @@ from wiki.lib.monitoring import health_check, heartbeat, sentry_fail
 from wiki.lib.sitemap import DirectorySitemap, PageSitemap
 from wiki.lib.views import llms_txt, robots_txt
 from wiki.pages.views import recent_changes
+from wiki.subscriptions.views import email_subscribe_confirm
 from wiki.users.views import domain_favicon, logout_view
 
 sitemaps = {
@@ -42,6 +43,11 @@ urlpatterns = [
     path("api/", include("wiki.pages.urls_api")),
     path("files/", include("wiki.pages.urls_files")),
     path("unsubscribe/", include("wiki.subscriptions.urls")),
+    path(
+        "subscriptions/confirm/<str:token>/",
+        email_subscribe_confirm,
+        name="email_subscribe_confirm",
+    ),
     path("activity/", recent_changes, name="recent_changes"),
     path(
         "activity/<str:username>/",

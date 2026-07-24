@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+
+{% block title %}Confirm Subscription - FLP Wiki{% endblock %}
+
+{% block content %}
+<div class="max-w-sm mx-auto mt-16">
+  <div class="card text-center">
+    <h1 class="text-2xl mb-4">Confirm Subscription</h1>
+    <p class="text-gray-500 dark:text-gray-400 mb-6">
+      Receive email updates when <strong>"{{ page.title }}"</strong> changes?
+    </p>
+    <form method="post">
+      {% csrf_token %}
+      <button type="submit" class="btn-primary w-full justify-center">
+        Confirm Subscription
+      </button>
+    </form>
+  </div>
+</div>
+{% endblock %}

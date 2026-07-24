@@ -148,5 +148,38 @@ def test_no_op_save_skips_old_path(mock_invalidate, page):
     assert paths == {
         page.get_absolute_url(),
         f"{page.get_absolute_url()}/",
+        reverse("page_raw_markdown", kwargs={"path": page.content_path}),
+        reverse("page_feed", kwargs={"path": page.content_path}),
         reverse("root"),
     }
+
+
+@pytest.mark.django_db(transaction=True)
+def test_save_invalidates_markdown_and_feed_urls(mock_invalidate, page):
+    page.content = "changed"
+    page.save()
+    paths = mock_invalidate.call_args.args[0]
+    assert (
+        reverse("page_raw_markdown", kwargs={"path": page.content_path})
+        in paths
+    )
+    assert reverse("page_feed", kwargs={"path": page.content_path}) in paths
+
+
+@pytest.mark.django_db(transaction=True)
+def test_move_invalidates_old_feed_url(mock_invalidate, page, sub_directory):
+    old_feed = reverse("page_feed", kwargs={"path": page.content_path})
+    page.directory = sub_directory
+    page.save()
+    paths = mock_invalidate.call_args.args[0]
+    assert old_feed in paths
+    assert reverse("page_feed", kwargs={"path": page.content_path}) in paths
+
+
+@pytest.mark.django_db(transaction=True)
+def test_history_toggle_invalidates_feed_url(mock_invalidate, page):
+    """Turning public history off must evict the cached feed."""
+    page.history_is_public = False
+    page.save(update_fields=["history_is_public"])
+    paths = mock_invalidate.call_args.args[0]
+    assert reverse("page_feed", kwargs={"path": page.content_path}) in paths

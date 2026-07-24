@@ -71,3 +71,27 @@ class DirectorySubscription(models.Model):
 
     def __str__(self):
         return f"{self.user} → {self.directory} ({self.status})"
+
+
+class EmailSubscription(models.Model):
+    """A confirmed anonymous email subscription to a page's changes.
+
+    Available only for pages with public history. Row existence means
+    confirmed: unconfirmed requests live solely inside the signed token
+    in the confirmation email, so nothing is stored until the recipient
+    confirms (double opt-in).
+    """
+
+    page = models.ForeignKey(
+        "pages.Page",
+        on_delete=models.CASCADE,
+        related_name="email_subscriptions",
+    )
+    email = models.EmailField()  # stored normalized (stripped, lowercased)
+    confirmed_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = [("page", "email")]
+
+    def __str__(self):
+        return f"{self.email} → {self.page}"
