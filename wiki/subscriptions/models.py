@@ -71,3 +71,43 @@ class DirectorySubscription(models.Model):
 
     def __str__(self):
         return f"{self.user} → {self.directory} ({self.status})"
+
+
+def normalize_subscriber_email(email):
+    """Normalize an email address for storage, tokens, and dedupe.
+
+    Lowercasing the local part is technically lossy per RFC 5321, but
+    it's the standard, correct-in-practice choice for deduplication.
+    """
+    return email.strip().lower()
+
+
+class EmailSubscription(models.Model):
+    """A confirmed anonymous email subscription to a page's changes.
+
+    Available only for pages with public history. Row existence means
+    confirmed: unconfirmed requests live solely inside the signed token
+    in the confirmation email, so nothing is stored until the recipient
+    confirms (double opt-in).
+    """
+
+    page = models.ForeignKey(
+        "pages.Page",
+        on_delete=models.CASCADE,
+        related_name="email_subscriptions",
+    )
+    email = models.EmailField()  # stored normalized (stripped, lowercased)
+    confirmed_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = [("page", "email")]
+
+    def save(self, *args, **kwargs):
+        # Enforce the normalized invariant at the model layer so write
+        # paths that bypass the form/views (admin, shell, fixtures)
+        # can't defeat unique_together or the notify dedupe check.
+        self.email = normalize_subscriber_email(self.email)
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.email} → {self.page}"

@@ -1074,6 +1074,7 @@ def page_history(request, path):
         "page_diff",
         kwargs={"path": page.content_path, "v1": 0, "v2": 0},
     ).rsplit("0/0/", 1)[0]
+    eff_visibility, _ = resolve_effective_value(page, "visibility")
     return render(
         request,
         "pages/history.html",
@@ -1082,6 +1083,9 @@ def page_history(request, path):
             "revisions": revisions,
             "diff_base": diff_base,
             "can_administer": can_administer_page(request.user, page),
+            # Subscribe/RSS only work on anonymously viewable pages, so
+            # don't advertise them on private pages with public history.
+            "is_public": eff_visibility == "public",
         },
     )
 

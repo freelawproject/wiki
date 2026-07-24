@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+
+{% block title %}Check Your Email - FLP Wiki{% endblock %}
+
+{% block content %}
+<div class="max-w-sm mx-auto mt-16">
+  <div class="card text-center">
+    <h1 class="text-2xl mb-4">Check Your Email</h1>
+    <p class="text-gray-500 dark:text-gray-400 mb-6">
+      If everything checks out, a confirmation email is on its way.
+      Click the link inside to finish subscribing to
+      <strong>"{{ page.title }}"</strong>.
+    </p>
+    <a href="{{ page.get_absolute_url }}" class="btn-outline text-sm">Back to Page</a>
+  </div>
+</div>
+{% endblock %}

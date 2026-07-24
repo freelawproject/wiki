@@ -14,9 +14,9 @@
   <div class="card flex flex-col sm:flex-row sm:items-center justify-between gap-2 py-3.5 px-5 mb-4">
     <p class="text-sm text-gray-500 dark:text-gray-400">
       {% if page.history_is_public %}
-      This history is <strong>public</strong>: anyone who can view the page can see it.
+      This history is <strong>public</strong>: anyone who can view the page can see it{% if is_public %}, subscribe to changes by email, or follow the RSS feed{% endif %}.
       {% else %}
-      This history is visible to <strong>signed-in users only</strong>.
+      This history is visible to <strong>signed-in users only</strong>.{% if is_public %} Making it public also lets readers subscribe to changes by email or RSS.{% endif %}
       {% endif %}
     </p>
     <form method="post" action="{% url 'page_history_visibility' path=page.content_path %}" class="flex-shrink-0">
@@ -26,6 +26,17 @@
       </button>
     </form>
   </div>
+  {% endif %}
+
+  {% if is_public and page.history_is_public %}
+  <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
+    Follow this page:
+    {% if not user.is_authenticated %}
+    <a href="{% url 'page_email_subscribe' path=page.content_path %}" rel="nofollow" class="underline hover:no-underline">get changes by email</a>
+    or
+    {% endif %}
+    <a href="{% url 'page_feed' path=page.content_path %}" rel="nofollow" class="underline hover:no-underline">RSS feed</a>.
+  </p>
   {% endif %}
 
   {% include "includes/_revision_list.html" %}

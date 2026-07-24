@@ -1,7 +1,8 @@
 """Subscription notification helpers, called synchronously on page save."""
 
 from django.conf import settings
-from django.contrib.auth.models import User
+from django.contrib.auth.models import AnonymousUser, User
+from django.core import signing
 from django.core.mail import EmailMessage, send_mail
 from django.core.signing import Signer
 from django.urls import reverse
@@ -11,6 +12,50 @@ from wiki.lib.users import display_name, user_by_handle
 from wiki.pages.models import Page, PagePermission
 
 from .utils import get_subscriber_info_for_page
+
+EMAIL_SUB_CONFIRM_SALT = "subscriptions.email-confirm"
+EMAIL_SUB_CONFIRM_MAX_AGE = 60 * 60 * 24 * 3  # 3 days
+
+
+def make_confirm_token(page, email):
+    """Signed, expiring token carrying an unconfirmed subscription.
+
+    ``signing.dumps`` (vs a colon-joined ``Signer`` payload like the
+    unsubscribe tokens) because email local parts may contain ``:``,
+    and its output is URL-path-safe.
+    """
+    return signing.dumps(
+        {"p": page.id, "e": email}, salt=EMAIL_SUB_CONFIRM_SALT
+    )
+
+
+def read_confirm_token(token):
+    """Raises SignatureExpired / BadSignature on stale or forged tokens."""
+    return signing.loads(
+        token,
+        salt=EMAIL_SUB_CONFIRM_SALT,
+        max_age=EMAIL_SUB_CONFIRM_MAX_AGE,
+    )
+
+
+def send_email_subscription_confirmation(page, email):
+    token = make_confirm_token(page, email)
+    confirm_url = (
+        f"{settings.BASE_URL}"
+        f"{reverse('email_subscribe_confirm', kwargs={'token': token})}"
+    )
+    send_mail(
+        subject=f'[FLP Wiki] Confirm your subscription to "{page.title}"',
+        message=(
+            f"Someone (hopefully you) asked to receive email updates "
+            f'when "{page.title}" changes on the FLP Wiki.\n\n'
+            f"Confirm: {confirm_url}\n\n"
+            f"This link expires in 3 days. If you didn't request this, "
+            f"ignore this email and nothing will happen."
+        ),
+        from_email=settings.DEFAULT_FROM_EMAIL,
+        recipient_list=[email],
+    )
 
 
 def notify_subscribers(
@@ -33,7 +78,16 @@ def notify_subscribers(
 
     page_sub_user_ids, dir_sub_mapping = get_subscriber_info_for_page(page)
     all_user_ids = page_sub_user_ids | set(dir_sub_mapping.keys())
-    if not all_user_ids:
+
+    # Anonymous email subscribers ride along only while the page's
+    # history is public AND the page itself is anonymously viewable
+    # (public history can be enabled on private pages). Rows persist
+    # when either condition lapses — notifications just pause.
+    email_subs = []
+    if page.history_is_public and can_view_page(AnonymousUser(), page):
+        email_subs = list(page.email_subscriptions.all())
+
+    if not all_user_ids and not email_subs:
         return
 
     signer = Signer()
@@ -70,6 +124,12 @@ def notify_subscribers(
             "profile"
         )
     }
+
+    # Anyone already covered by an account subscription (or the editor)
+    # shouldn't also get the anonymous duplicate.
+    known_emails = {u.email.lower() for u in users.values() if u.email}
+    if editor.email:
+        known_emails.add(editor.email.lower())
 
     for uid, user in users.items():
         # Don't notify the editor themselves
@@ -117,6 +177,36 @@ def notify_subscribers(
             to=[user.email],
             headers={
                 "List-Unsubscribe": f"<{page_unsub_one_click}>",
+                "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+            },
+        )
+        msg.send()
+
+    for sub in email_subs:
+        # Addresses are stored normalized; known_emails is lowercased.
+        if sub.email in known_emails:
+            continue
+
+        token = signer.sign(f"e:{sub.id}")
+        unsub = f"{base}{reverse('unsubscribe', kwargs={'token': token})}"
+        unsub_one_click = f"{base}{reverse('unsubscribe_one_click', kwargs={'token': token})}"
+        footer = (
+            "You're receiving this because you subscribed to email "
+            f"updates for this page.\n\nUnsubscribe: {unsub}"
+        )
+        body = (
+            f'{display_name(editor)} {action} "{page.title}".\n\n'
+            f"{change_line}"
+            f"{detail_lines}"
+            f"{footer}"
+        )
+        msg = EmailMessage(
+            subject=subject,
+            body=body,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            to=[sub.email],
+            headers={
+                "List-Unsubscribe": f"<{unsub_one_click}>",
                 "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
             },
         )

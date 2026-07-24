@@ -1,17 +1,27 @@
 """Tests for subscriptions: toggle, notify, unsubscribe."""
 
+from datetime import timedelta
+
 import pytest
+import time_machine
 from django.core import mail
 from django.core.signing import Signer
-from django.test import Client
+from django.test import Client, override_settings
 from django.urls import reverse
+from django.utils import timezone
 
+from wiki.pages.models import Page
 from wiki.subscriptions.models import (
     DirectorySubscription,
+    EmailSubscription,
     PageSubscription,
     SubscriptionStatus,
 )
-from wiki.subscriptions.tasks import notify_subscribers
+from wiki.subscriptions.tasks import (
+    make_confirm_token,
+    notify_subscribers,
+    read_confirm_token,
+)
 from wiki.subscriptions.utils import (
     get_effective_watchers_for_page,
     get_subscriber_info_for_page,
@@ -1197,3 +1207,292 @@ class TestPageDetailSubscriptionState:
         client.force_login(user)
         r = client.get(page.get_absolute_url())
         assert r.context["is_subscribed"] is False
+
+
+# ── Anonymous email subscriptions ────────────────────────────────
+
+
+@pytest.fixture
+def public_history_page(page):
+    page.history_is_public = True
+    page.save(update_fields=["history_is_public"])
+    return page
+
+
+def _subscribe_url(page):
+    return reverse("page_email_subscribe", kwargs={"path": page.content_path})
+
+
+class TestEmailSubscribeView:
+    def test_form_renders(self, client, public_history_page):
+        r = client.get(_subscribe_url(public_history_page))
+        assert r.status_code == 200
+        assert b"Send Confirmation Email" in r.content
+
+    def test_404_when_history_not_public(self, client, page):
+        r = client.get(_subscribe_url(page))
+        assert r.status_code == 404
+
+    def test_404_when_page_not_anonymously_viewable(
+        self, client, private_page
+    ):
+        """Public history on a private page must not accept subscribers."""
+        private_page.history_is_public = True
+        private_page.save(update_fields=["history_is_public"])
+        r = client.get(_subscribe_url(private_page))
+        assert r.status_code == 404
+
+    def test_post_sends_single_confirmation(self, client, public_history_page):
+        r = client.post(
+            _subscribe_url(public_history_page),
+            {"email": "reader@example.com"},
+        )
+        assert r.status_code == 200
+        assert b"Check Your Email" in r.content
+        assert len(mail.outbox) == 1
+        assert mail.outbox[0].to == ["reader@example.com"]
+        assert "Confirm" in mail.outbox[0].body
+        # No row until the link is confirmed (double opt-in).
+        assert EmailSubscription.objects.count() == 0
+
+    def test_email_normalized_in_token(self, client, public_history_page):
+        client.post(
+            _subscribe_url(public_history_page),
+            {"email": "  Reader@Example.COM "},
+        )
+        token = mail.outbox[0].body.split("Confirm: ")[1].split("\n")[0]
+        token = token.rstrip("/").rsplit("/", 1)[-1]
+        payload = read_confirm_token(token)
+        assert payload["e"] == "reader@example.com"
+        assert payload["p"] == public_history_page.id
+
+    def test_honeypot_pretends_success_sends_nothing(
+        self, client, public_history_page
+    ):
+        r = client.post(
+            _subscribe_url(public_history_page),
+            {"email": "bot@example.com", "website": "spam.example"},
+        )
+        assert r.status_code == 200
+        assert b"Check Your Email" in r.content
+        assert len(mail.outbox) == 0
+
+    def test_invalid_email_rerenders_form(self, client, public_history_page):
+        r = client.post(
+            _subscribe_url(public_history_page), {"email": "not-an-email"}
+        )
+        assert r.status_code == 200
+        assert b"Send Confirmation Email" in r.content
+        assert len(mail.outbox) == 0
+
+    @override_settings(RATELIMIT_ENABLE=True)
+    def test_post_rate_limited_per_ip(self, client, public_history_page):
+        for _ in range(5):
+            r = client.post(
+                _subscribe_url(public_history_page),
+                {"email": "reader@example.com"},
+            )
+            assert r.status_code == 200
+        r = client.post(
+            _subscribe_url(public_history_page),
+            {"email": "reader@example.com"},
+        )
+        assert r.status_code == 429
+
+
+class TestEmailSubscribeConfirm:
+    def _confirm_url(self, page, email="reader@example.com"):
+        token = make_confirm_token(page, email)
+        return reverse("email_subscribe_confirm", kwargs={"token": token})
+
+    def test_get_shows_button_creates_nothing(
+        self, client, public_history_page
+    ):
+        r = client.get(self._confirm_url(public_history_page))
+        assert r.status_code == 200
+        assert b"Confirm Subscription" in r.content
+        assert EmailSubscription.objects.count() == 0
+
+    def test_post_creates_subscription(self, client, public_history_page):
+        r = client.post(self._confirm_url(public_history_page))
+        assert r.status_code == 200
+        sub = EmailSubscription.objects.get()
+        assert sub.page == public_history_page
+        assert sub.email == "reader@example.com"
+
+    def test_post_idempotent(self, client, public_history_page):
+        url = self._confirm_url(public_history_page)
+        client.post(url)
+        client.post(url)
+        assert EmailSubscription.objects.count() == 1
+
+    def test_tampered_token_rejected(self, client, db):
+        url = reverse(
+            "email_subscribe_confirm", kwargs={"token": "garbage:token"}
+        )
+        r = client.get(url)
+        assert r.status_code == 400
+        assert b"Invalid Link" in r.content
+
+    def test_expired_token_rejected(self, client, public_history_page):
+        url = self._confirm_url(public_history_page)
+        with time_machine.travel(timezone.now() + timedelta(days=4)):
+            r = client.get(url)
+        assert r.status_code == 400
+        assert b"Link Expired" in r.content
+        assert EmailSubscription.objects.count() == 0
+
+    def test_flag_toggled_off_before_confirm(
+        self, client, public_history_page
+    ):
+        url = self._confirm_url(public_history_page)
+        public_history_page.history_is_public = False
+        public_history_page.save(update_fields=["history_is_public"])
+        r = client.post(url)
+        assert r.status_code == 404
+        assert EmailSubscription.objects.count() == 0
+
+
+class TestEmailUnsubscribe:
+    @pytest.fixture
+    def subscription(self, public_history_page):
+        return EmailSubscription.objects.create(
+            page=public_history_page, email="reader@example.com"
+        )
+
+    def _token(self, subscription):
+        return Signer().sign(f"e:{subscription.id}")
+
+    def test_landing_get_then_post_deletes(self, client, subscription):
+        url = reverse(
+            "unsubscribe", kwargs={"token": self._token(subscription)}
+        )
+        r = client.get(url)
+        assert r.status_code == 200
+        assert b"Confirm Unsubscribe" in r.content
+        assert EmailSubscription.objects.count() == 1
+
+        r = client.post(url)
+        assert r.status_code == 302
+        assert EmailSubscription.objects.count() == 0
+
+    def test_landing_idempotent_after_delete(self, client, subscription):
+        url = reverse(
+            "unsubscribe", kwargs={"token": self._token(subscription)}
+        )
+        subscription.delete()
+        r = client.get(url)
+        assert r.status_code == 200
+        assert b"already unsubscribed" in r.content
+
+    def test_one_click_deletes_without_csrf(self, client, subscription):
+        url = reverse(
+            "unsubscribe_one_click",
+            kwargs={"token": self._token(subscription)},
+        )
+        r = client.post(url)
+        assert r.status_code == 200
+        assert EmailSubscription.objects.count() == 0
+
+    def test_one_click_bad_signature(self, client, db):
+        url = reverse("unsubscribe_one_click", kwargs={"token": "e:1:junk"})
+        r = client.post(url)
+        assert r.status_code == 400
+
+    def test_legacy_page_token_still_parses(self, client, user, page):
+        PageSubscription.objects.create(user=user, page=page, status=S)
+        token = Signer().sign(f"{user.id}:{page.id}")
+        url = reverse("unsubscribe_one_click", kwargs={"token": token})
+        r = client.post(url)
+        assert r.status_code == 200
+        sub = PageSubscription.objects.get(user=user, page=page)
+        assert sub.status == U
+
+
+class TestNotifyEmailSubscribers:
+    @pytest.fixture
+    def subscription(self, public_history_page):
+        return EmailSubscription.objects.create(
+            page=public_history_page, email="reader@example.com"
+        )
+
+    def _notify(self, page, editor, **kwargs):
+        kwargs.setdefault("prev_rev", 1)
+        kwargs.setdefault("new_rev", 2)
+        notify_subscribers(page.id, editor.id, "tweaked", **kwargs)
+
+    def test_email_subscriber_notified(
+        self, user, public_history_page, subscription
+    ):
+        self._notify(public_history_page, user)
+        assert len(mail.outbox) == 1
+        msg = mail.outbox[0]
+        assert msg.to == ["reader@example.com"]
+        assert "subscribed to email updates" in msg.body
+        assert "List-Unsubscribe" in msg.extra_headers
+        assert (
+            msg.extra_headers["List-Unsubscribe-Post"]
+            == "List-Unsubscribe=One-Click"
+        )
+
+    def test_unsubscribe_token_in_email_works(
+        self, client, user, public_history_page, subscription
+    ):
+        self._notify(public_history_page, user)
+        body = mail.outbox[0].body
+        unsub_url = body.split("Unsubscribe: ")[1].split("\n")[0]
+        r = client.post(unsub_url)
+        assert r.status_code == 302
+        assert EmailSubscription.objects.count() == 0
+
+    def test_paused_when_history_not_public(
+        self, user, public_history_page, subscription
+    ):
+        public_history_page.history_is_public = False
+        public_history_page.save(update_fields=["history_is_public"])
+        self._notify(public_history_page, user)
+        assert len(mail.outbox) == 0
+        # Pause, not delete: the row survives for later re-enabling.
+        assert EmailSubscription.objects.count() == 1
+
+    def test_paused_when_page_not_anonymously_viewable(
+        self, user, public_history_page, subscription
+    ):
+        public_history_page.visibility = Page.Visibility.PRIVATE
+        public_history_page.save(update_fields=["visibility"])
+        self._notify(public_history_page, user)
+        assert len(mail.outbox) == 0
+        assert EmailSubscription.objects.count() == 1
+
+    def test_deduped_against_account_subscriber(
+        self, user, other_user, public_history_page
+    ):
+        PageSubscription.objects.create(
+            user=other_user, page=public_history_page, status=S
+        )
+        EmailSubscription.objects.create(
+            page=public_history_page, email=other_user.email.lower()
+        )
+        self._notify(public_history_page, user)
+        # One mail via the account subscription, none for the duplicate.
+        assert len(mail.outbox) == 1
+        assert mail.outbox[0].to == [other_user.email]
+
+    def test_editor_own_address_skipped(self, user, public_history_page):
+        EmailSubscription.objects.create(
+            page=public_history_page, email=user.email.lower()
+        )
+        self._notify(public_history_page, user)
+        assert len(mail.outbox) == 0
+
+    def test_deleted_action_has_no_links(
+        self, user, public_history_page, subscription
+    ):
+        notify_subscribers(
+            public_history_page.id, user.id, "", action="deleted"
+        )
+        assert len(mail.outbox) == 1
+        body = mail.outbox[0].body
+        assert "View:" not in body
+        assert "Diff:" not in body
+        assert "Unsubscribe:" in body

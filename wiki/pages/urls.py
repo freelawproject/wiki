@@ -1,8 +1,10 @@
 from django.urls import path
 
-from wiki.subscriptions.views import toggle_subscription
+from wiki.lib.cache_headers import cache_for_anonymous
+from wiki.subscriptions.views import email_subscribe, toggle_subscription
 
 from . import views
+from .feeds import PageHistoryFeed
 
 urlpatterns = [
     path(
@@ -40,11 +42,21 @@ urlpatterns = [
         name="page_subscribe",
     ),
     path("<path:path>/pin/", views.toggle_pin, name="page_toggle_pin"),
-    # Raw markdown — must be before the catch-all
+    path(
+        "<path:path>/subscribe/email/",
+        email_subscribe,
+        name="page_email_subscribe",
+    ),
+    # Raw markdown and revision feed — must be before the catch-all
     path(
         "<path:path>.md",
         views.page_raw_markdown,
         name="page_raw_markdown",
+    ),
+    path(
+        "<path:path>.rss",
+        cache_for_anonymous(PageHistoryFeed()),
+        name="page_feed",
     ),
     # Unified catch-all — checks directory first, then page
     path("<path:path>", views.resolve_path, name="resolve_path"),

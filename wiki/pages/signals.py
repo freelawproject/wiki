@@ -22,7 +22,7 @@ from django.urls import reverse
 
 from wiki.lib.cloudfront import invalidate_paths
 
-from .models import Page
+from .models import Page, PageRevision
 
 
 def _parent_listing_paths(directory):
@@ -38,13 +38,20 @@ def _parent_listing_paths(directory):
 
 
 def _page_url_variants(content_path):
-    """Return both slash-forms of a page URL.
+    """Return every cached URL a page lives at.
 
     A page lives at ``/c/<path>``; some links/sitemaps emit it that way,
-    others append a slash. Cache both.
+    others append a slash — CloudFront caches them as separate keys. The
+    ``.md`` raw-markdown and ``.rss`` revision-feed URLs are anonymously
+    cached too and must drop out with the page HTML.
     """
     base = reverse("resolve_path", kwargs={"path": content_path})
-    return [base, f"{base}/"]
+    return [
+        base,
+        f"{base}/",
+        reverse("page_raw_markdown", kwargs={"path": content_path}),
+        reverse("page_feed", kwargs={"path": content_path}),
+    ]
 
 
 @receiver(pre_save, sender=Page)
@@ -89,3 +96,20 @@ def invalidate_on_page_save(sender, instance, **kwargs):
         # Directory changed — old parent's listing showed this page.
         paths.update(_parent_listing_paths(old_directory))
     transaction.on_commit(lambda: invalidate_paths(paths))
+
+
+@receiver(post_save, sender=PageRevision)
+def invalidate_on_revision_create(sender, instance, created, **kwargs):
+    """Invalidate the page's revision feed when a new revision is created.
+
+    PageRevision objects can be created without a Page.save() (e.g., via
+    QuerySet.update() in import_api_docs), so the page_save handler won't
+    always fire. This ensures the .rss feed gets purged when revisions are
+    added, even when the page itself wasn't saved.
+    """
+    if not created:
+        return
+    feed_url = reverse(
+        "page_feed", kwargs={"path": instance.page.content_path}
+    )
+    transaction.on_commit(lambda: invalidate_paths([feed_url]))

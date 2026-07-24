@@ -29,3 +29,12 @@ ratelimit_preview = ratelimit(
 ratelimit_page_write = ratelimit(
     key="user_or_ip", rate="30/m", method=["POST"], block=True
 )
+# The anonymous subscribe form sends email to an arbitrary address, so
+# it's a spam vector; keep it tight per-IP with a daily backstop
+# (django_ratelimit decorators stack).
+ratelimit_email_subscribe = ratelimit(
+    key="ip", rate="5/m", method=["POST"], block=True
+)
+ratelimit_email_subscribe_daily = ratelimit(
+    key="ip", rate="20/d", method=["POST"], block=True
+)

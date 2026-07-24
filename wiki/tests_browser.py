@@ -113,13 +113,23 @@ def _force_login(browser_page, live_server, user):
 
 
 def _get_visible_option_labels(listbox):
-    """Collect the display text of all visible options in a listbox."""
+    """Collect the display text of all visible options in a listbox.
+
+    Waits for the listbox and every option to finish rendering before
+    reading. ``is_visible()`` doesn't retry, so sampling right after the
+    opening click can catch options mid-layout on a slow machine and
+    silently drop them (a recurring CI flake) — ``expect`` polls until
+    each option is actually visible.
+    """
+    expect(listbox).to_be_visible()
     options = listbox.locator("[role='option']")
+    # count() is a non-waiting snapshot — anchor on the first option so
+    # the count can't be taken before the options attach.
+    expect(options.first).to_be_visible()
     texts = []
     for i in range(options.count()):
         opt = options.nth(i)
-        if not opt.is_visible():
-            continue
+        expect(opt).to_be_visible()
         label = opt.locator(".text-sm.font-medium")
         if label.count() > 0:
             texts.append(label.text_content().strip())
