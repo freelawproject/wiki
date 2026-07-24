@@ -46,9 +46,7 @@ class TestFeedAccess:
         assert r.status_code == 404
 
     def test_missing_page_404(self, client, db):
-        r = client.get(
-            reverse("page_feed", kwargs={"path": "no-such-page"})
-        )
+        r = client.get(reverse("page_feed", kwargs={"path": "no-such-page"}))
         assert r.status_code == 404
 
     def test_authenticated_can_fetch_private_history_feed(

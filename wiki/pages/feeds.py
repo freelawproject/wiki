@@ -74,9 +74,7 @@ class PageHistoryFeed(Feed):
                 },
             )
         # Revision 1 has nothing to diff against — link to history.
-        return reverse(
-            "page_history", kwargs={"path": item.page.content_path}
-        )
+        return reverse("page_history", kwargs={"path": item.page.content_path})
 
     def item_guid(self, item):
         # pk-based, not URL-based: stable across page moves/renames so
