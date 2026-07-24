@@ -73,6 +73,15 @@ class DirectorySubscription(models.Model):
         return f"{self.user} → {self.directory} ({self.status})"
 
 
+def normalize_subscriber_email(email):
+    """Normalize an email address for storage, tokens, and dedupe.
+
+    Lowercasing the local part is technically lossy per RFC 5321, but
+    it's the standard, correct-in-practice choice for deduplication.
+    """
+    return email.strip().lower()
+
+
 class EmailSubscription(models.Model):
     """A confirmed anonymous email subscription to a page's changes.
 
@@ -92,6 +101,13 @@ class EmailSubscription(models.Model):
 
     class Meta:
         unique_together = [("page", "email")]
+
+    def save(self, *args, **kwargs):
+        # Enforce the normalized invariant at the model layer so write
+        # paths that bypass the form/views (admin, shell, fixtures)
+        # can't defeat unique_together or the notify dedupe check.
+        self.email = normalize_subscriber_email(self.email)
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"{self.email} → {self.page}"

@@ -1,6 +1,6 @@
 from django import forms
 
-from .utils import normalize_subscriber_email
+from .models import normalize_subscriber_email
 
 
 class EmailSubscribeForm(forms.Form):

@@ -21,15 +21,6 @@ from .models import (
 )
 
 
-def normalize_subscriber_email(email):
-    """Normalize an email address for storage, tokens, and dedupe.
-
-    Lowercasing the local part is technically lossy per RFC 5321, but
-    it's the standard, correct-in-practice choice for deduplication.
-    """
-    return email.strip().lower()
-
-
 def _get_ancestor_dir_list(directory):
     """Return [directory, parent, grandparent, ..., root]."""
     dirs = []

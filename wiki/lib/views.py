@@ -38,6 +38,7 @@ def robots_txt(request):
         "Disallow: /search/",
         "Disallow: /files/",
         "Disallow: /unsubscribe/",
+        "Disallow: /subscriptions/",
         "Disallow: /activity/",
         "",
         # Page action URLs (edit, delete, history, etc.)

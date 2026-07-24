@@ -24,6 +24,7 @@ from .models import (
     EmailSubscription,
     PageSubscription,
     SubscriptionStatus,
+    normalize_subscriber_email,
 )
 from .tasks import (
     read_confirm_token,
@@ -32,7 +33,6 @@ from .tasks import (
 from .utils import (
     is_effectively_subscribed_to_directory,
     is_effectively_subscribed_to_page,
-    normalize_subscriber_email,
 )
 
 
