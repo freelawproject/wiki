@@ -109,5 +109,7 @@ def invalidate_on_revision_create(sender, instance, created, **kwargs):
     """
     if not created:
         return
-    feed_url = reverse("page_feed", kwargs={"path": instance.page.content_path})
+    feed_url = reverse(
+        "page_feed", kwargs={"path": instance.page.content_path}
+    )
     transaction.on_commit(lambda: invalidate_paths([feed_url]))
