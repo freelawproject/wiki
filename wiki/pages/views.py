@@ -9,6 +9,7 @@ from django.conf import settings as django_settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
+from django.contrib.auth.views import redirect_to_login
 from django.core.paginator import Paginator
 from django.db import transaction
 from django.db.models import Q
@@ -1055,10 +1056,13 @@ def page_backlinks(request, path):
     )
 
 
-@login_required
+@never_cache
 def page_history(request, path):
     """Show revision history for a page."""
     page = get_page_from_path(path)
+
+    if not request.user.is_authenticated and not page.history_is_public:
+        return redirect_to_login(request.get_full_path())
 
     if not can_view_page(request.user, page):
         raise Http404
@@ -1071,14 +1075,43 @@ def page_history(request, path):
     return render(
         request,
         "pages/history.html",
-        {"page": page, "revisions": revisions, "diff_base": diff_base},
+        {
+            "page": page,
+            "revisions": revisions,
+            "diff_base": diff_base,
+            "can_administer": can_administer_page(request.user, page),
+        },
     )
 
 
+@require_POST
 @login_required
+def page_history_visibility(request, path):
+    """Toggle whether a page's revision history is publicly visible."""
+    page = get_page_from_path(path)
+
+    if not can_administer_page(request.user, page):
+        raise Http404
+
+    page.history_is_public = not page.history_is_public
+    # update_fields keeps auto_now from touching updated_at — the toggle
+    # isn't a content change. The post_save CDN invalidation still fires.
+    page.save(update_fields=["history_is_public"])
+
+    state = "public" if page.history_is_public else "private"
+    messages.success(request, f"History for “{page.title}” is now {state}.")
+    return redirect(
+        reverse("page_history", kwargs={"path": page.content_path})
+    )
+
+
+@never_cache
 def page_diff(request, path, v1, v2):
     """Show diff between two versions."""
     page = get_page_from_path(path)
+
+    if not request.user.is_authenticated and not page.history_is_public:
+        return redirect_to_login(request.get_full_path())
 
     if not can_view_page(request.user, page):
         raise Http404

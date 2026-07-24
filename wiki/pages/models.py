@@ -105,6 +105,11 @@ class Page(models.Model):
         default=False,
         help_text="Pinned pages appear at the top of directory listings.",
     )
+    history_is_public = models.BooleanField(
+        default=False,
+        help_text="Allow anyone who can view this page to see its "
+        "revision history.",
+    )
     view_count = models.PositiveIntegerField(
         default=0,
         help_text="Denormalized count, updated periodically from tallies.",

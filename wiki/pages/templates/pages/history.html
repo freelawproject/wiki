@@ -10,6 +10,24 @@
     <a href="{{ page.get_absolute_url }}" class="btn-outline text-sm">Back to Page</a>
   </div>
 
+  {% if can_administer %}
+  <div class="card flex flex-col sm:flex-row sm:items-center justify-between gap-2 py-3.5 px-5 mb-4">
+    <p class="text-sm text-gray-500 dark:text-gray-400">
+      {% if page.history_is_public %}
+      This history is <strong>public</strong>: anyone who can view the page can see it.
+      {% else %}
+      This history is visible to <strong>signed-in users only</strong>.
+      {% endif %}
+    </p>
+    <form method="post" action="{% url 'page_history_visibility' path=page.content_path %}" class="flex-shrink-0">
+      {% csrf_token %}
+      <button type="submit" class="btn-outline text-sm">
+        {% if page.history_is_public %}Make Private{% else %}Make Public{% endif %}
+      </button>
+    </form>
+  </div>
+  {% endif %}
+
   {% include "includes/_revision_list.html" %}
 </div>
 {% endblock %}
