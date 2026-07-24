@@ -953,6 +953,18 @@ see a chronological list of all revisions. Each entry shows:
 - When it was made
 - The change message
 
+### Public history
+
+Revision history is normally visible only to signed-in users, even
+on public pages. A page administrator can make a page's history
+public — useful for pages like terms of service where readers may
+want to see how the text has changed over time. From the page's
+**History** view, click **Make Public** (or **Make Private** to
+turn it back off). Public history lets anyone who can view the
+page also see its revision list and diffs, including who made each
+change and the change messages. Reverting always requires signing
+in with edit access.
+
 ### Comparing revisions (diffing)
 
 From the history view, select any two revisions using the radio
