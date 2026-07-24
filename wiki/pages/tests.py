@@ -659,6 +659,187 @@ class TestHistoryRequiresAuth:
         assert b"History" in r.content
 
 
+class TestPublicHistory:
+    """Pages can opt in to publicly visible revision history."""
+
+    @pytest.fixture
+    def public_history_page(self, page):
+        page.history_is_public = True
+        page.save(update_fields=["history_is_public"])
+        return page
+
+    def test_anonymous_can_view_history(self, client, public_history_page):
+        r = client.get(
+            reverse(
+                "page_history",
+                kwargs={"path": public_history_page.content_path},
+            )
+        )
+        assert r.status_code == 200
+
+    def test_anonymous_can_view_diff(self, client, user, public_history_page):
+        PageRevision.objects.create(
+            page=public_history_page,
+            title=public_history_page.title,
+            content="v2",
+            change_message="edit",
+            revision_number=2,
+            created_by=user,
+        )
+        r = client.get(
+            reverse(
+                "page_diff",
+                kwargs={
+                    "path": public_history_page.content_path,
+                    "v1": 1,
+                    "v2": 2,
+                },
+            )
+        )
+        assert r.status_code == 200
+
+    def test_history_not_cdn_cacheable(self, client, public_history_page):
+        """never_cache must keep public history out of the CDN, so
+        turning the flag back off takes effect immediately."""
+        r = client.get(
+            reverse(
+                "page_history",
+                kwargs={"path": public_history_page.content_path},
+            )
+        )
+        assert "no-store" in r.headers["Cache-Control"]
+
+    def test_diff_not_cdn_cacheable(self, client, user, public_history_page):
+        PageRevision.objects.create(
+            page=public_history_page,
+            title=public_history_page.title,
+            content="v2",
+            change_message="edit",
+            revision_number=2,
+            created_by=user,
+        )
+        r = client.get(
+            reverse(
+                "page_diff",
+                kwargs={
+                    "path": public_history_page.content_path,
+                    "v1": 1,
+                    "v2": 2,
+                },
+            )
+        )
+        assert "no-store" in r.headers["Cache-Control"]
+
+    def test_anonymous_blocked_when_page_not_public(
+        self, client, private_page
+    ):
+        """Public history on a non-public page still 404s for anonymous."""
+        private_page.history_is_public = True
+        private_page.save(update_fields=["history_is_public"])
+        r = client.get(
+            reverse("page_history", kwargs={"path": private_page.content_path})
+        )
+        assert r.status_code == 404
+
+    def test_private_page_history_404s_not_redirects(
+        self, client, private_page
+    ):
+        """A private page with the flag off must 404 for anonymous, like a
+        missing page — a login redirect would leak that the page exists."""
+        r = client.get(
+            reverse("page_history", kwargs={"path": private_page.content_path})
+        )
+        assert r.status_code == 404
+
+    def test_private_page_diff_404s_not_redirects(self, client, private_page):
+        r = client.get(
+            reverse(
+                "page_diff",
+                kwargs={"path": private_page.content_path, "v1": 1, "v2": 1},
+            )
+        )
+        assert r.status_code == 404
+
+    def test_revert_still_requires_login(self, client, public_history_page):
+        r = client.get(
+            reverse(
+                "page_revert",
+                kwargs={
+                    "path": public_history_page.content_path,
+                    "rev_num": 1,
+                },
+            )
+        )
+        assert r.status_code == 302
+        assert reverse("login") in r.url
+
+    def test_history_link_shown_for_anonymous(
+        self, client, public_history_page
+    ):
+        r = client.get(public_history_page.get_absolute_url())
+        assert b"History" in r.content
+
+
+class TestHistoryVisibilityToggle:
+    """The public-history toggle on the history page."""
+
+    def _toggle_url(self, page):
+        return reverse(
+            "page_history_visibility", kwargs={"path": page.content_path}
+        )
+
+    def test_admin_can_toggle_on_and_off(self, client, user, page):
+        client.force_login(user)
+        r = client.post(self._toggle_url(page))
+        assert r.status_code == 302
+        page.refresh_from_db()
+        assert page.history_is_public is True
+
+        client.post(self._toggle_url(page))
+        page.refresh_from_db()
+        assert page.history_is_public is False
+
+    def test_toggle_does_not_touch_updated_at(self, client, user, page):
+        client.force_login(user)
+        before = page.updated_at
+        client.post(self._toggle_url(page))
+        page.refresh_from_db()
+        assert page.updated_at == before
+
+    def test_non_admin_cannot_toggle(self, client, other_user, page):
+        client.force_login(other_user)
+        r = client.post(self._toggle_url(page))
+        assert r.status_code == 404
+        page.refresh_from_db()
+        assert page.history_is_public is False
+
+    def test_anonymous_redirected_to_login(self, client, page):
+        r = client.post(self._toggle_url(page))
+        assert r.status_code == 302
+        assert reverse("login") in r.url
+
+    def test_get_not_allowed(self, client, user, page):
+        client.force_login(user)
+        r = client.get(self._toggle_url(page))
+        assert r.status_code == 405
+
+    def test_toggle_control_shown_to_admin(self, client, user, page):
+        client.force_login(user)
+        r = client.get(
+            reverse("page_history", kwargs={"path": page.content_path})
+        )
+        assert b"Make Public" in r.content
+
+    def test_toggle_control_hidden_from_non_admin(
+        self, client, other_user, page
+    ):
+        client.force_login(other_user)
+        r = client.get(
+            reverse("page_history", kwargs={"path": page.content_path})
+        )
+        assert b"Make Public" not in r.content
+
+
 # ── Slug Redirects & URL Resolution ───────────────────────
 
 
