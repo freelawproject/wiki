@@ -312,32 +312,50 @@ def hello():
 ```
 ````
 
-### Tabbed code blocks
+### Tabs
 
-To show the same example in several languages, wrap ordinary code
-fences in `{% tabs %}` and `{% endtabs %}` markers. Each fence becomes
-a tab, labeled by its language. Use ` ```curl ` for a cURL tab — it
-highlights as shell but gets a cURL label.
+To show alternative versions of the same content side by side —
+per-platform install steps, the same API call in several languages —
+wrap it in `{% tabs %}` and `{% endtabs %}` markers. Inside the
+markers, each level-one heading (`# Name`) starts a new tab: the
+heading text becomes the tab's name, and everything up to the next
+`#` heading (or `{% endtabs %}`) is that tab's content.
 
 ````markdown
 {% tabs %}
 
-```curl
-curl https://example.com/api/
+# macOS
+
+Install with [Homebrew](https://brew.sh):
+
+```bash
+brew install foo
 ```
 
-```python
-import requests
-requests.get("https://example.com/api/")
+# Linux
+
+Install with apt:
+
+```bash
+sudo apt install foo
 ```
 
 {% endtabs %}
 ````
 
-Picking a tab switches every tab group on the page to that language,
-and the wiki remembers your choice on future pages. Only code fences
-may appear between the markers — anything else leaves the group
-unconverted so you can spot the mistake.
+Any markdown works inside a tab — paragraphs, lists, images, code
+fences. A few details:
+
+- **Tab names are plain text.** Markdown formatting in the heading
+  is ignored.
+- **Tab headings don't appear in the table of contents** — they're
+  labels, not document structure.
+- **Same-named tabs sync.** Picking "macOS" switches every tab group
+  on the page that has a macOS tab, and the wiki remembers your
+  choice on future pages.
+- The content must start with a `#` heading. A group with content
+  before the first heading (or no headings at all) is left
+  unconverted so you can spot the mistake.
 
 ### Tables
 
