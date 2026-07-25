@@ -69,6 +69,9 @@ _TAB_HEADING_RE = re.compile(
     r"^ {0,3}#[ \t]+(?P<name>.+?)(?:[ \t]+#+)?[ \t]*$"
 )
 
+# A fence delimiter line; group 1's length decides what closes the fence
+_FENCE_LINE_RE = re.compile(r"^\s*(`{3,})")
+
 _SLUG_CHARS = r"[a-z0-9]+(?:-[a-z0-9]+)*"
 
 # Captures a wiki-link target: an optional directory path, the page slug,
@@ -749,6 +752,28 @@ def _convert_button_links(html):
     return _BUTTON_LINK_RE.sub(replace_button, html)
 
 
+def _fence_scan(lines):
+    """Yield (index, line, in_fence) with length-aware fence tracking.
+
+    Mirrors markdown2's rule: a fence closes only on a backtick run at
+    least as long as the one that opened it, so an outer ```` fence
+    wrapping a literal ``` example stays open across the inner fences.
+    Delimiter lines themselves report ``in_fence=True``.
+    """
+    fence_len = 0
+    for i, line in enumerate(lines):
+        delim = _FENCE_LINE_RE.match(line)
+        if delim:
+            run = len(delim.group(1))
+            if not fence_len:
+                fence_len = run
+            elif run >= fence_len:
+                fence_len = 0
+            yield i, line, True
+            continue
+        yield i, line, bool(fence_len)
+
+
 def _closed_tabs_ranges(lines):
     """Return (start, end) line-index pairs of closed {% tabs %} regions.
 
@@ -758,12 +783,8 @@ def _closed_tabs_ranges(lines):
     than silently consumed for the rest of the document.
     """
     ranges = []
-    in_fence = False
     open_idx = None
-    for i, line in enumerate(lines):
-        if line.lstrip().startswith("```"):
-            in_fence = not in_fence
-            continue
+    for i, line, in_fence in _fence_scan(lines):
         if in_fence:
             continue
         boundary = _TABS_BOUNDARY_RE.match(line)
@@ -784,7 +805,10 @@ def _convert_tab_headings(content):
     never get header ids and never enter the TOC — they are UI labels,
     not document structure. Each marker is padded with blank lines so it
     renders as its own ``<p>{% tab Name %}</p>``, which _convert_tabs
-    then turns into a panel boundary.
+    then turns into a panel boundary. The {% tabs %}/{% endtabs %} lines
+    of converted regions get the same padding, so a missing blank line
+    around a boundary can't merge it into a neighboring paragraph and
+    stop _TABS_RE from matching.
 
     Only properly closed regions are rewritten (see _closed_tabs_ranges),
     and H1s inside code fences are left alone.
@@ -796,13 +820,12 @@ def _convert_tab_headings(content):
     ranges = _closed_tabs_ranges(lines)
     if not ranges:
         return content
+    boundary_lines = {i for pair in ranges for i in pair}
 
     out = []
-    in_fence = False
-    for i, line in enumerate(lines):
-        if line.lstrip().startswith("```"):
-            in_fence = not in_fence
-            out.append(line)
+    for i, line, in_fence in _fence_scan(lines):
+        if i in boundary_lines:
+            out.extend(["", line, ""])
             continue
         if not in_fence and any(start < i < end for start, end in ranges):
             heading = _TAB_HEADING_RE.match(line)

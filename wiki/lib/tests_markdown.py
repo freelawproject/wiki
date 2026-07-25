@@ -703,6 +703,25 @@ class TestConvertTabHeadings:
         md = "{% tabs %}\n# One\nBody.\n\n# Later Heading\nMore text."
         assert _convert_tab_headings(md) == md
 
+    def test_nested_fence_inside_tab_untouched(self):
+        """A ```` fence wrapping a literal ``` example stays one fence:
+        the scanner must not desync on the inner delimiters and misread
+        a code comment as a tab heading."""
+        md = (
+            "{% tabs %}\n"
+            "# One\n"
+            "````markdown\n"
+            "```python\n"
+            "# a comment, not a tab\n"
+            "x = 1\n"
+            "```\n"
+            "````\n"
+            "{% endtabs %}"
+        )
+        out = _convert_tab_headings(md)
+        assert "# a comment, not a tab" in out
+        assert "{% tab a comment, not a tab %}" not in out
+
     def test_heading_after_closed_region_untouched(self):
         md = "{% tabs %}\n# One\n{% endtabs %}\n# After"
         out = _convert_tab_headings(md)
@@ -893,6 +912,24 @@ class TestContentTabsEndToEnd:
         assert "content-tabs" not in html
         assert html.count("<h1") == 2
         assert "Section One" in html.toc_html
+
+    def test_no_blank_lines_around_markers_still_converts(self):
+        """Boundary markers are padded during conversion, so a missing
+        blank line before {% endtabs %} (or around {% tabs %}) must not
+        merge the marker into a neighboring paragraph and leak the
+        markers as literal text."""
+        md = (
+            "Intro.\n{% tabs %}\n"
+            "# macOS\nInstall with brew.\n"
+            "# Linux\nInstall with apt.\n"
+            "{% endtabs %}\nOutro.\n"
+        )
+        html = render_markdown(md)
+        assert '<div class="content-tabs">' in html
+        assert html.count('class="content-tab-panel"') == 2
+        assert "{%" not in html
+        assert "Intro." in html
+        assert "Outro." in html
 
 
 class TestStripMarkdownCodeTabs:
