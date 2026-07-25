@@ -353,7 +353,8 @@ fences. A few details:
   labels, not document structure.
 - **Same-named tabs sync.** Picking "macOS" switches every tab group
   on the page that has a macOS tab, and the wiki remembers your
-  choice on future pages.
+  choice on future pages. Give each tab within a group a unique
+  name — the name is the tab's identity.
 - The content must start with a `#` heading. A group with content
   before the first heading (or no headings at all) is left
   unconverted so you can spot the mistake.

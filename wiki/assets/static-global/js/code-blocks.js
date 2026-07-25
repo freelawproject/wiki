@@ -137,6 +137,10 @@
       tab.addEventListener('click', function () {
         rememberTab(label);
         selectTab(label);
+        // selectTab resolves a label to the first match per group; make
+        // the clicked tab win in its own group so a duplicate name
+        // doesn't leave later occurrences unreachable.
+        activateGroup(group, i);
       });
       bar.appendChild(tab);
     });

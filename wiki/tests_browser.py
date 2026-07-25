@@ -701,6 +701,12 @@ _TABS_GROUP_CODE = (
     "# Shell\n\n```bash\ncurl -L https://example.com/api/\n```\n\n"
     "{% endtabs %}"
 )
+_TABS_GROUP_DUP = (
+    "{% tabs %}\n\n"
+    "# Step\n\nFirst step.\n\n"
+    "# Step\n\nSecond step.\n\n"
+    "{% endtabs %}"
+)
 
 
 @pytest.fixture
@@ -736,7 +742,7 @@ def tabbed_pages(browser_user, dir_tree):
     second = make(
         "usage-guide",
         "Usage Guide",
-        f"{_TABS_GROUP_FULL}\n\n{_TABS_GROUP_CODE}\n",
+        f"{_TABS_GROUP_FULL}\n\n{_TABS_GROUP_CODE}\n\n{_TABS_GROUP_DUP}\n",
     )
     return first, second
 
@@ -861,6 +867,23 @@ class TestContentTabs:
         tabs = preview.locator("[role='tab']")
         expect(tabs).to_have_text(["macOS", "Linux", "Windows"])
         expect(tabs.nth(0)).to_have_attribute("aria-selected", "true")
+
+    def test_duplicate_names_clicked_tab_wins(
+        self, browser_page, live_server, browser_user, tabbed_pages
+    ):
+        """Within one group, clicking a duplicate-named tab activates
+        the clicked tab, not the first tab with that name."""
+        _force_login(browser_page, live_server, browser_user)
+        self._goto(browser_page, live_server, tabbed_pages[1])
+
+        group = browser_page.locator(".content-tabs").nth(2)
+        tabs = group.locator("[role='tab']")
+        expect(tabs).to_have_text(["Step", "Step"])
+
+        tabs.nth(1).click()
+        expect(tabs.nth(1)).to_have_attribute("aria-selected", "true")
+        expect(group.locator(".content-tab-panel").nth(1)).to_be_visible()
+        expect(group.locator(".content-tab-panel").nth(0)).to_be_hidden()
 
     def test_code_blocks_inside_tabs_get_copy_button(
         self, browser_page, live_server, browser_user, tabbed_pages
