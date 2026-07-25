@@ -697,6 +697,18 @@ class TestConvertTabHeadings:
         md = "# Plain page\n\nNo tabs here."
         assert _convert_tab_headings(md) == md
 
+    def test_unclosed_region_leaves_headings_untouched(self):
+        """An unclosed {% tabs %} must not consume headings for the
+        rest of the document."""
+        md = "{% tabs %}\n# One\nBody.\n\n# Later Heading\nMore text."
+        assert _convert_tab_headings(md) == md
+
+    def test_heading_after_closed_region_untouched(self):
+        md = "{% tabs %}\n# One\n{% endtabs %}\n# After"
+        out = _convert_tab_headings(md)
+        assert "{% tab One %}" in out
+        assert out.rstrip().endswith("# After")
+
 
 class TestConvertTabs:
     """{% tabs %} groups with {% tab %} markers become tab containers."""
@@ -871,6 +883,16 @@ class TestContentTabsEndToEnd:
         md = "{% tabs %}\n\n# **Bold** Name\n\nBody.\n\n{% endtabs %}\n"
         html = render_markdown(md)
         assert 'data-label="Bold Name"' in html
+
+    def test_unclosed_group_leaves_document_intact(self):
+        """A {% tabs %} with no {% endtabs %} must leave the rest of the
+        document's headings (and their TOC entries) untouched."""
+        md = "{% tabs %}\n\n# Section One\n\nBody.\n\n# Section Two\n\nMore.\n"
+        html = render_markdown(md)
+        assert "{% tab " not in html
+        assert "content-tabs" not in html
+        assert html.count("<h1") == 2
+        assert "Section One" in html.toc_html
 
 
 class TestStripMarkdownCodeTabs:

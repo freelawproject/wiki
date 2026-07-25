@@ -749,6 +749,34 @@ def _convert_button_links(html):
     return _BUTTON_LINK_RE.sub(replace_button, html)
 
 
+def _closed_tabs_ranges(lines):
+    """Return (start, end) line-index pairs of closed {% tabs %} regions.
+
+    Fence-aware: markers inside code fences don't count. Only regions
+    with a matching ``{% endtabs %}`` are returned — an unclosed opening
+    marker yields no range, so headings after it are left alone rather
+    than silently consumed for the rest of the document.
+    """
+    ranges = []
+    in_fence = False
+    open_idx = None
+    for i, line in enumerate(lines):
+        if line.lstrip().startswith("```"):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        boundary = _TABS_BOUNDARY_RE.match(line)
+        if not boundary:
+            continue
+        if boundary.group(1) is None:
+            open_idx = i
+        elif open_idx is not None:
+            ranges.append((open_idx, i))
+            open_idx = None
+    return ranges
+
+
 def _convert_tab_headings(content):
     """Rewrite H1 lines inside {% tabs %} regions to {% tab %} markers.
 
@@ -758,29 +786,25 @@ def _convert_tab_headings(content):
     renders as its own ``<p>{% tab Name %}</p>``, which _convert_tabs
     then turns into a panel boundary.
 
-    A line-by-line scan tracks fence state so H1s inside code blocks
-    (and marker examples shown in fences) are left alone.
+    Only properly closed regions are rewritten (see _closed_tabs_ranges),
+    and H1s inside code fences are left alone.
     """
     if "{%" not in content:
         return content
 
+    lines = content.split("\n")
+    ranges = _closed_tabs_ranges(lines)
+    if not ranges:
+        return content
+
     out = []
     in_fence = False
-    in_tabs = False
-    for line in content.split("\n"):
+    for i, line in enumerate(lines):
         if line.lstrip().startswith("```"):
             in_fence = not in_fence
             out.append(line)
             continue
-        if in_fence:
-            out.append(line)
-            continue
-        boundary = _TABS_BOUNDARY_RE.match(line)
-        if boundary:
-            in_tabs = boundary.group(1) is None
-            out.append(line)
-            continue
-        if in_tabs:
+        if not in_fence and any(start < i < end for start, end in ranges):
             heading = _TAB_HEADING_RE.match(line)
             if heading:
                 out.extend(["", f"{{% tab {heading.group('name')} %}}", ""])
@@ -806,7 +830,7 @@ def _convert_tabs(html):
         if len(parts) < 3 or parts[0].strip():
             return match.group(0)
         panels = []
-        for label_html, body in zip(parts[1::2], parts[2::2]):
+        for label_html, body in zip(parts[1::2], parts[2::2], strict=True):
             label = _HTML_TAG_RE.sub("", label_html)
             label = _WHITESPACE_RE.sub(" ", label).strip()
             if not label:

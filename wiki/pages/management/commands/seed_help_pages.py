@@ -319,7 +319,8 @@ per-platform install steps, the same API call in several languages —
 wrap it in `{% tabs %}` and `{% endtabs %}` markers. Inside the
 markers, each level-one heading (`# Name`) starts a new tab: the
 heading text becomes the tab's name, and everything up to the next
-`#` heading (or `{% endtabs %}`) is that tab's content.
+level-one heading (or `{% endtabs %}`) is that tab's content.
+Deeper headings (`##` and below) stay inside the current tab.
 
 ````markdown
 {% tabs %}
