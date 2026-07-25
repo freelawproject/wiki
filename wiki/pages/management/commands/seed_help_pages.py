@@ -312,32 +312,52 @@ def hello():
 ```
 ````
 
-### Tabbed code blocks
+### Tabs
 
-To show the same example in several languages, wrap ordinary code
-fences in `{% tabs %}` and `{% endtabs %}` markers. Each fence becomes
-a tab, labeled by its language. Use ` ```curl ` for a cURL tab — it
-highlights as shell but gets a cURL label.
+To show alternative versions of the same content side by side —
+per-platform install steps, the same API call in several languages —
+wrap it in `{% tabs %}` and `{% endtabs %}` markers. Inside the
+markers, each level-one heading (`# Name`) starts a new tab: the
+heading text becomes the tab's name, and everything up to the next
+level-one heading (or `{% endtabs %}`) is that tab's content.
+Deeper headings (`##` and below) stay inside the current tab.
 
 ````markdown
 {% tabs %}
 
-```curl
-curl https://example.com/api/
+# macOS
+
+Install with [Homebrew](https://brew.sh):
+
+```bash
+brew install foo
 ```
 
-```python
-import requests
-requests.get("https://example.com/api/")
+# Linux
+
+Install with apt:
+
+```bash
+sudo apt install foo
 ```
 
 {% endtabs %}
 ````
 
-Picking a tab switches every tab group on the page to that language,
-and the wiki remembers your choice on future pages. Only code fences
-may appear between the markers — anything else leaves the group
-unconverted so you can spot the mistake.
+Any markdown works inside a tab — paragraphs, lists, images, code
+fences. A few details:
+
+- **Tab names are plain text.** Markdown formatting in the heading
+  is ignored.
+- **Tab headings don't appear in the table of contents** — they're
+  labels, not document structure.
+- **Same-named tabs sync.** Picking "macOS" switches every tab group
+  on the page that has a macOS tab, and the wiki remembers your
+  choice on future pages. Give each tab within a group a unique
+  name — the name is the tab's identity.
+- The content must start with a `#` heading. A group with content
+  before the first heading (or no headings at all) is left
+  unconverted so you can spot the mistake.
 
 ### Tables
 
@@ -1657,6 +1677,35 @@ Use dot notation to access nested objects. If the API returns:
 ```
 
 You can write `[[ stats.open ]]` and `[[ stats.closed ]]`.
+
+### Markdown in values
+
+Values are substituted **before** the page is rendered, so markdown
+inside an API value is parsed like any other page content. If the
+API returns:
+
+```json
+{
+  "status": "**degraded** — see [the incident page](https://status.example.com)"
+}
+```
+
+Then `Current status: [[ status ]]` renders with real bold text and
+a working link.
+
+A few things to keep in mind:
+
+- **Inline markdown is the reliable case** (bold, italics, links,
+  inline code). Block-level markdown (lists, headings) only works
+  if the placeholder sits where a block can start — on its own
+  line, as its own paragraph.
+- **There is no escaping.** Characters like `*` and `_` in a value
+  are interpreted as markdown. If a value must appear literally,
+  put the placeholder in inline code — code regions are never
+  substituted.
+- **HTML is sanitized.** Raw HTML in a value passes through the
+  same sanitizer as authored content, so tags like `<script>` are
+  stripped.
 
 ### Unresolved placeholders
 

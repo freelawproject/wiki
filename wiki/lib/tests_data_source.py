@@ -17,6 +17,7 @@ from wiki.lib.data_source import (
     is_domain_allowed,
     substitute_data_variables,
 )
+from wiki.pages.models import Page
 
 
 @pytest.fixture(autouse=True)
@@ -126,6 +127,14 @@ class TestSubstituteDataVariables:
 
     def test_fenced_code_block_not_substituted(self):
         content = "```\n[[ key ]]\n```"
+        data = {"key": "replaced"}
+        assert substitute_data_variables(content, data) == content
+
+    def test_nested_fence_fully_protected(self):
+        """A ```` fence wrapping a literal ``` example is one protected
+        region — the wrapped placeholder must not sit in an unprotected
+        gap between two naive triple-backtick matches."""
+        content = "````\n```\nUse [[ key ]] to show the count.\n```\n````"
         data = {"key": "replaced"}
         assert substitute_data_variables(content, data) == content
 
@@ -256,15 +265,11 @@ class TestFetchPageData:
 @pytest.mark.django_db
 class TestPageDataSourceIntegration:
     def test_page_has_data_source_fields(self):
-        from wiki.pages.models import Page
-
         page = Page(title="Test", content="Hello [[ name ]]")
         assert page.data_source_url == ""
         assert page.data_source_ttl == 300
 
     def test_render_with_data_source(self, client, json_server):
-        from wiki.pages.models import Page
-
         url = json_server({"name": "World"})
         page = Page.objects.create(
             title="Data Test",
@@ -277,8 +282,6 @@ class TestPageDataSourceIntegration:
         assert b"Hello World!" in response.content
 
     def test_render_without_data_source(self, client):
-        from wiki.pages.models import Page
-
         page = Page.objects.create(
             title="Plain Page",
             content="Hello [[ name ]]!",
@@ -287,6 +290,38 @@ class TestPageDataSourceIntegration:
         assert response.status_code == 200
         # Placeholder should remain (no data source configured)
         assert b"[[ name ]]" in response.content
+
+    def test_markdown_in_value_is_rendered(self, client, json_server):
+        """Substitution runs before markdown rendering, so markdown in
+        API values is parsed like any other page content."""
+        url = json_server(
+            {"status": "**degraded** ([details](https://status.example.com))"}
+        )
+        page = Page.objects.create(
+            title="Markdown Value Test",
+            content="Current status: [[ status ]]",
+            data_source_url=url,
+            data_source_ttl=60,
+        )
+        response = client.get(page.get_absolute_url())
+        assert response.status_code == 200
+        assert b"<strong>degraded</strong>" in response.content
+        assert b'href="https://status.example.com"' in response.content
+
+    def test_html_in_value_is_sanitized(self, client, json_server):
+        """Raw HTML arriving via API values goes through the same nh3
+        sanitization as authored content."""
+        url = json_server({"evil": "<script>alert('xss')</script>"})
+        page = Page.objects.create(
+            title="Sanitize Value Test",
+            content="Payload: [[ evil ]]",
+            data_source_url=url,
+            data_source_ttl=60,
+        )
+        response = client.get(page.get_absolute_url())
+        assert response.status_code == 200
+        assert b"<script>" not in response.content
+        assert b"alert(" not in response.content
 
 
 # ── Domain allowlist ──────────────────────────────────────────────────

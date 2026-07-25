@@ -1,65 +1,20 @@
 /**
  * Code block enhancements: syntax highlighting, copy buttons, and tabbed
- * code groups ({% tabs %} markup, rendered as <div class="code-tabs">).
+ * content groups ({% tabs %} markup, rendered as <div class="content-tabs">
+ * of labeled panels).
  *
  * Loaded after highlight.js on detail views and editor forms. Runs on DOM
  * ready for each .wiki-content container, and is exposed as
  * window.enhanceCodeBlocks(root) so the editor preview can enhance
  * HTML it injects after the fact.
  *
- * Tab selection is shared: picking a language activates it in every tab
- * group on the page that offers it, and persists across pages via
- * localStorage.
+ * Tab selection is shared: picking a tab activates every same-named tab
+ * on the page, and persists across pages via localStorage.
  */
 (function () {
-  var STORAGE_KEY = 'wiki-code-tab';
+  var STORAGE_KEY = 'wiki-content-tab';
 
-  var LANG_LABELS = {
-    bash: 'Bash',
-    cpp: 'C++',
-    csharp: 'C#',
-    css: 'CSS',
-    curl: 'cURL',
-    go: 'Go',
-    html: 'HTML',
-    java: 'Java',
-    javascript: 'JavaScript',
-    js: 'JavaScript',
-    json: 'JSON',
-    php: 'PHP',
-    plaintext: 'Text',
-    py: 'Python',
-    python: 'Python',
-    ruby: 'Ruby',
-    rust: 'Rust',
-    sh: 'Shell',
-    shell: 'Shell',
-    sql: 'SQL',
-    ts: 'TypeScript',
-    typescript: 'TypeScript',
-    xml: 'XML',
-    yaml: 'YAML',
-    yml: 'YAML',
-  };
-
-  // ```curl fences keep their language-curl class (and cURL tab label) but
-  // highlight with bash rules.
-  if (typeof hljs !== 'undefined') {
-    hljs.registerAliases('curl', { languageName: 'bash' });
-  }
-
-  function langOf(code) {
-    var match = code.className.match(/language-([\w+-]+)/);
-    return match ? match[1].toLowerCase() : '';
-  }
-
-  function labelFor(lang) {
-    if (!lang) return 'Text';
-    if (LANG_LABELS[lang]) return LANG_LABELS[lang];
-    return lang.charAt(0).toUpperCase() + lang.slice(1);
-  }
-
-  function storedLang() {
+  function storedTab() {
     try {
       return localStorage.getItem(STORAGE_KEY);
     } catch (e) {
@@ -67,9 +22,9 @@
     }
   }
 
-  function rememberLang(lang) {
+  function rememberTab(label) {
     try {
-      localStorage.setItem(STORAGE_KEY, lang);
+      localStorage.setItem(STORAGE_KEY, label);
     } catch (e) {
       /* storage unavailable — selection just won't persist */
     }
@@ -80,10 +35,6 @@
   function enhanceBlock(code) {
     if (code.dataset.enhanced) return;
     code.dataset.enhanced = 'true';
-
-    // Record the authored language before highlighting: hljs auto-detection
-    // adds a language-* class to bare blocks, which would fake a tab label.
-    code.dataset.lang = langOf(code);
 
     if (typeof hljs !== 'undefined') {
       hljs.highlightElement(code);
@@ -123,20 +74,20 @@
     wrapper.appendChild(btn);
   }
 
-  // ── Tabbed code groups ─────────────────────────────────────────────
+  // ── Tabbed content groups ──────────────────────────────────────────
 
   var groupCount = 0;
 
   function groupPanels(group) {
     return [].slice.call(group.children).filter(function (el) {
-      return el.classList.contains('code-block-wrapper');
+      return el.classList.contains('content-tab-panel');
     });
   }
 
-  function tabIndexForLang(group, lang) {
+  function tabIndexForLabel(group, label) {
     var tabs = group.querySelectorAll('[role="tab"]');
     for (var i = 0; i < tabs.length; i++) {
-      if (tabs[i].dataset.lang === lang) return i;
+      if (tabs[i].dataset.label === label) return i;
     }
     return -1;
   }
@@ -153,44 +104,43 @@
     });
   }
 
-  function selectLang(lang) {
-    document.querySelectorAll('.code-tabs').forEach(function (group) {
-      var index = tabIndexForLang(group, lang);
+  function selectTab(label) {
+    document.querySelectorAll('.content-tabs').forEach(function (group) {
+      var index = tabIndexForLabel(group, label);
       if (index !== -1) activateGroup(group, index);
     });
   }
 
   function buildTabGroup(group) {
-    if (group.querySelector('.code-tabs-bar')) return;
+    if (group.querySelector('.content-tabs-bar')) return;
     var panels = groupPanels(group);
     if (!panels.length) return;
     var groupId = ++groupCount;
 
     var bar = document.createElement('div');
-    bar.className = 'code-tabs-bar';
+    bar.className = 'content-tabs-bar';
     bar.setAttribute('role', 'tablist');
-    bar.setAttribute('aria-label', 'Code examples');
+    bar.setAttribute('aria-label', 'Tabs');
 
     panels.forEach(function (panel, i) {
-      var code = panel.querySelector('pre code');
-      var lang = (code && code.dataset.lang) || '';
+      var label = panel.dataset.label || 'Tab ' + (i + 1);
       var tab = document.createElement('button');
       tab.type = 'button';
-      tab.id = 'code-tab-' + groupId + '-' + i;
+      tab.id = 'content-tab-' + groupId + '-' + i;
       tab.setAttribute('role', 'tab');
-      tab.setAttribute('aria-controls', 'code-tabpanel-' + groupId + '-' + i);
-      tab.dataset.lang = lang;
-      tab.textContent = labelFor(lang);
-      panel.id = 'code-tabpanel-' + groupId + '-' + i;
+      tab.setAttribute('aria-controls', 'content-tabpanel-' + groupId + '-' + i);
+      tab.dataset.label = label;
+      tab.textContent = label;
+      panel.id = 'content-tabpanel-' + groupId + '-' + i;
       panel.setAttribute('role', 'tabpanel');
       panel.setAttribute('aria-labelledby', tab.id);
       tab.addEventListener('click', function () {
-        if (lang) {
-          rememberLang(lang);
-          selectLang(lang);
-        } else {
-          activateGroup(group, i);
-        }
+        rememberTab(label);
+        selectTab(label);
+        // selectTab resolves a label to the first match per group; make
+        // the clicked tab win in its own group so a duplicate name
+        // doesn't leave later occurrences unreachable.
+        activateGroup(group, i);
       });
       bar.appendChild(tab);
     });
@@ -209,8 +159,8 @@
 
     group.insertBefore(bar, group.firstChild);
 
-    var remembered = storedLang();
-    var index = remembered ? tabIndexForLang(group, remembered) : -1;
+    var remembered = storedTab();
+    var index = remembered ? tabIndexForLabel(group, remembered) : -1;
     activateGroup(group, index === -1 ? 0 : index);
   }
 
@@ -218,7 +168,7 @@
 
   function enhanceCodeBlocks(root) {
     root.querySelectorAll('pre code').forEach(enhanceBlock);
-    root.querySelectorAll('.code-tabs').forEach(buildTabGroup);
+    root.querySelectorAll('.content-tabs').forEach(buildTabGroup);
   }
 
   window.enhanceCodeBlocks = enhanceCodeBlocks;
