@@ -680,32 +680,32 @@ class TestWikiLinkAutocomplete:
         dropdown.locator("[data-path]").first.wait_for(state="visible")
 
 
-# ── Tabbed code blocks ({% tabs %}) ──────────────────────────────────
+# ── Tabbed content groups ({% tabs %}) ───────────────────────────────
 
 _TABS_GROUP_FULL = (
     "{% tabs %}\n\n"
-    "```curl\ncurl -L https://example.com/api/\n```\n\n"
-    "```python\nimport requests\n```\n\n"
-    "```javascript\nawait fetch(url)\n```\n\n"
+    "# macOS\n\nInstall with brew.\n\n"
+    "# Linux\n\nInstall with apt.\n\n"
+    "# Windows\n\nInstall with winget.\n\n"
     "{% endtabs %}"
 )
 _TABS_GROUP_SHORT = (
     "{% tabs %}\n\n"
-    "```curl\ncurl -X POST https://example.com/api/\n```\n\n"
-    "```python\nimport httpx\n```\n\n"
+    "# macOS\n\nUpdate with brew.\n\n"
+    "# Linux\n\nUpdate with apt.\n\n"
     "{% endtabs %}"
 )
-_TABS_GROUP_PLAIN = (
+_TABS_GROUP_CODE = (
     "{% tabs %}\n\n"
-    "```\nfirst plain block\n```\n\n"
-    "```\nsecond plain block\n```\n\n"
+    "# Python\n\n```python\nimport requests\n```\n\n"
+    "# Shell\n\n```bash\ncurl -L https://example.com/api/\n```\n\n"
     "{% endtabs %}"
 )
 
 
 @pytest.fixture
 def tabbed_pages(browser_user, dir_tree):
-    """Two pages with tabbed code groups in the public docs directory."""
+    """Two pages with tabbed content groups in the public docs directory."""
     docs = Directory.objects.get(path="docs")
 
     def make(slug, title, content):
@@ -729,21 +729,21 @@ def tabbed_pages(browser_user, dir_tree):
         return p
 
     first = make(
-        "api-examples",
-        "API Examples",
+        "install-guide",
+        "Install Guide",
         f"Intro.\n\n{_TABS_GROUP_FULL}\n\nMiddle.\n\n{_TABS_GROUP_SHORT}\n",
     )
     second = make(
-        "more-examples",
-        "More Examples",
-        f"{_TABS_GROUP_FULL}\n\n{_TABS_GROUP_PLAIN}\n",
+        "usage-guide",
+        "Usage Guide",
+        f"{_TABS_GROUP_FULL}\n\n{_TABS_GROUP_CODE}\n",
     )
     return first, second
 
 
 @pytest.mark.django_db(transaction=True)
-class TestCodeTabs:
-    """Tabbed code groups: labels, cross-group sync, persistence, copy."""
+class TestContentTabs:
+    """Tabbed content groups: labels, cross-group sync, persistence."""
 
     def _goto(self, browser_page, live_server, wiki_page):
         url = reverse("resolve_path", kwargs={"path": wiki_page.content_path})
@@ -755,13 +755,13 @@ class TestCodeTabs:
         _force_login(browser_page, live_server, browser_user)
         self._goto(browser_page, live_server, tabbed_pages[0])
 
-        groups = browser_page.locator(".code-tabs")
+        groups = browser_page.locator(".content-tabs")
         expect(groups).to_have_count(2)
         first_tabs = groups.nth(0).locator("[role='tab']")
-        expect(first_tabs).to_have_text(["cURL", "Python", "JavaScript"])
+        expect(first_tabs).to_have_text(["macOS", "Linux", "Windows"])
         expect(first_tabs.nth(0)).to_have_attribute("aria-selected", "true")
 
-        panels = groups.nth(0).locator(".code-block-wrapper")
+        panels = groups.nth(0).locator(".content-tab-panel")
         expect(panels.nth(0)).to_be_visible()
         expect(panels.nth(1)).to_be_hidden()
         expect(panels.nth(2)).to_be_hidden()
@@ -772,22 +772,40 @@ class TestCodeTabs:
         _force_login(browser_page, live_server, browser_user)
         self._goto(browser_page, live_server, tabbed_pages[0])
 
-        groups = browser_page.locator(".code-tabs")
-        groups.nth(0).get_by_role("tab", name="Python").click()
+        groups = browser_page.locator(".content-tabs")
+        groups.nth(0).get_by_role("tab", name="Linux").click()
 
-        # Both groups switch to Python
+        # Both groups switch to Linux
         expect(
-            groups.nth(0).get_by_role("tab", name="Python")
+            groups.nth(0).get_by_role("tab", name="Linux")
         ).to_have_attribute("aria-selected", "true")
         expect(
-            groups.nth(1).get_by_role("tab", name="Python")
+            groups.nth(1).get_by_role("tab", name="Linux")
         ).to_have_attribute("aria-selected", "true")
         expect(
-            groups.nth(1).locator(".code-block-wrapper").nth(0)
+            groups.nth(1).locator(".content-tab-panel").nth(0)
         ).to_be_hidden()
         expect(
-            groups.nth(1).locator(".code-block-wrapper").nth(1)
+            groups.nth(1).locator(".content-tab-panel").nth(1)
         ).to_be_visible()
+
+    def test_groups_without_label_keep_selection(
+        self, browser_page, live_server, browser_user, tabbed_pages
+    ):
+        """Selecting a tab only switches groups that offer that name."""
+        _force_login(browser_page, live_server, browser_user)
+        self._goto(browser_page, live_server, tabbed_pages[0])
+
+        groups = browser_page.locator(".content-tabs")
+        groups.nth(0).get_by_role("tab", name="Windows").click()
+
+        expect(
+            groups.nth(0).get_by_role("tab", name="Windows")
+        ).to_have_attribute("aria-selected", "true")
+        # The short group has no Windows tab and stays on macOS
+        expect(
+            groups.nth(1).get_by_role("tab", name="macOS")
+        ).to_have_attribute("aria-selected", "true")
 
     def test_selection_persists_across_pages(
         self, browser_page, live_server, browser_user, tabbed_pages
@@ -795,16 +813,31 @@ class TestCodeTabs:
         _force_login(browser_page, live_server, browser_user)
         self._goto(browser_page, live_server, tabbed_pages[0])
 
-        browser_page.locator(".code-tabs").nth(0).get_by_role(
-            "tab", name="JavaScript"
+        browser_page.locator(".content-tabs").nth(0).get_by_role(
+            "tab", name="Windows"
         ).click()
 
         self._goto(browser_page, live_server, tabbed_pages[1])
-        group = browser_page.locator(".code-tabs").nth(0)
-        expect(group.get_by_role("tab", name="JavaScript")).to_have_attribute(
+        group = browser_page.locator(".content-tabs").nth(0)
+        expect(group.get_by_role("tab", name="Windows")).to_have_attribute(
             "aria-selected", "true"
         )
-        expect(group.locator(".code-block-wrapper").nth(2)).to_be_visible()
+        expect(group.locator(".content-tab-panel").nth(2)).to_be_visible()
+
+    def test_keyboard_navigation(
+        self, browser_page, live_server, browser_user, tabbed_pages
+    ):
+        _force_login(browser_page, live_server, browser_user)
+        self._goto(browser_page, live_server, tabbed_pages[0])
+
+        group = browser_page.locator(".content-tabs").nth(0)
+        group.get_by_role("tab", name="macOS").focus()
+        browser_page.keyboard.press("ArrowRight")
+
+        expect(group.get_by_role("tab", name="Linux")).to_have_attribute(
+            "aria-selected", "true"
+        )
+        expect(group.locator(".content-tab-panel").nth(1)).to_be_visible()
 
     def test_tabs_render_in_editor_preview(
         self, browser_page, live_server, browser_user, dir_tree
@@ -824,52 +857,28 @@ class TestCodeTabs:
             browser_page.locator(".editor-tab[data-tab='preview']").click()
 
         preview = browser_page.locator("#tab-preview-content")
-        expect(preview.locator(".code-tabs-bar")).to_be_visible()
+        expect(preview.locator(".content-tabs-bar")).to_be_visible()
         tabs = preview.locator("[role='tab']")
-        expect(tabs).to_have_text(["cURL", "Python", "JavaScript"])
+        expect(tabs).to_have_text(["macOS", "Linux", "Windows"])
         expect(tabs.nth(0)).to_have_attribute("aria-selected", "true")
 
-    def test_unlabeled_tab_click_activates_clicked_tab(
+    def test_code_blocks_inside_tabs_get_copy_button(
         self, browser_page, live_server, browser_user, tabbed_pages
     ):
-        """Bare ``` fences have no language: clicking such a tab must
-        activate the clicked tab, not reset the group to its first tab
-        (regression: index lookup used to require a language)."""
-        _force_login(browser_page, live_server, browser_user)
-        self._goto(browser_page, live_server, tabbed_pages[1])
-
-        plain = browser_page.locator(".code-tabs").nth(1)
-        tabs = plain.locator("[role='tab']")
-        expect(tabs).to_have_text(["Text", "Text"])
-
-        tabs.nth(1).click()
-        expect(tabs.nth(1)).to_have_attribute("aria-selected", "true")
-        expect(plain.locator(".code-block-wrapper").nth(1)).to_be_visible()
-        expect(plain.locator(".code-block-wrapper").nth(0)).to_be_hidden()
-
-        # A language-less selection is local: the labeled group keeps its
-        # own selection.
-        labeled = browser_page.locator(".code-tabs").nth(0)
-        expect(labeled.get_by_role("tab", name="cURL")).to_have_attribute(
-            "aria-selected", "true"
-        )
-
-    def test_copy_button_copies_active_tab(
-        self, browser_page, live_server, browser_user, tabbed_pages
-    ):
+        """Code fences inside tab panels are enhanced like any other."""
         browser_page.context.grant_permissions(
             ["clipboard-read", "clipboard-write"]
         )
         _force_login(browser_page, live_server, browser_user)
         self._goto(browser_page, live_server, tabbed_pages[1])
 
-        group = browser_page.locator(".code-tabs").nth(0)
-        group.get_by_role("tab", name="Python").click()
+        group = browser_page.locator(".content-tabs").nth(1)
+        group.get_by_role("tab", name="Shell").click()
         group.locator(
-            ".code-block-wrapper:not([hidden]) .copy-code-btn"
+            ".content-tab-panel:not([hidden]) .copy-code-btn"
         ).click()
 
         clipboard = browser_page.evaluate(
             "() => navigator.clipboard.readText()"
         )
-        assert "import requests" in clipboard
+        assert "curl -L" in clipboard
