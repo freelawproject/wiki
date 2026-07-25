@@ -1658,6 +1658,35 @@ Use dot notation to access nested objects. If the API returns:
 
 You can write `[[ stats.open ]]` and `[[ stats.closed ]]`.
 
+### Markdown in values
+
+Values are substituted **before** the page is rendered, so markdown
+inside an API value is parsed like any other page content. If the
+API returns:
+
+```json
+{
+  "status": "**degraded** — see [the incident page](https://status.example.com)"
+}
+```
+
+Then `Current status: [[ status ]]` renders with real bold text and
+a working link.
+
+A few things to keep in mind:
+
+- **Inline markdown is the reliable case** (bold, italics, links,
+  inline code). Block-level markdown (lists, headings) only works
+  if the placeholder sits where a block can start — on its own
+  line, as its own paragraph.
+- **There is no escaping.** Characters like `*` and `_` in a value
+  are interpreted as markdown. If a value must appear literally,
+  put the placeholder in inline code — code regions are never
+  substituted.
+- **HTML is sanitized.** Raw HTML in a value passes through the
+  same sanitizer as authored content, so tags like `<script>` are
+  stripped.
+
 ### Unresolved placeholders
 
 If a placeholder doesn't match any key in the JSON (or the key's
