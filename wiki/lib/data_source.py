@@ -28,8 +28,12 @@ _cache_lock = threading.Lock()
 # Matches [[ key ]] or [[ nested.key ]] placeholders
 DATA_VAR_RE = re.compile(r"\[\[\s*([\w.]+)\s*\]\]")
 
-# Protect fenced code blocks and inline code from substitution
-_FENCED_CODE_RE = re.compile(r"```[\s\S]*?```")
+# Protect fenced code blocks and inline code from substitution. The
+# fence pattern is length-aware (a fence closes only on a run at least
+# as long as its opener, per markdown2) so an outer ```` fence wrapping
+# a literal ``` example is protected as one region, not two — a naive
+# ``` matcher left the wrapped content in an unprotected gap.
+_FENCED_CODE_RE = re.compile(r"(`{3,})[\s\S]*?\1`*")
 _INLINE_CODE_RE = re.compile(r"`[^`]+`")
 
 # Safety limits

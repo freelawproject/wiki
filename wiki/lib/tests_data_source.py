@@ -130,6 +130,14 @@ class TestSubstituteDataVariables:
         data = {"key": "replaced"}
         assert substitute_data_variables(content, data) == content
 
+    def test_nested_fence_fully_protected(self):
+        """A ```` fence wrapping a literal ``` example is one protected
+        region — the wrapped placeholder must not sit in an unprotected
+        gap between two naive triple-backtick matches."""
+        content = "````\n```\nUse [[ key ]] to show the count.\n```\n````"
+        data = {"key": "replaced"}
+        assert substitute_data_variables(content, data) == content
+
     def test_inline_code_not_substituted(self):
         content = "Use `[[ key ]]` syntax"
         data = {"key": "replaced"}
