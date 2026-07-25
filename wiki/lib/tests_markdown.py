@@ -13,7 +13,8 @@ from wiki.lib.markdown import (
     _add_nofollow_to_non_public_links,
     _convert_alerts,
     _convert_button_links,
-    _convert_code_tabs,
+    _convert_tab_headings,
+    _convert_tabs,
     extract_all_wiki_slugs,
     extract_slugs_from_internal_urls,
     render_markdown,
@@ -657,79 +658,115 @@ class TestStripMarkdownButtons:
         assert "{button-danger}" not in result
 
 
-class TestConvertCodeTabs:
-    """{% tabs %} groups of code blocks should become tab containers."""
+class TestConvertTabHeadings:
+    """H1 lines inside {% tabs %} regions become {% tab %} markers."""
 
-    PYTHON_PRE = (
-        '<pre><code class="python language-python">import requests\n'
-        "</code></pre>"
-    )
-    CURL_PRE = (
-        '<pre><code class="curl language-curl">curl -L https://x\n'
-        "</code></pre>"
-    )
+    def test_h1_inside_tabs_rewritten(self):
+        md = "{% tabs %}\n# One\nBody.\n{% endtabs %}"
+        out = _convert_tab_headings(md)
+        assert "{% tab One %}" in out
+        assert "# One" not in out
+
+    def test_h1_outside_tabs_untouched(self):
+        md = "# Title\n\n{% tabs %}\n# One\n{% endtabs %}"
+        out = _convert_tab_headings(md)
+        assert out.startswith("# Title")
+        assert "{% tab One %}" in out
+
+    def test_h1_inside_fence_untouched(self):
+        md = "{% tabs %}\n# One\n```\n# comment\n```\n{% endtabs %}"
+        out = _convert_tab_headings(md)
+        assert "{% tab One %}" in out
+        assert "# comment" in out
+        assert "{% tab comment %}" not in out
+
+    def test_h2_not_a_tab(self):
+        md = "{% tabs %}\n# One\n## Sub\n{% endtabs %}"
+        out = _convert_tab_headings(md)
+        assert "## Sub" in out
+
+    def test_closing_hashes_stripped(self):
+        md = "{% tabs %}\n# One #\nBody\n{% endtabs %}"
+        assert "{% tab One %}" in _convert_tab_headings(md)
+
+    def test_markers_inside_fence_ignored(self):
+        md = "```\n{% tabs %}\n# Not a tab\n{% endtabs %}\n```"
+        assert _convert_tab_headings(md) == md
+
+    def test_no_markers_fast_path(self):
+        md = "# Plain page\n\nNo tabs here."
+        assert _convert_tab_headings(md) == md
+
+
+class TestConvertTabs:
+    """{% tabs %} groups with {% tab %} markers become tab containers."""
+
+    ONE = "<p>{% tab One %}</p>\n<p>First body.</p>"
+    TWO = "<p>{% tab Two %}</p>\n<p>Second body.</p>"
+
+    def _group(self, inner):
+        return f"<p>{{% tabs %}}</p>\n{inner}\n<p>{{% endtabs %}}</p>"
 
     def test_basic_group(self):
-        html = (
-            "<p>{% tabs %}</p>\n\n"
-            f"{self.PYTHON_PRE}\n\n{self.CURL_PRE}\n\n"
-            "<p>{% endtabs %}</p>"
-        )
-        result = _convert_code_tabs(html)
-        assert '<div class="code-tabs">' in result
-        assert result.count("<pre>") == 2
-        assert "{% tabs %}" not in result
-        assert "{% endtabs %}" not in result
+        result = _convert_tabs(self._group(f"{self.ONE}\n{self.TWO}"))
+        assert '<div class="content-tabs">' in result
+        assert result.count('class="content-tab-panel"') == 2
+        assert 'data-label="One"' in result
+        assert 'data-label="Two"' in result
+        assert "<p>First body.</p>" in result
+        assert "{%" not in result
 
     def test_marker_spacing_variants(self):
         html = (
-            f"<p>{{%tabs%}}</p>\n{self.PYTHON_PRE}\n<p>{{%  endtabs  %}}</p>"
+            "<p>{%tabs%}</p>\n"
+            "<p>{%  tab  One  %}</p>\n<p>Body.</p>\n"
+            "<p>{%  ENDTABS  %}</p>"
         )
-        result = _convert_code_tabs(html)
-        assert '<div class="code-tabs">' in result
+        result = _convert_tabs(html)
+        assert '<div class="content-tabs">' in result
+        assert 'data-label="One"' in result
         assert "{%" not in result
 
-    def test_single_block_converts(self):
-        html = (
-            f"<p>{{% tabs %}}</p>\n{self.PYTHON_PRE}\n<p>{{% endtabs %}}</p>"
-        )
-        result = _convert_code_tabs(html)
-        assert '<div class="code-tabs">' in result
+    def test_single_tab_converts(self):
+        result = _convert_tabs(self._group(self.ONE))
+        assert '<div class="content-tabs">' in result
+        assert result.count('class="content-tab-panel"') == 1
 
     def test_multiple_groups(self):
-        group = (
-            f"<p>{{% tabs %}}</p>\n{self.PYTHON_PRE}\n<p>{{% endtabs %}}</p>"
-        )
-        html = f"{group}\n<p>Between.</p>\n{group}"
-        result = _convert_code_tabs(html)
-        assert result.count('<div class="code-tabs">') == 2
+        group = self._group(self.ONE)
+        result = _convert_tabs(f"{group}\n<p>Between.</p>\n{group}")
+        assert result.count('<div class="content-tabs">') == 2
         assert "<p>Between.</p>" in result
 
-    def test_non_code_content_left_untouched(self):
-        html = (
-            "<p>{% tabs %}</p>\n"
-            "<p>Stray paragraph.</p>\n"
-            f"{self.PYTHON_PRE}\n"
-            "<p>{% endtabs %}</p>"
-        )
-        assert _convert_code_tabs(html) == html
+    def test_content_before_first_marker_left_untouched(self):
+        html = self._group(f"<p>Stray paragraph.</p>\n{self.ONE}")
+        assert _convert_tabs(html) == html
 
-    def test_content_after_blocks_left_untouched(self):
-        html = (
-            "<p>{% tabs %}</p>\n"
-            f"{self.PYTHON_PRE}\n"
-            "<p>Stray paragraph.</p>\n"
-            "<p>{% endtabs %}</p>"
-        )
-        assert _convert_code_tabs(html) == html
+    def test_no_markers_left_untouched(self):
+        html = self._group("<p>Stray paragraph.</p>")
+        assert _convert_tabs(html) == html
 
     def test_unclosed_marker_left_untouched(self):
-        html = f"<p>{{% tabs %}}</p>\n{self.PYTHON_PRE}"
-        assert _convert_code_tabs(html) == html
+        html = f"<p>{{% tabs %}}</p>\n{self.ONE}"
+        assert _convert_tabs(html) == html
 
     def test_empty_group_left_untouched(self):
         html = "<p>{% tabs %}</p>\n<p>{% endtabs %}</p>"
-        assert _convert_code_tabs(html) == html
+        assert _convert_tabs(html) == html
+
+    def test_empty_label_left_untouched(self):
+        html = self._group("<p>{% tab  %}</p>\n<p>Body.</p>")
+        assert _convert_tabs(html) == html
+
+    def test_label_quote_escaped(self):
+        html = self._group('<p>{% tab Say "hi" %}</p>\n<p>Body.</p>')
+        result = _convert_tabs(html)
+        assert 'data-label="Say &quot;hi&quot;"' in result
+
+    def test_label_tags_stripped(self):
+        html = self._group("<p>{% tab <em>Fancy</em> %}</p>\n<p>Body.</p>")
+        result = _convert_tabs(html)
+        assert 'data-label="Fancy"' in result
 
     def test_unclosed_marker_with_many_blocks_is_fast(self):
         """Regression guard against catastrophic regex backtracking.
@@ -740,53 +777,100 @@ class TestConvertCodeTabs:
         """
         html = "<p>{% tabs %}</p>" + "<pre><code>x</code></pre>" * 40
         start = time.monotonic()
-        assert _convert_code_tabs(html) == html
+        assert _convert_tabs(html) == html
         assert time.monotonic() - start < 1.0
 
 
-class TestCodeTabsEndToEnd:
+class TestContentTabsEndToEnd:
     """Test {% tabs %} rendering through the full render_markdown pipeline."""
 
     def test_tabs_render(self):
         md = (
             "{% tabs %}\n\n"
-            "```python\nimport requests\n```\n\n"
-            "```curl\ncurl -L https://example.com\n```\n\n"
+            "# macOS\n\nInstall with brew.\n\n"
+            "# Linux\n\nInstall with apt.\n\n"
             "{% endtabs %}\n"
         )
         html = render_markdown(md)
-        assert '<div class="code-tabs">' in html
-        assert "language-python" in html
-        assert "language-curl" in html
+        assert '<div class="content-tabs">' in html
+        assert 'data-label="macOS"' in html
+        assert 'data-label="Linux"' in html
+        assert "Install with brew." in html
         assert "{% tabs %}" not in html
 
     def test_mixed_content(self):
         md = (
             "Intro text.\n\n"
-            "{% tabs %}\n\n```python\nx = 1\n```\n\n{% endtabs %}\n\n"
+            "{% tabs %}\n\n# One\n\nBody.\n\n{% endtabs %}\n\n"
             "Outro text.\n"
         )
         html = render_markdown(md)
-        assert '<div class="code-tabs">' in html
+        assert '<div class="content-tabs">' in html
         assert "Intro text." in html
         assert "Outro text." in html
+
+    def test_tab_headings_excluded_from_toc(self):
+        md = (
+            "## Real Section\n\n"
+            "{% tabs %}\n\n# TabName\n\nBody.\n\n{% endtabs %}\n"
+        )
+        html = render_markdown(md)
+        assert "Real Section" in html.toc_html
+        assert "TabName" not in html.toc_html
+        assert "<h1" not in html
+
+    def test_h2_inside_tab_body_renders(self):
+        md = "{% tabs %}\n\n# One\n\n## Inside\n\nBody.\n\n{% endtabs %}\n"
+        html = render_markdown(md)
+        assert "<h2" in html
+        assert 'data-label="One"' in html
+
+    def test_code_fences_inside_tabs(self):
+        md = (
+            "{% tabs %}\n\n"
+            "# Shell\n\n```bash\necho hi\n```\n\n"
+            "# Python\n\n```python\nx = 1\n```\n\n"
+            "{% endtabs %}\n"
+        )
+        html = render_markdown(md)
+        assert '<div class="content-tabs">' in html
+        assert html.count('class="content-tab-panel"') == 2
+        assert "language-bash" in html
+        assert "language-python" in html
+
+    def test_h1_inside_fence_not_a_tab(self):
+        md = "{% tabs %}\n\n# Real\n\n```\n# comment\n```\n\n{% endtabs %}\n"
+        html = render_markdown(md)
+        assert html.count('class="content-tab-panel"') == 1
+        assert "# comment" in html
+
+    def test_content_before_first_heading_left_unconverted(self):
+        md = "{% tabs %}\n\nStray text.\n\n# One\n\nBody.\n\n{% endtabs %}\n"
+        html = render_markdown(md)
+        assert "content-tabs" not in html
+        assert "{% tabs %}" in html
+
+    def test_group_without_headings_left_unconverted(self):
+        md = "{% tabs %}\n\n```python\nx = 1\n```\n\n{% endtabs %}\n"
+        html = render_markdown(md)
+        assert "content-tabs" not in html
+        assert "{% tabs %}" in html
 
     def test_markers_inside_fence_left_untouched(self):
         md = "```\n{% tabs %}\n{% endtabs %}\n```\n"
         html = render_markdown(md)
-        assert "code-tabs" not in html
+        assert "content-tabs" not in html
         assert "{% tabs %}" in html
 
-    def test_text_between_fences_not_converted(self):
-        md = (
-            "{% tabs %}\n\n"
-            "```python\nx = 1\n```\n\n"
-            "Some stray text.\n\n"
-            "{% endtabs %}\n"
-        )
+    def test_label_with_quote_is_escaped(self):
+        md = '{% tabs %}\n\n# Say "hi"\n\nBody.\n\n{% endtabs %}\n'
         html = render_markdown(md)
-        assert "code-tabs" not in html
-        assert "{% tabs %}" in html
+        assert 'data-label="Say &quot;hi&quot;"' in html
+
+    def test_markdown_in_tab_name_stripped(self):
+        md = "{% tabs %}\n\n# **Bold** Name\n\nBody.\n\n{% endtabs %}\n"
+        html = render_markdown(md)
+        assert 'data-label="Bold Name"' in html
 
 
 class TestStripMarkdownCodeTabs:

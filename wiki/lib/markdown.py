@@ -5,6 +5,8 @@ resolved to actual page URLs or shown as red links for missing pages.
 """
 
 import re
+from html import escape as html_escape
+from html import unescape as html_unescape
 from urllib.parse import urlparse
 
 import markdown2
@@ -42,12 +44,29 @@ _BUTTON_LINK_RE = re.compile(
 # Matches a {% tabs %}…{% endtabs %} marker pair (runs on sanitized HTML,
 # where the markers render as bare <p> tags). Deliberately just a single
 # lazy group with no nested quantifiers — regex-based validation of the
-# enclosed <pre> blocks risks exponential backtracking (CodeQL); the
-# "only code blocks between markers" rule is checked by
-# _contains_only_pre_blocks with a linear string scan instead.
-_CODE_TABS_RE = re.compile(
+# enclosed content risks exponential backtracking (CodeQL); structure is
+# validated by splitting on _TAB_MARKER_HTML_RE instead.
+_TABS_RE = re.compile(
     r"<p>\{%\s*tabs\s*%\}</p>(.*?)<p>\{%\s*endtabs\s*%\}</p>",
     re.DOTALL | re.IGNORECASE,
+)
+
+# Matches the {% tab Name %} paragraphs emitted by _convert_tab_headings
+# once markdown rendering wraps them in <p> tags. Name may carry inline
+# HTML (a heading like `# *macOS*`) — tags are stripped on extraction.
+_TAB_MARKER_HTML_RE = re.compile(
+    r"<p>\{%\s*tab\s+(.*?)\s*%\}</p>", re.DOTALL | re.IGNORECASE
+)
+
+# A {% tabs %} or {% endtabs %} line in markdown source (group 1 is the
+# "end" prefix, absent on the opening marker)
+_TABS_BOUNDARY_RE = re.compile(
+    r"^\s*\{%\s*(end)?tabs\s*%\}\s*$", re.IGNORECASE
+)
+
+# An ATX H1 line: exactly one #, required space, optional closing hashes
+_TAB_HEADING_RE = re.compile(
+    r"^ {0,3}#[ \t]+(?P<name>.+?)(?:[ \t]+#+)?[ \t]*$"
 )
 
 _SLUG_CHARS = r"[a-z0-9]+(?:-[a-z0-9]+)*"
@@ -730,42 +749,80 @@ def _convert_button_links(html):
     return _BUTTON_LINK_RE.sub(replace_button, html)
 
 
-def _contains_only_pre_blocks(fragment):
-    """Return True when fragment is one or more <pre>…</pre> blocks.
+def _convert_tab_headings(content):
+    """Rewrite H1 lines inside {% tabs %} regions to {% tab %} markers.
 
-    Only whitespace may separate the blocks. A linear string scan rather
-    than a regex, so pathological inputs can't trigger backtracking.
+    Runs on markdown source, before markdown2, so the tab-name headings
+    never get header ids and never enter the TOC — they are UI labels,
+    not document structure. Each marker is padded with blank lines so it
+    renders as its own ``<p>{% tab Name %}</p>``, which _convert_tabs
+    then turns into a panel boundary.
+
+    A line-by-line scan tracks fence state so H1s inside code blocks
+    (and marker examples shown in fences) are left alone.
     """
-    rest = fragment
-    if not rest:
-        return False
-    while rest:
-        if not rest.startswith("<pre>"):
-            return False
-        end = rest.find("</pre>")
-        if end == -1:
-            return False
-        rest = rest[end + len("</pre>") :].lstrip()
-    return True
+    if "{%" not in content:
+        return content
+
+    out = []
+    in_fence = False
+    in_tabs = False
+    for line in content.split("\n"):
+        if line.lstrip().startswith("```"):
+            in_fence = not in_fence
+            out.append(line)
+            continue
+        if in_fence:
+            out.append(line)
+            continue
+        boundary = _TABS_BOUNDARY_RE.match(line)
+        if boundary:
+            in_tabs = boundary.group(1) is None
+            out.append(line)
+            continue
+        if in_tabs:
+            heading = _TAB_HEADING_RE.match(line)
+            if heading:
+                out.extend(["", f"{{% tab {heading.group('name')} %}}", ""])
+                continue
+        out.append(line)
+    return "\n".join(out)
 
 
-def _convert_code_tabs(html):
-    """Convert {% tabs %}…{% endtabs %} code-fence groups to tab containers.
+def _convert_tabs(html):
+    """Convert {% tabs %}…{% endtabs %} groups to content-tab containers.
 
-    Wraps the enclosed <pre> blocks in <div class="code-tabs">; the tab bar
-    itself is built client-side by code-blocks.js from each block's
-    language-* class. Runs after sanitization so injected HTML is already
-    stripped. Groups containing anything other than code blocks are left
-    untouched, keeping the markers visible as an authoring hint.
+    Splits the region on the ``<p>{% tab Name %}</p>`` markers produced by
+    _convert_tab_headings and wraps each section in a labeled panel div;
+    the tab bar itself is built client-side by code-blocks.js from each
+    panel's data-label. Regions with no tab markers, content before the
+    first marker, or an empty tab name are left untouched, keeping the
+    markers visible as an authoring hint.
     """
 
     def replace_tabs(match):
-        blocks = match.group(1).strip()
-        if not _contains_only_pre_blocks(blocks):
+        parts = _TAB_MARKER_HTML_RE.split(match.group(1))
+        # parts = [before_first_marker, label1, body1, label2, body2, …]
+        if len(parts) < 3 or parts[0].strip():
             return match.group(0)
-        return f'<div class="code-tabs">\n{blocks}\n</div>'
+        panels = []
+        for label_html, body in zip(parts[1::2], parts[2::2]):
+            label = _HTML_TAG_RE.sub("", label_html)
+            label = _WHITESPACE_RE.sub(" ", label).strip()
+            if not label:
+                return match.group(0)
+            # SECURITY: runs post-sanitization, so a quote in the heading
+            # text could otherwise break out of the data-label attribute.
+            # Unescape first — the label text is already entity-encoded
+            # sanitized HTML and would double-escape.
+            attr = html_escape(html_unescape(label))
+            panels.append(
+                f'<div class="content-tab-panel" data-label="{attr}">\n'
+                f"{body.strip()}\n</div>"
+            )
+        return '<div class="content-tabs">\n' + "\n".join(panels) + "\n</div>"
 
-    return _CODE_TABS_RE.sub(replace_tabs, html)
+    return _TABS_RE.sub(replace_tabs, html)
 
 
 def render_markdown(content, viewer=None):
@@ -777,6 +834,7 @@ def render_markdown(content, viewer=None):
     user-facing call site; leave it None only for system/no-viewer contexts.
     """
     content = resolve_wiki_links(content, viewer=viewer)
+    content = _convert_tab_headings(content)
     html = markdown2.markdown(
         content,
         extras={
@@ -808,7 +866,7 @@ def render_markdown(content, viewer=None):
     processed = _add_nofollow_to_non_public_links(sanitized)
     processed = _convert_alerts(processed)
     processed = _convert_button_links(processed)
-    processed = _convert_code_tabs(processed)
+    processed = _convert_tabs(processed)
     result = MarkdownResult(processed)
     result.toc_html = _sanitize(toc) if toc else ""
     return result
