@@ -147,18 +147,29 @@ class TestRenderMarkdownEmphasis:
         html = render_markdown("This is _really_ important.")
         assert "<em>really</em>" in html
 
-    def test_double_underscore_bold_known_limitation(self):
-        # Accepted trade-off of the middle-word-em extra (markdown2 #679):
-        # __double underscore bold__ is not rendered as <strong>. Authors
-        # should use **bold** instead. Documented here so the behavior is
-        # an explicit choice, not a silent regression.
+    def test_double_underscore_bold(self):
+        # markdown2 2.5.4's middle-word-em extra broke __bold__ (#679);
+        # 2.5.5 restored it.
         html = render_markdown("This is __very__ important.")
-        assert "<strong>very</strong>" not in html
+        assert "<strong>very</strong>" in html
 
     def test_star_emphasis_unaffected(self):
         html = render_markdown("Use *stars* and **double stars**.")
         assert "<em>stars</em>" in html
         assert "<strong>double stars</strong>" in html
+
+    def test_two_bold_spans_in_one_paragraph(self):
+        """Regression: markdown2 2.5.4's middle-word-em regex paired the
+        first ** opener with the last closer, turning everything between
+        two bold spans into stray <em>/<strong> soup with visible
+        asterisks. Fixed upstream in 2.5.5."""
+        html = render_markdown(
+            "allow **5** docket alerts for free, and a bonus of **10**."
+        )
+        assert "<strong>5</strong>" in html
+        assert "<strong>10</strong>" in html
+        assert "<em>" not in html
+        assert "*" not in html
 
 
 class TestExtractSlugsFromInternalUrls:

@@ -31,7 +31,7 @@ dependencies = [
   "django-waffle",
   "factory-boy",
   "gunicorn",
-  "markdown2",
+  "markdown2>=2.5.5",
   "nh3",
   "pillow",
   "psycopg[binary,pool]",

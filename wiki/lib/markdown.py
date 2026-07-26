@@ -901,9 +901,9 @@ def render_markdown(content, viewer=None):
             "link-patterns": None,
             # Disallow emphasis in the middle of words so identifiers like
             # PRAY_AND_PAY or snake_case aren't mangled into PRAY<em>AND</em>PAY.
-            # Edge-of-word _italic_, *italic*, and **bold** still work. Known
-            # trade-off (markdown2 #679): __double-underscore bold__ no longer
-            # renders as <strong>; authors should use **bold** instead.
+            # Edge-of-word _italic_, *italic*, **bold**, and __bold__ all
+            # work. Requires markdown2 >= 2.5.5: 2.5.4 broke __bold__
+            # (#679) and mis-paired two **bold** spans in one paragraph.
             "middle-word-em": False,
         },
         link_patterns=[(_AUTOLINK_RE, r"\1")],
