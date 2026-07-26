@@ -308,6 +308,25 @@ class TestPageDataSourceIntegration:
         assert b"<strong>degraded</strong>" in response.content
         assert b'href="https://status.example.com"' in response.content
 
+    def test_bold_wrapped_placeholders_render(self, client, json_server):
+        """Two bold-wrapped substituted values in one sentence must each
+        render as their own <strong> span (regression: markdown2 2.5.4
+        mis-paired the ** markers and leaked literal asterisks)."""
+        url = json_server({"alerts": {"free": 5, "bonus": 10}})
+        page = Page.objects.create(
+            title="Bold Values",
+            content=(
+                "We allow **[[ alerts.free ]]** docket alerts for free, "
+                "and give a bonus of **[[ alerts.bonus ]]**."
+            ),
+            data_source_url=url,
+            data_source_ttl=60,
+        )
+        response = client.get(page.get_absolute_url())
+        assert b"<strong>5</strong>" in response.content
+        assert b"<strong>10</strong>" in response.content
+        assert b"<em>*" not in response.content
+
     def test_html_in_value_is_sanitized(self, client, json_server):
         """Raw HTML arriving via API values goes through the same nh3
         sanitization as authored content."""
