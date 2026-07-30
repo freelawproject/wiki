@@ -7,6 +7,7 @@ from django.core.mail import EmailMessage, send_mail
 from django.core.signing import Signer
 from django.urls import reverse
 
+from wiki.lib.inheritance import resolve_effective_value
 from wiki.lib.permissions import can_view_page
 from wiki.lib.users import display_name, user_by_handle
 from wiki.pages.models import Page, PagePermission
@@ -92,7 +93,11 @@ def notify_subscribers(
 
     signer = Signer()
     base = settings.BASE_URL
-    subject = f'[FLP Wiki] "{page.title}" was {action}'
+    effective_visibility, _ = resolve_effective_value(page, "visibility")
+    visibility_emoji = (
+        "\U0001f310" if effective_visibility == "public" else "\U0001f512"
+    )
+    subject = f'[FLP Wiki] {visibility_emoji} "{page.title}" was {action}'
 
     # A "View" link to a deleted page would 404, and a diff only makes sense
     # for an update between two revisions.
