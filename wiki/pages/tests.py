@@ -46,7 +46,7 @@ from wiki.pages.tasks import (
     sync_page_view_counts,
     update_search_vectors,
 )
-from wiki.pages.views import _extract_mentions
+from wiki.pages.views import _extract_mentions, _move_page_to_directory
 from wiki.subscriptions.models import PageSubscription
 from wiki.subscriptions.tasks import _get_content_snippet
 from wiki.users.models import SystemConfig
@@ -2269,6 +2269,29 @@ class TestBulkPageMove:
         assert b"Not Yours" in r.content
         assert b"Getting Started" in r.content
 
+    def test_get_hides_unviewable_pages_entirely(
+        self, client, user, other_user, page
+    ):
+        """A page the requester can't even view must not appear at all —
+        not its title, not a count — under "won't be moved". Otherwise
+        page_ids becomes an oracle for enumerating private page titles."""
+        secret_page = Page.objects.create(
+            title="Q3 Layoff Plan",
+            slug="q3-layoff-plan",
+            content="x",
+            owner=other_user,
+            created_by=other_user,
+            updated_by=other_user,
+            visibility=Page.Visibility.PRIVATE,
+        )
+        client.force_login(user)
+        r = client.get(
+            reverse("page_bulk_move"),
+            {"page_ids": [page.pk, secret_page.pk]},
+        )
+        assert r.status_code == 200
+        assert b"Q3 Layoff Plan" not in r.content
+
     def test_post_moves_eligible_pages(
         self, client, user, page, sub_directory
     ):
@@ -2346,6 +2369,52 @@ class TestBulkPageMove:
         )
         assert r.status_code == 302
         assert r.url == reverse("root")
+
+    def test_malformed_page_id_does_not_500(self, client, user, page):
+        client.force_login(user)
+        r = client.get(
+            reverse("page_bulk_move"), {"page_ids": ["abc", str(page.pk)]}
+        )
+        assert r.status_code == 200
+        assert b"Getting Started" in r.content
+
+    def test_concurrent_slug_collision_returns_error_not_500(
+        self, monkeypatch, user, sub_directory
+    ):
+        """A slug claimed between the pre-save check and the save itself
+        (e.g. by a concurrent request) must be caught as an IntegrityError,
+        not raised — that would 500 the single-page view, and would abort
+        every other page's move in the same bulk request's transaction."""
+        movable = Page.objects.create(
+            title="Movable",
+            slug="dup",
+            content="x",
+            owner=user,
+            created_by=user,
+            updated_by=user,
+        )
+        Page.objects.create(
+            title="Already There",
+            slug="dup",
+            content="x",
+            directory=sub_directory,
+            owner=user,
+            created_by=user,
+            updated_by=user,
+        )
+        # Simulate the race: the pre-save check finds no conflict (as if
+        # the other page hadn't been created yet at check-time), so the
+        # real save() below hits the unique constraint for real.
+        monkeypatch.setattr(
+            Page.objects, "filter", lambda *a, **k: Page.objects.none()
+        )
+
+        ok, error = _move_page_to_directory(movable, sub_directory)
+
+        assert ok is False
+        assert "already exists" in error
+        movable.refresh_from_db()
+        assert movable.directory is None
 
 
 class TestPagePeople:

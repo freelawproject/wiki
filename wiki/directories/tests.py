@@ -117,6 +117,24 @@ class TestBulkSelectionUI:
         content = r.content.decode()
         assert 'name="page_ids"' not in content
 
+    def test_selection_form_is_get_with_no_csrf_token(
+        self, client, user, page_in_directory, sub_directory
+    ):
+        """The bulk-select form's only control is a GET-submitting
+        button; a csrf token here would serialize into the resulting
+        GET's query string (browsers put every field from a GET-method
+        form into the URL), leaking a live, replayable CSRF token into
+        browser history and server/proxy logs."""
+        client.force_login(user)
+        r = client.get(sub_directory.get_absolute_url())
+        content = r.content.decode()
+        marker = content.index('id="bulk-pages-form"')
+        start = content.rindex("<form", 0, marker)
+        end = content.index("</form>", start)
+        form_html = content[start:end]
+        assert 'method="get"' in form_html
+        assert "csrfmiddlewaretoken" not in form_html
+
 
 class TestDirectoryEdit:
     def test_edit_requires_login(self, client, sub_directory):

@@ -139,8 +139,18 @@
   {# Pages #}
   {% if pages %}
   {% if can_edit %}
-  <form method="post" id="bulk-pages-form" x-data="bulkPageSelect">
-    {% csrf_token %}
+  {% comment %}
+    method="get", no csrf_token: the only submit control this form has
+    is the "Bulk Move…" button below, which only ever navigates to the
+    confirmation page — it doesn't itself change anything. A hidden
+    CSRF token here would have been serialized straight into that GET
+    request's query string (the browser puts every field from a
+    GET-submitted form into the URL), leaking a live, session-valid
+    token into browser history, server/proxy logs, and any outbound
+    Referer header. The actual state-changing POST happens on
+    bulk_move.html's own separately-tokened form.
+  {% endcomment %}
+  <form method="get" id="bulk-pages-form" x-data="bulkPageSelect">
     <input type="hidden" name="next" value="{{ request.get_full_path }}">
   {% endif %}
   {% comment %}
@@ -167,7 +177,7 @@
     </div>
     {% if can_edit %}
     <div class="text-sm flex items-center gap-2" x-show="hasSelection" x-cloak>
-      <button type="submit" formmethod="get" formaction="{% url 'page_bulk_move' %}" class="btn-outline text-sm whitespace-nowrap">Bulk Move…</button>
+      <button type="submit" formaction="{% url 'page_bulk_move' %}" class="btn-outline text-sm whitespace-nowrap">Bulk Move…</button>
     </div>
     {% endif %}
   </div>
