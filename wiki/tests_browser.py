@@ -638,6 +638,47 @@ class TestBulkMoveUI:
         browser_page.locator("a", has_text="Beta Page").first.click()
         browser_page.wait_for_url(f"**{beta_url}")
 
+    def test_select_all_checkbox_appears_only_after_selection(
+        self,
+        browser_page,
+        live_server,
+        browser_user,
+        dir_tree,
+        bulk_move_pages,
+    ):
+        """The select-all checkbox stays hidden (and "Pages" unindented)
+        until a page is checked, so it lines up with "Directories" above
+        it — which has no checkbox of its own."""
+        Directory.objects.create(
+            path="staff/nested",
+            title="Nested",
+            parent=Directory.objects.get(path="staff"),
+            owner=browser_user,
+            created_by=browser_user,
+        )
+        _force_login(browser_page, live_server, browser_user)
+        staff_url = reverse("resolve_path", kwargs={"path": "staff"})
+        browser_page.goto(f"{live_server.url}{staff_url}")
+
+        select_all = browser_page.locator(
+            "input[aria-label='Select all pages']"
+        )
+        pages_heading = browser_page.locator("h2", has_text="Pages")
+        dirs_heading = browser_page.locator("h2", has_text="Directories")
+
+        expect(select_all).to_be_hidden()
+        assert (
+            pages_heading.bounding_box()["x"]
+            == dirs_heading.bounding_box()["x"]
+        )
+
+        browser_page.locator('input[name="page_ids"]').first.check()
+        expect(select_all).to_be_visible()
+        assert (
+            pages_heading.bounding_box()["x"]
+            > dirs_heading.bounding_box()["x"]
+        )
+
 
 @pytest.fixture
 def wiki_link_pages(browser_user, dir_tree):

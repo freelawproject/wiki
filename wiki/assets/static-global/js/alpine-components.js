@@ -183,6 +183,13 @@ document.addEventListener('alpine:init', () => {
     get noneSelected() {
       return this.count === 0
     },
+    // The select-all checkbox is hidden until something's selected, so
+    // "Pages" lines up with "Directories" above it (which has no
+    // checkbox of its own). Once it appears, indent the heading to make
+    // room for it — same left offset as each page's own checkbox below.
+    get headerPaddingClass() {
+      return this.hasSelection ? 'pl-5' : ''
+    },
   }))
 
   // Search tips toggle

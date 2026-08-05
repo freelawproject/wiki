@@ -162,9 +162,9 @@
     natural width and wrap it to two lines, which also causes a shift.
   {% endcomment %}
   <div class="min-h-10 flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
-    <div class="flex items-center gap-2 {% if can_edit %}pl-5{% endif %}">
+    <div class="flex items-center gap-2" {% if can_edit %}:class="headerPaddingClass"{% endif %}>
       {% if can_edit %}
-      <input type="checkbox" x-ref="selectAll" @change="toggleAll" class="accent-primary-600" aria-label="Select all pages">
+      <input type="checkbox" x-ref="selectAll" @change="toggleAll" x-show="hasSelection" x-cloak class="accent-primary-600" aria-label="Select all pages">
       {% endif %}
       <h2 class="text-lg font-semibold font-sans">Pages</h2>
     </div>
