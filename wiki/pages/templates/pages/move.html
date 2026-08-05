@@ -13,13 +13,7 @@
   <form method="post" class="space-y-4">
     {% csrf_token %}
 
-    <div>
-      <label for="id_directory" class="block text-sm font-medium mb-1">Move to directory</label>
-      {{ form.directory }}
-      {% if form.directory.errors %}
-      <p class="text-red-600 dark:text-red-400 text-sm mt-1">{{ form.directory.errors.0 }}</p>
-      {% endif %}
-    </div>
+    {% include "includes/_page_move_fields.html" %}
 
     <div class="flex gap-3">
       <button type="submit" class="btn-primary">Move Page</button>

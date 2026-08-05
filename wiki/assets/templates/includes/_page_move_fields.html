@@ -1,0 +1,7 @@
+    <div>
+      <label for="id_directory" class="block text-sm font-medium mb-1">Move to directory</label>
+      {{ form.directory }}
+      {% if form.directory.errors %}
+      <p class="text-red-600 dark:text-red-400 text-sm mt-1">{{ form.directory.errors.0 }}</p>
+      {% endif %}
+    </div>

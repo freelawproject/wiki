@@ -121,6 +121,68 @@ document.addEventListener('alpine:init', () => {
     get title() {
       return this.pinned ? 'Unpin' : 'Pin'
     },
+    get unpinned() {
+      return !this.pinned
+    },
+  }))
+
+  // Bulk page selection — checkboxes on the directory listing that swap
+  // the sort-controls row for a "Bulk Move…" button once something's
+  // checked. Routing to page_bulk_move is a plain
+  // <button formmethod="get" formaction="..."> submit, not JS; this
+  // component only tracks how many checkboxes are checked.
+  //
+  // IMPORTANT: `recount`/`toggleAll` are invoked from directives on OTHER
+  // elements (each page's checkbox, the select-all checkbox) — neither is
+  // the element `x-data="bulkPageSelect"` is declared on. Alpine's `$el`
+  // always resolves to whichever element the *calling* directive is bound
+  // to, not the x-data root, so using `this.$el` inside these methods
+  // would only ever see that one leaf `<input>` (with no children to
+  // query). `init()` is the one hook Alpine always calls with `$el` bound
+  // to the x-data root itself, so capture it there as `this.root` and use
+  // that everywhere else.
+  Alpine.data('bulkPageSelect', () => ({
+    count: 0,
+    root: null,
+    init() {
+      this.root = this.$el
+      this.recount()
+    },
+    recount() {
+      var boxes = Array.from(this.root.querySelectorAll('input[name="page_ids"]'))
+      var checked = boxes.filter(function (cb) { return cb.checked }).length
+      this.count = checked
+
+      var selectAll = this.$refs.selectAll
+      if (!selectAll) return
+      if (checked === 0) {
+        selectAll.checked = false
+        selectAll.indeterminate = false
+      } else if (checked === boxes.length) {
+        selectAll.checked = true
+        selectAll.indeterminate = false
+      } else {
+        // Semi-checked: shown as checked+indeterminate so a click flips
+        // `checked` to false (native checkbox behavior toggles whatever
+        // it currently is) — read below in toggleAll() to clear everyone
+        // rather than selecting everyone.
+        selectAll.checked = true
+        selectAll.indeterminate = true
+      }
+    },
+    toggleAll() {
+      var checked = this.$refs.selectAll.checked
+      this.root.querySelectorAll('input[name="page_ids"]').forEach(function (cb) {
+        cb.checked = checked
+      })
+      this.recount()
+    },
+    get hasSelection() {
+      return this.count > 0
+    },
+    get noneSelected() {
+      return this.count === 0
+    },
   }))
 
   // Search tips toggle
