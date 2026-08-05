@@ -591,6 +591,104 @@ class TestBulkMoveUI:
             p.refresh_from_db()
             assert p.directory.path == "docs"
 
+    def test_card_background_not_clickable_while_selecting(
+        self,
+        browser_page,
+        live_server,
+        browser_user,
+        dir_tree,
+        bulk_move_pages,
+    ):
+        """A page card's title link stays clickable, but the rest of the
+        card shouldn't be — otherwise a slightly-off click while checking
+        several boxes in a row navigates away by accident."""
+        _force_login(browser_page, live_server, browser_user)
+        staff_url = reverse("resolve_path", kwargs={"path": "staff"})
+        beta_page = bulk_move_pages[1]
+        beta_url = beta_page.get_absolute_url()
+        browser_page.goto(f"{live_server.url}{staff_url}")
+
+        card = browser_page.locator(".card", has_text="Beta Page")
+        card_box = card.bounding_box()
+        # A point inside the card's fixed py-3.5 top padding — no child
+        # element reaches into that strip (they're all vertically
+        # centered), so it's genuine background regardless of how wide
+        # any text inside happens to render. Deriving this from text
+        # bounding boxes instead (e.g. the gap next to the timestamp)
+        # is what broke on CI: slightly different font metrics there
+        # shifted the computed point onto the title link.
+        bg_x = card_box["x"] + card_box["width"] / 2
+        bg_y = card_box["y"] + 5
+
+        # With nothing selected, the whole card is a click target.
+        browser_page.mouse.click(bg_x, bg_y)
+        browser_page.wait_for_url(f"**{beta_url}")
+
+        # Back on the listing, select a page — the background click
+        # target should now be disabled.
+        browser_page.goto(f"{live_server.url}{staff_url}")
+        checkbox = browser_page.locator('input[name="page_ids"]').first
+        checkbox.check()
+        # Wait for Alpine's reactive update (hiding the overlay) to
+        # actually land before clicking — checking the box doesn't wait
+        # for its @change handler's DOM update to finish, and on a
+        # slower runner the click can land before x-show flips the
+        # overlay to hidden. The Bulk Move button reacts to the exact
+        # same hasSelection state, so waiting for it doubles as a
+        # barrier for the overlay's update too.
+        move_button = browser_page.get_by_role("button", name="Bulk Move…")
+        expect(move_button).to_be_visible()
+
+        browser_page.mouse.click(bg_x, bg_y)
+        browser_page.wait_for_timeout(300)
+        assert browser_page.url == f"{live_server.url}{staff_url}"
+        expect(checkbox).to_be_checked()
+
+        # The title text itself is still clickable.
+        browser_page.locator("a", has_text="Beta Page").first.click()
+        browser_page.wait_for_url(f"**{beta_url}")
+
+    def test_select_all_checkbox_appears_only_after_selection(
+        self,
+        browser_page,
+        live_server,
+        browser_user,
+        dir_tree,
+        bulk_move_pages,
+    ):
+        """The select-all checkbox stays hidden (and "Pages" unindented)
+        until a page is checked, so it lines up with "Directories" above
+        it — which has no checkbox of its own."""
+        Directory.objects.create(
+            path="staff/nested",
+            title="Nested",
+            parent=Directory.objects.get(path="staff"),
+            owner=browser_user,
+            created_by=browser_user,
+        )
+        _force_login(browser_page, live_server, browser_user)
+        staff_url = reverse("resolve_path", kwargs={"path": "staff"})
+        browser_page.goto(f"{live_server.url}{staff_url}")
+
+        select_all = browser_page.locator(
+            "input[aria-label='Select all pages']"
+        )
+        pages_heading = browser_page.locator("h2", has_text="Pages")
+        dirs_heading = browser_page.locator("h2", has_text="Directories")
+
+        expect(select_all).to_be_hidden()
+        assert (
+            pages_heading.bounding_box()["x"]
+            == dirs_heading.bounding_box()["x"]
+        )
+
+        browser_page.locator('input[name="page_ids"]').first.check()
+        expect(select_all).to_be_visible()
+        assert (
+            pages_heading.bounding_box()["x"]
+            > dirs_heading.bounding_box()["x"]
+        )
+
 
 @pytest.fixture
 def wiki_link_pages(browser_user, dir_tree):

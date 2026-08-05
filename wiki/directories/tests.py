@@ -117,6 +117,24 @@ class TestBulkSelectionUI:
         content = r.content.decode()
         assert 'name="page_ids"' not in content
 
+    def test_select_all_checkbox_wired_to_appear_on_selection(
+        self, client, user, page_in_directory, sub_directory
+    ):
+        """The select-all checkbox stays hidden until a page is checked
+        (so "Pages" lines up with "Directories" above it, which has no
+        checkbox) — this only checks the reactive wiring is present;
+        TestBulkMoveUI in tests_browser.py verifies the actual show/hide
+        and alignment in a real browser."""
+        client.force_login(user)
+        r = client.get(sub_directory.get_absolute_url())
+        content = r.content.decode()
+        marker = content.index('aria-label="Select all pages"')
+        tag_start = content.rindex("<input", 0, marker)
+        tag_end = content.index(">", marker)
+        checkbox_html = content[tag_start:tag_end]
+        assert 'x-show="hasSelection"' in checkbox_html
+        assert "x-cloak" in checkbox_html
+
     def test_selection_form_is_get_with_no_csrf_token(
         self, client, user, page_in_directory, sub_directory
     ):

@@ -162,9 +162,9 @@
     natural width and wrap it to two lines, which also causes a shift.
   {% endcomment %}
   <div class="min-h-10 flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
-    <div class="flex items-center gap-2 {% if can_edit %}pl-5{% endif %}">
+    <div class="flex items-center gap-2" {% if can_edit %}:class="headerPaddingClass"{% endif %}>
       {% if can_edit %}
-      <input type="checkbox" x-ref="selectAll" @change="toggleAll" class="accent-primary-600" aria-label="Select all pages">
+      <input type="checkbox" x-ref="selectAll" @change="toggleAll" x-show="hasSelection" x-cloak class="accent-primary-600" aria-label="Select all pages">
       {% endif %}
       <h2 class="text-lg font-semibold font-sans">Pages</h2>
     </div>
@@ -211,14 +211,23 @@
         </svg>
         {% endif %}
       {% endif %}
-      <a href="{{ page.get_absolute_url }}" class="flex-1 min-w-0 no-underline after:absolute after:inset-0">
-        <span class="font-medium text-gray-900 dark:text-gray-100">{{ page.title }}</span>
+      <div class="flex-1 min-w-0">
+        <a href="{{ page.get_absolute_url }}" class="relative z-10 font-medium text-gray-900 dark:text-gray-100 no-underline hover:underline">{{ page.title }}</a>
         <c-visibility-badge visibility="{{ page.visibility }}" />
         <c-domain-access-badges :domains="page.access_domains" />
         <span class="text-sm text-gray-400 dark:text-gray-500 ml-2">
           {{ page.updated_at|timesince }} ago
         </span>
-      </a>
+      </div>
+      {% comment %}
+        Whole-card click target — a separate overlay, not part of the
+        title link above, so it can be turned off independently. While
+        a selection is active it's hidden, leaving only the title text
+        itself clickable; this stops a checkbox-selecting user from
+        accidentally navigating away by clicking the card background
+        between checkboxes.
+      {% endcomment %}
+      <a href="{{ page.get_absolute_url }}" class="absolute inset-0" aria-hidden="true" tabindex="-1" {% if can_edit %}x-show="noneSelected"{% endif %}></a>
       {% if can_edit %}
       <button type="button" @click="toggle" class="relative z-10 text-gray-400 hover:text-primary-500 dark:text-gray-500 dark:hover:text-primary-400 p-1 flex-shrink-0" x-bind:title="title">
         <svg class="w-4 h-4" viewBox="0 0 16 16" fill="currentColor">

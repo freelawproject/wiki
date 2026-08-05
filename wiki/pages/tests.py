@@ -2269,6 +2269,32 @@ class TestBulkPageMove:
         assert b"Not Yours" in r.content
         assert b"Getting Started" in r.content
 
+    def test_get_preselects_source_directory_in_dropdown(
+        self, client, user, page_in_directory, sub_directory
+    ):
+        """The checkboxes that build this selection only ever come from
+        one directory's listing, so the destination dropdown should
+        default to it — instead of repeating it next to every page."""
+        client.force_login(user)
+        r = client.get(
+            reverse("page_bulk_move"),
+            {"page_ids": [page_in_directory.pk]},
+        )
+        assert r.status_code == 200
+        content = r.content.decode()
+        option = re.search(
+            rf'<option value="{sub_directory.pk}"[^>]*>', content
+        )
+        assert option is not None
+        assert "selected" in option.group()
+        # No longer repeated next to the page's title in the "Moving:"
+        # list (the destination dropdown's own option label legitimately
+        # mentions the path elsewhere on the page, so scope the check).
+        moving_list = content[
+            content.index("Moving:") : content.index("</ul>")
+        ]
+        assert sub_directory.path not in moving_list
+
     def test_get_hides_unviewable_pages_entirely(
         self, client, user, other_user, page
     ):
