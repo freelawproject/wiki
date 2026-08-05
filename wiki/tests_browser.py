@@ -629,6 +629,15 @@ class TestBulkMoveUI:
         browser_page.goto(f"{live_server.url}{staff_url}")
         checkbox = browser_page.locator('input[name="page_ids"]').first
         checkbox.check()
+        # Wait for Alpine's reactive update (hiding the overlay) to
+        # actually land before clicking — checking the box doesn't wait
+        # for its @change handler's DOM update to finish, and on a
+        # slower runner the click can land before x-show flips the
+        # overlay to hidden. The Bulk Move button reacts to the exact
+        # same hasSelection state, so waiting for it doubles as a
+        # barrier for the overlay's update too.
+        move_button = browser_page.get_by_role("button", name="Bulk Move…")
+        expect(move_button).to_be_visible()
 
         browser_page.mouse.click(bg_x, bg_y)
         browser_page.wait_for_timeout(300)
