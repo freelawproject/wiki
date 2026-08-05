@@ -1146,8 +1146,14 @@ def page_bulk_move(request):
     # have changed between the GET and the POST.
     eligible, ineligible = _split_by_administer(request.user, pages)
 
+    # The checkboxes that produce this selection only ever exist on one
+    # directory's listing at a time, so every selected page shares the
+    # same source directory — pre-select it in the destination dropdown
+    # instead of repeating it next to every page in the list below.
+    source_directory = pages[0].directory if pages else None
     form = PageMoveForm(
         request.POST if request.method == "POST" else None,
+        initial={"directory": source_directory},
         user=request.user,
     )
 

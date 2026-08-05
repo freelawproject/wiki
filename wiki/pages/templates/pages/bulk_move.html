@@ -25,12 +25,7 @@
     <p class="text-sm text-gray-500 dark:text-gray-400 mb-2">Moving:</p>
     <ul class="space-y-1">
       {% for page in eligible_pages %}
-      <li>
-        {{ page.title }}
-        <span class="text-sm text-gray-400 dark:text-gray-500">
-          {% if page.directory %}/{{ page.directory.path }}{% else %}/ (Root){% endif %}
-        </span>
-      </li>
+      <li>{{ page.title }}</li>
       {% endfor %}
     </ul>
   </div>
