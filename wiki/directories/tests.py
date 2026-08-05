@@ -88,6 +88,36 @@ class TestDirectoryDetail:
         assert r.status_code == 404
 
 
+class TestBulkSelectionUI:
+    """Checkbox selection + Bulk Move button on the directory listing."""
+
+    def test_checkboxes_shown_for_editor(
+        self, client, user, page_in_directory, sub_directory
+    ):
+        client.force_login(user)
+        r = client.get(sub_directory.get_absolute_url())
+        content = r.content.decode()
+        assert 'name="page_ids"' in content
+        assert 'aria-label="Select all pages"' in content
+        assert reverse("page_bulk_move") in content
+
+    def test_checkboxes_hidden_for_non_editor(
+        self, client, other_user, page_in_directory, sub_directory
+    ):
+        client.force_login(other_user)
+        r = client.get(sub_directory.get_absolute_url())
+        content = r.content.decode()
+        assert 'name="page_ids"' not in content
+        assert reverse("page_bulk_move") not in content
+
+    def test_checkboxes_hidden_for_anonymous(
+        self, client, page_in_directory, sub_directory
+    ):
+        r = client.get(sub_directory.get_absolute_url())
+        content = r.content.decode()
+        assert 'name="page_ids"' not in content
+
+
 class TestDirectoryEdit:
     def test_edit_requires_login(self, client, sub_directory):
         r = client.get(

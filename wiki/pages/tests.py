@@ -2243,6 +2243,111 @@ class TestPagePermissions:
         assert page.content == "Group edited"
 
 
+class TestBulkPageMove:
+    def test_get_requires_login(self, client, page):
+        r = client.get(reverse("page_bulk_move"), {"page_ids": [page.pk]})
+        assert r.status_code == 302
+        assert reverse("login") in r.url
+
+    def test_get_shows_eligible_and_ineligible(
+        self, client, user, other_user, page
+    ):
+        other_page = Page.objects.create(
+            title="Not Yours",
+            slug="not-yours-move",
+            content="x",
+            owner=other_user,
+            created_by=other_user,
+            updated_by=other_user,
+        )
+        client.force_login(user)
+        r = client.get(
+            reverse("page_bulk_move"),
+            {"page_ids": [page.pk, other_page.pk]},
+        )
+        assert r.status_code == 200
+        assert b"Not Yours" in r.content
+        assert b"Getting Started" in r.content
+
+    def test_post_moves_eligible_pages(
+        self, client, user, page, sub_directory
+    ):
+        client.force_login(user)
+        r = client.post(
+            reverse("page_bulk_move"),
+            {
+                "page_ids": [page.pk],
+                "directory": sub_directory.pk,
+                "next": reverse("root"),
+            },
+        )
+        assert r.status_code == 302
+        page.refresh_from_db()
+        assert page.directory == sub_directory
+
+    def test_post_skips_ineligible_pages(
+        self, client, user, other_user, page, sub_directory
+    ):
+        other_page = Page.objects.create(
+            title="Not Yours",
+            slug="not-yours-move-2",
+            content="x",
+            owner=other_user,
+            created_by=other_user,
+            updated_by=other_user,
+        )
+        client.force_login(user)
+        r = client.post(
+            reverse("page_bulk_move"),
+            {
+                "page_ids": [page.pk, other_page.pk],
+                "directory": sub_directory.pk,
+                "next": reverse("root"),
+            },
+        )
+        assert r.status_code == 302
+        page.refresh_from_db()
+        other_page.refresh_from_db()
+        assert page.directory == sub_directory
+        assert other_page.directory is None
+
+    def test_post_reports_slug_collision_without_500(
+        self, client, user, page, page_in_directory, sub_directory
+    ):
+        # page_in_directory already occupies "coding-standards" in
+        # sub_directory; moving a same-slugged page there should be
+        # skipped and reported, not raise an IntegrityError.
+        page.slug = "coding-standards"
+        page.save()
+        client.force_login(user)
+        r = client.post(
+            reverse("page_bulk_move"),
+            {
+                "page_ids": [page.pk],
+                "directory": sub_directory.pk,
+                "next": reverse("root"),
+            },
+            follow=True,
+        )
+        assert r.status_code == 200
+        page.refresh_from_db()
+        assert page.directory is None
+        assert b"Skipped" in r.content
+
+    def test_open_redirect_falls_back_to_root(self, client, user, page):
+        client.force_login(user)
+        r = client.post(
+            reverse("page_bulk_move"),
+            {
+                "page_ids": [page.pk],
+                "directory": "",
+                "next": "https://evil.example.com/",
+            },
+        )
+        assert r.status_code == 302
+        assert r.url == reverse("root")
+
+
 class TestPagePeople:
     def test_creator_shown_on_detail(self, client, page):
         r = client.get(page.get_absolute_url())
