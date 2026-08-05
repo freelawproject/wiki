@@ -591,6 +591,53 @@ class TestBulkMoveUI:
             p.refresh_from_db()
             assert p.directory.path == "docs"
 
+    def test_card_background_not_clickable_while_selecting(
+        self,
+        browser_page,
+        live_server,
+        browser_user,
+        dir_tree,
+        bulk_move_pages,
+    ):
+        """A page card's title link stays clickable, but the rest of the
+        card shouldn't be — otherwise a slightly-off click while checking
+        several boxes in a row navigates away by accident."""
+        _force_login(browser_page, live_server, browser_user)
+        staff_url = reverse("resolve_path", kwargs={"path": "staff"})
+        beta_page = bulk_move_pages[1]
+        beta_url = beta_page.get_absolute_url()
+        browser_page.goto(f"{live_server.url}{staff_url}")
+
+        card = browser_page.locator(".card", has_text="Beta Page")
+        card_box = card.bounding_box()
+        timestamp = card.locator("span", has_text="ago")
+        ts_box = timestamp.bounding_box()
+        pin_button = card.locator("button")
+        pin_box = pin_button.bounding_box()
+        # Midpoint of the empty gap between the timestamp and the pin
+        # button — genuine card background, not any interactive element.
+        bg_x = (ts_box["x"] + ts_box["width"] + pin_box["x"]) / 2
+        bg_y = card_box["y"] + card_box["height"] / 2
+
+        # With nothing selected, the whole card is a click target.
+        browser_page.mouse.click(bg_x, bg_y)
+        browser_page.wait_for_url(f"**{beta_url}")
+
+        # Back on the listing, select a page — the background click
+        # target should now be disabled.
+        browser_page.goto(f"{live_server.url}{staff_url}")
+        checkbox = browser_page.locator('input[name="page_ids"]').first
+        checkbox.check()
+
+        browser_page.mouse.click(bg_x, bg_y)
+        browser_page.wait_for_timeout(300)
+        assert browser_page.url == f"{live_server.url}{staff_url}"
+        expect(checkbox).to_be_checked()
+
+        # The title text itself is still clickable.
+        browser_page.locator("a", has_text="Beta Page").first.click()
+        browser_page.wait_for_url(f"**{beta_url}")
+
 
 @pytest.fixture
 def wiki_link_pages(browser_user, dir_tree):
