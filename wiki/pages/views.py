@@ -11,12 +11,13 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
 from django.contrib.auth.views import redirect_to_login
 from django.core.paginator import Paginator
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import Q
 from django.http import FileResponse, Http404, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils.html import escape
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.utils.text import get_valid_filename
 from django.views.decorators.cache import never_cache
 from django.views.decorators.csrf import csrf_exempt
@@ -756,6 +757,107 @@ def page_edit(request, path):
     )
 
 
+def _resolve_bulk_pages(data):
+    """Resolve a bulk action's ``page_ids`` into ``Page`` objects.
+
+    ``data`` is a QueryDict — ``request.GET`` for the confirmation-page
+    views, ``request.POST`` for the direct-action and submit views. Returns
+    ``(pages, next_url)``; ``next_url`` is unvalidated — pass it through
+    ``_safe_next`` before redirecting.
+    """
+    ids = []
+    for raw_id in data.getlist("page_ids"):
+        try:
+            ids.append(int(raw_id))
+        except (TypeError, ValueError):
+            # Malformed input (hand-crafted request, stale form, etc.) —
+            # drop it rather than letting Page.pk's int coercion 500 on
+            # the whole request.
+            continue
+    pages = list(Page.objects.filter(pk__in=ids, is_deleted=False))
+    return pages, data.get("next", "")
+
+
+def _safe_next(request, next_url):
+    """Validate a bulk action's ``next`` redirect target, or fall back."""
+    if url_has_allowed_host_and_scheme(
+        next_url,
+        allowed_hosts={request.get_host()},
+        require_https=request.is_secure(),
+    ):
+        return next_url
+    return reverse("root")
+
+
+def _split_by_administer(user, pages):
+    """Split pages into ones the user does/doesn't administer.
+
+    Used by the bulk Move confirmation view so the user sees which
+    selected pages are actually eligible *before* filling out the form —
+    rather than finding out after submitting. Callers must filter to
+    pages the user can *view* first — this only decides movable-vs-not
+    among pages already known to be visible to them.
+    """
+    eligible = [p for p in pages if can_administer_page(user, p)]
+    ineligible = [p for p in pages if p not in eligible]
+    return eligible, ineligible
+
+
+def _flash_skip_summary(request, skipped):
+    """Flash a capped, comma-joined warning listing skipped items."""
+    preview = ", ".join(skipped[:5])
+    if len(skipped) > 5:
+        preview += "…"
+    messages.warning(request, f"Skipped {len(skipped)}: {preview}")
+
+
+def _move_page_to_directory(page, new_directory):
+    """Move a page to ``new_directory``, checking for path/slug collisions.
+
+    Shared by the single-page and bulk Move views. Returns ``(True, None)``
+    on success, or ``(False, error_message)`` if the destination already
+    has a directory or a page at that slug.
+    """
+    if page_path_conflicts_with_directory(page.slug, new_directory):
+        return False, (
+            "A directory already exists at that path. "
+            "Rename the page or choose a different directory."
+        )
+
+    # Under dir-scoped slugs, the destination might already have a page
+    # with the same slug — saving would raise IntegrityError. Check first
+    # and surface it as a normal error instead of a 500; this is the fast
+    # path that catches the case in the vast majority of requests.
+    if (
+        Page.objects.filter(directory=new_directory, slug=page.slug)
+        .exclude(pk=page.pk)
+        .exists()
+    ):
+        return False, (
+            "A page with this slug already exists in the destination "
+            "directory. Rename the page before moving it."
+        )
+
+    original_directory = page.directory
+    page.directory = new_directory
+    try:
+        # A nested atomic() gives this its own savepoint: if a concurrent
+        # request claims the same slug in new_directory between the check
+        # above and this save, only this page's savepoint rolls back — not
+        # the bulk view's outer transaction.atomic(), which would otherwise
+        # get poisoned and abort every other page's move in the same
+        # request.
+        with transaction.atomic():
+            page.save()
+    except IntegrityError:
+        page.directory = original_directory
+        return False, (
+            "A page with this slug already exists in the destination "
+            "directory. Rename the page before moving it."
+        )
+    return True, None
+
+
 @login_required
 @ratelimit_page_write
 def page_move(request, path):
@@ -781,40 +883,15 @@ def page_move(request, path):
 
     if request.method == "POST" and form.is_valid():
         new_directory = form.cleaned_data["directory"]
-
-        if page_path_conflicts_with_directory(page.slug, new_directory):
-            messages.error(
-                request,
-                "A directory already exists at that path. "
-                "Rename the page or choose a different directory.",
-            )
+        ok, error = _move_page_to_directory(page, new_directory)
+        if not ok:
+            messages.error(request, error)
             return render(
                 request,
                 "pages/move.html",
                 {"form": form, "page": page},
             )
 
-        # Under dir-scoped slugs, the destination might already have a
-        # page with the same slug — saving would raise IntegrityError.
-        # Surface it as a form error instead of a 500.
-        if (
-            Page.objects.filter(directory=new_directory, slug=page.slug)
-            .exclude(pk=page.pk)
-            .exists()
-        ):
-            messages.error(
-                request,
-                "A page with this slug already exists in the destination "
-                "directory. Rename the page before moving it.",
-            )
-            return render(
-                request,
-                "pages/move.html",
-                {"form": form, "page": page},
-            )
-
-        page.directory = new_directory
-        page.save()
         messages.success(
             request,
             f'Moved "{page.title}" to /{new_directory.path}.'
@@ -893,6 +970,58 @@ def page_delete(request, path):
     )
 
 
+def _resolve_permission_target(target_type, form):
+    """Resolve a validated PagePermissionForm's target into grant kwargs.
+
+    Independent of any particular page, so bulk callers can resolve once
+    and reuse it across many pages instead of re-resolving per page.
+    Returns ``(lookup, defaults, label)`` — ``lookup``/``defaults`` are the
+    kwargs to pass to ``PagePermission.objects.get_or_create`` — or
+    ``(None, None, error_message)`` if the target itself is missing or
+    unresolvable.
+    """
+    if target_type == "group":
+        group = form.cleaned_data.get("group")
+        if not group:
+            return None, None, "Please select a group."
+        return {"group": group}, {"user": None}, group.name
+
+    if target_type == "domain":
+        domain = form.cleaned_data.get("allowed_domain")
+        if not domain:
+            return None, None, "Please select a domain."
+        return {"grant_domain": domain.domain}, {"user": None}, domain.domain
+
+    username = form.cleaned_data.get("username", "").strip()
+    if not username:
+        return None, None, "Please enter a username."
+    user = user_by_handle(username)
+    if not user:
+        return None, None, f'No user found with username "{username}".'
+    return {"user": user}, {}, username
+
+
+def _grant_page_permission(page, target_type, form):
+    """Grant one permission to a page from a validated PagePermissionForm.
+
+    Shared by the single-page and bulk Permissions views. Returns
+    ``(result, label)``: ``result`` is ``"granted"`` (new grant created),
+    ``"already"`` (the target already had this access), or ``"invalid"``
+    (the target field itself was missing/unresolvable). ``label`` is the
+    bare target name (group name / domain / username) on success, or an
+    error message on ``"invalid"``.
+    """
+    perm_type = form.cleaned_data["permission_type"]
+    lookup, defaults, label = _resolve_permission_target(target_type, form)
+    if lookup is None:
+        return "invalid", label
+
+    _, created = PagePermission.objects.get_or_create(
+        page=page, permission_type=perm_type, defaults=defaults, **lookup
+    )
+    return ("granted" if created else "already"), label
+
+
 @login_required
 def page_permissions(request, path):
     """Manage permissions for a page."""
@@ -924,77 +1053,38 @@ def page_permissions(request, path):
     if request.method == "POST" and form.is_valid():
         target_type = request.POST.get("target_type", "user")
         perm_type = form.cleaned_data["permission_type"]
+        result, label = _grant_page_permission(page, target_type, form)
 
-        if target_type == "group":
-            group = form.cleaned_data.get("group")
-            if group:
-                _, created = PagePermission.objects.get_or_create(
-                    page=page,
-                    group=group,
-                    permission_type=perm_type,
-                    defaults={"user": None},
+        if result == "invalid":
+            messages.error(request, label)
+        elif target_type == "group":
+            if result == "granted":
+                messages.success(
+                    request, f"Granted {perm_type} access to group {label}."
                 )
-                if created:
-                    messages.success(
-                        request,
-                        f"Granted {perm_type} access to group {group.name}.",
-                    )
-                else:
-                    messages.info(
-                        request,
-                        f"Group {group.name} already has {perm_type} access.",
-                    )
             else:
-                messages.error(request, "Please select a group.")
+                messages.info(
+                    request, f"Group {label} already has {perm_type} access."
+                )
         elif target_type == "domain":
-            domain = form.cleaned_data.get("allowed_domain")
-            if domain:
-                _, created = PagePermission.objects.get_or_create(
-                    page=page,
-                    grant_domain=domain.domain,
-                    permission_type=perm_type,
-                    defaults={"user": None},
+            if result == "granted":
+                messages.success(
+                    request,
+                    f"Granted {perm_type} access to everyone @{label}.",
                 )
-                if created:
-                    messages.success(
-                        request,
-                        f"Granted {perm_type} access to everyone "
-                        f"@{domain.domain}.",
-                    )
-                else:
-                    messages.info(
-                        request,
-                        f"@{domain.domain} already has {perm_type} access.",
-                    )
             else:
-                messages.error(request, "Please select a domain.")
+                messages.info(
+                    request, f"@{label} already has {perm_type} access."
+                )
         else:
-            username = form.cleaned_data.get("username", "").strip()
-            if not username:
-                messages.error(request, "Please enter a username.")
+            if result == "granted":
+                messages.success(
+                    request, f"Granted {perm_type} access to {label}."
+                )
             else:
-                user = user_by_handle(username)
-                if not user:
-                    messages.error(
-                        request,
-                        f'No user found with username "{username}".',
-                    )
-                else:
-                    _, created = PagePermission.objects.get_or_create(
-                        page=page,
-                        user=user,
-                        permission_type=perm_type,
-                    )
-                    if created:
-                        messages.success(
-                            request,
-                            f"Granted {perm_type} access to {username}.",
-                        )
-                    else:
-                        messages.info(
-                            request,
-                            f"{username} already has {perm_type} access.",
-                        )
+                messages.info(
+                    request, f"{label} already has {perm_type} access."
+                )
 
         return redirect(
             reverse(
@@ -1026,6 +1116,72 @@ def page_permissions(request, path):
             "user_permissions": user_perms,
             "group_permissions": group_perms,
             "domain_permissions": domain_perms,
+        },
+    )
+
+
+@login_required
+@ratelimit_page_write
+def page_bulk_move(request):
+    """Move multiple pages to a different directory.
+
+    GET renders a confirmation page showing which selected pages are
+    actually eligible (owner rights) before asking for a destination;
+    POST (from that page) performs the move. Same GET-then-POST shape as
+    the single-page ``page_move`` view above.
+    """
+    data = request.POST if request.method == "POST" else request.GET
+    pages, next_url = _resolve_bulk_pages(data)
+    next_url = _safe_next(request, next_url)
+
+    # Drop anything the user can't even view before it's ever shown or
+    # split — mirrors the can_view_page 404 gate every single-page view
+    # in this file has. Silent, not reported as "skipped": a page you
+    # can't view should be indistinguishable from a page ID that doesn't
+    # exist, so its title never renders under "won't be moved" either.
+    pages = [p for p in pages if can_view_page(request.user, p)]
+
+    # Re-derive eligibility from scratch on every request rather than
+    # trusting the confirmation page's hidden fields — permissions may
+    # have changed between the GET and the POST.
+    eligible, ineligible = _split_by_administer(request.user, pages)
+
+    form = PageMoveForm(
+        request.POST if request.method == "POST" else None,
+        user=request.user,
+    )
+
+    if request.method == "POST" and form.is_valid():
+        new_directory = form.cleaned_data["directory"]
+        moved = 0
+        skipped = [f"{p.title} (no permission)" for p in ineligible]
+        with transaction.atomic():
+            for page in eligible:
+                ok, error = _move_page_to_directory(page, new_directory)
+                if ok:
+                    moved += 1
+                else:
+                    skipped.append(f"{page.title} ({error})")
+
+        if moved:
+            messages.success(
+                request,
+                f"Moved {moved} page(s) to /{new_directory.path}."
+                if new_directory
+                else f"Moved {moved} page(s) to root.",
+            )
+        if skipped:
+            _flash_skip_summary(request, skipped)
+        return redirect(next_url)
+
+    return render(
+        request,
+        "pages/bulk_move.html",
+        {
+            "form": form,
+            "eligible_pages": eligible,
+            "ineligible_pages": ineligible,
+            "next": next_url,
         },
     )
 

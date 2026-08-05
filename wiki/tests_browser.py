@@ -515,6 +515,84 @@ class TestPageCreateFromRoot:
 
 
 @pytest.fixture
+def bulk_move_pages(browser_user, dir_tree):
+    """Two pages inside 'staff', for the bulk-move browser test."""
+    staff_dir = Directory.objects.get(path="staff")
+    pages = []
+    for slug, title in [("alpha", "Alpha Page"), ("beta", "Beta Page")]:
+        p = WikiPage.objects.create(
+            title=title,
+            slug=slug,
+            content="x",
+            directory=staff_dir,
+            owner=browser_user,
+            created_by=browser_user,
+            updated_by=browser_user,
+        )
+        PageRevision.objects.create(
+            page=p,
+            title=p.title,
+            content=p.content,
+            change_message="Initial creation",
+            revision_number=1,
+            created_by=browser_user,
+        )
+        pages.append(p)
+    return pages
+
+
+@pytest.mark.django_db(transaction=True)
+class TestBulkMoveUI:
+    """Select pages on a directory listing and move them via the UI.
+
+    The one part of the bulk-move feature that can't be verified through
+    the Django test client alone: checkbox selection swapping in the
+    "Bulk Move…" button, and that button carrying the selection through
+    to the confirmation page.
+    """
+
+    def test_select_and_move_pages(
+        self,
+        browser_page,
+        live_server,
+        browser_user,
+        dir_tree,
+        bulk_move_pages,
+    ):
+        _force_login(browser_page, live_server, browser_user)
+        staff_url = reverse("resolve_path", kwargs={"path": "staff"})
+        browser_page.goto(f"{live_server.url}{staff_url}")
+
+        move_button = browser_page.get_by_role("button", name="Bulk Move…")
+        expect(move_button).to_be_hidden()
+
+        checkboxes = browser_page.locator('input[name="page_ids"]')
+        expect(checkboxes).to_have_count(2)
+        checkboxes.nth(0).check()
+        checkboxes.nth(1).check()
+        expect(move_button).to_be_visible()
+
+        move_button.click()
+
+        # Confirmation page lists both selected pages up front.
+        expect(browser_page.locator("h1")).to_contain_text("Move 2 page")
+        body = browser_page.locator("body")
+        expect(body).to_contain_text("Alpha Page")
+        expect(body).to_contain_text("Beta Page")
+
+        browser_page.locator("#id_directory").select_option(label="/docs")
+        browser_page.get_by_role("button", name="Move 2 Page").click()
+
+        # Redirected back to the (now empty of these pages) staff listing.
+        browser_page.wait_for_url(f"**{staff_url}**")
+        expect(browser_page.locator("body")).not_to_contain_text("Alpha Page")
+
+        for p in bulk_move_pages:
+            p.refresh_from_db()
+            assert p.directory.path == "docs"
+
+
+@pytest.fixture
 def wiki_link_pages(browser_user, dir_tree):
     """A pair of pages whose titles share a prefix, for autocomplete tests.
 
