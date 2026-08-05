@@ -610,14 +610,15 @@ class TestBulkMoveUI:
 
         card = browser_page.locator(".card", has_text="Beta Page")
         card_box = card.bounding_box()
-        timestamp = card.locator("span", has_text="ago")
-        ts_box = timestamp.bounding_box()
-        pin_button = card.locator("button")
-        pin_box = pin_button.bounding_box()
-        # Midpoint of the empty gap between the timestamp and the pin
-        # button — genuine card background, not any interactive element.
-        bg_x = (ts_box["x"] + ts_box["width"] + pin_box["x"]) / 2
-        bg_y = card_box["y"] + card_box["height"] / 2
+        # A point inside the card's fixed py-3.5 top padding — no child
+        # element reaches into that strip (they're all vertically
+        # centered), so it's genuine background regardless of how wide
+        # any text inside happens to render. Deriving this from text
+        # bounding boxes instead (e.g. the gap next to the timestamp)
+        # is what broke on CI: slightly different font metrics there
+        # shifted the computed point onto the title link.
+        bg_x = card_box["x"] + card_box["width"] / 2
+        bg_y = card_box["y"] + 5
 
         # With nothing selected, the whole card is a click target.
         browser_page.mouse.click(bg_x, bg_y)
