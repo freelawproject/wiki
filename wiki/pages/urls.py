@@ -7,6 +7,10 @@ from . import views
 from .feeds import PageHistoryFeed
 
 urlpatterns = [
+    # Bulk actions — must come before the "<path:path>/..." patterns below,
+    # or Django would resolve e.g. "bulk/move/" as page_move with
+    # path="bulk" instead.
+    path("bulk/move/", views.page_bulk_move, name="page_bulk_move"),
     path(
         "<path:path>/permissions/",
         views.page_permissions,

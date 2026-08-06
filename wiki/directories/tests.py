@@ -106,6 +106,72 @@ class TestDirectoryDetail:
         assert r.status_code == 404
 
 
+class TestBulkSelectionUI:
+    """Checkbox selection + Bulk Move button on the directory listing."""
+
+    def test_checkboxes_shown_for_editor(
+        self, client, user, page_in_directory, sub_directory
+    ):
+        client.force_login(user)
+        r = client.get(sub_directory.get_absolute_url())
+        content = r.content.decode()
+        assert 'name="page_ids"' in content
+        assert 'aria-label="Select all pages"' in content
+        assert reverse("page_bulk_move") in content
+
+    def test_checkboxes_hidden_for_non_editor(
+        self, client, other_user, page_in_directory, sub_directory
+    ):
+        client.force_login(other_user)
+        r = client.get(sub_directory.get_absolute_url())
+        content = r.content.decode()
+        assert 'name="page_ids"' not in content
+        assert reverse("page_bulk_move") not in content
+
+    def test_checkboxes_hidden_for_anonymous(
+        self, client, page_in_directory, sub_directory
+    ):
+        r = client.get(sub_directory.get_absolute_url())
+        content = r.content.decode()
+        assert 'name="page_ids"' not in content
+
+    def test_select_all_checkbox_wired_to_appear_on_selection(
+        self, client, user, page_in_directory, sub_directory
+    ):
+        """The select-all checkbox stays hidden until a page is checked
+        (so "Pages" lines up with "Directories" above it, which has no
+        checkbox) — this only checks the reactive wiring is present;
+        TestBulkMoveUI in tests_browser.py verifies the actual show/hide
+        and alignment in a real browser."""
+        client.force_login(user)
+        r = client.get(sub_directory.get_absolute_url())
+        content = r.content.decode()
+        marker = content.index('aria-label="Select all pages"')
+        tag_start = content.rindex("<input", 0, marker)
+        tag_end = content.index(">", marker)
+        checkbox_html = content[tag_start:tag_end]
+        assert 'x-show="hasSelection"' in checkbox_html
+        assert "x-cloak" in checkbox_html
+
+    def test_selection_form_is_get_with_no_csrf_token(
+        self, client, user, page_in_directory, sub_directory
+    ):
+        """The bulk-select form's only control is a GET-submitting
+        button; a csrf token here would serialize into the resulting
+        GET's query string (browsers put every field from a GET-method
+        form into the URL), leaking a live, replayable CSRF token into
+        browser history and server/proxy logs."""
+        client.force_login(user)
+        r = client.get(sub_directory.get_absolute_url())
+        content = r.content.decode()
+        marker = content.index('id="bulk-pages-form"')
+        start = content.rindex("<form", 0, marker)
+        end = content.index("</form>", start)
+        form_html = content[start:end]
+        assert 'method="get"' in form_html
+        assert "csrfmiddlewaretoken" not in form_html
+
+
 class TestDirectoryEdit:
     def test_edit_requires_login(self, client, sub_directory):
         r = client.get(

@@ -186,6 +186,40 @@ def test_history_toggle_invalidates_feed_url(mock_invalidate, page):
 
 
 @pytest.mark.django_db(transaction=True)
+def test_bulk_move_invalidates_each_page(
+    mock_invalidate,
+    client,
+    user,
+    page,
+    page_in_nested_directory,
+    sub_directory,
+):
+    """Bulk move must ``.save()`` each page individually.
+
+    A queryset ``.update()`` would relocate pages without firing the
+    per-page ``post_save`` CDN-invalidation signal, silently leaving
+    stale cached HTML at the old URLs.
+    """
+    client.force_login(user)
+    old_url = page.get_absolute_url()
+    old_nested_url = page_in_nested_directory.get_absolute_url()
+    mock_invalidate.reset_mock()
+    client.post(
+        reverse("page_bulk_move"),
+        {
+            "page_ids": [page.pk, page_in_nested_directory.pk],
+            "directory": sub_directory.pk,
+            "next": reverse("root"),
+        },
+    )
+    all_paths = []
+    for call in mock_invalidate.call_args_list:
+        all_paths.extend(call.args[0])
+    assert old_url in all_paths
+    assert old_nested_url in all_paths
+
+
+@pytest.mark.django_db(transaction=True)
 def test_create_revision_invalidates_feed_url(mock_invalidate, page, user):
     """Creating a revision should invalidate the page's feed URL.
 
