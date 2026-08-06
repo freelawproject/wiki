@@ -18,9 +18,27 @@ from wiki.directories.models import (
 from wiki.lib.edit_lock import acquire_lock_for_directory
 from wiki.lib.inheritance import clean_redundant_overrides
 from wiki.lib.models import EditLock
+from wiki.lib.path_utils import MAX_DIRECTORY_DEPTH
 from wiki.lib.permissions import can_edit_directory
 from wiki.pages.models import Page, PagePermission
 from wiki.users.models import SystemConfig, UserProfile
+
+
+def _make_chain(parent, levels, user):
+    """Create ``levels`` nested directories under ``parent``; return the
+    deepest one."""
+    current = parent
+    for i in range(levels):
+        slug = f"level-{i}"
+        path = f"{current.path}/{slug}" if current.path else slug
+        current = Directory.objects.create(
+            path=path,
+            title=f"Level {i}",
+            parent=current,
+            owner=user,
+            created_by=user,
+        )
+    return current
 
 
 @pytest.fixture
@@ -310,6 +328,90 @@ class TestCreateDirectory:
     def test_new_dir_button_hidden_for_anon(self, client, db):
         r = client.get(reverse("root"))
         assert b"new-dir" not in r.content
+
+
+class TestMaxDirectoryDepth:
+    """Issue #145: cap nesting depth to bound ancestor-walk query costs."""
+
+    def test_create_at_max_depth_succeeds(self, client, user, root_directory):
+        # MAX_DIRECTORY_DEPTH levels already exist; creating the directory
+        # itself lands at depth MAX_DIRECTORY_DEPTH.
+        parent = _make_chain(root_directory, MAX_DIRECTORY_DEPTH - 1, user)
+        client.force_login(user)
+        r = client.post(
+            reverse("directory_create_in_dir", kwargs={"path": parent.path}),
+            {"title": "Deepest", "description": "", "visibility": "public"},
+        )
+        assert r.status_code == 302
+        assert Directory.objects.filter(path=f"{parent.path}/deepest").exists()
+
+    def test_create_beyond_max_depth_fails(self, client, user, root_directory):
+        parent = _make_chain(root_directory, MAX_DIRECTORY_DEPTH, user)
+        client.force_login(user)
+        r = client.post(
+            reverse("directory_create_in_dir", kwargs={"path": parent.path}),
+            {"title": "TooDeep", "description": "", "visibility": "public"},
+        )
+        assert r.status_code == 200
+        assert not Directory.objects.filter(
+            path=f"{parent.path}/toodeep"
+        ).exists()
+        assert b"nested at most" in r.content
+
+    def test_move_to_max_depth_succeeds(self, client, user, root_directory):
+        deep_parent = _make_chain(
+            root_directory, MAX_DIRECTORY_DEPTH - 1, user
+        )
+        movable = Directory.objects.create(
+            path="movable", title="Movable", parent=root_directory, owner=user
+        )
+        client.force_login(user)
+        r = client.post(
+            reverse("directory_move", kwargs={"path": "movable"}),
+            {"parent": deep_parent.pk},
+        )
+        assert r.status_code == 302
+        movable.refresh_from_db()
+        assert movable.path == f"{deep_parent.path}/movable"
+
+    def test_move_beyond_max_depth_fails(self, client, user, root_directory):
+        deep_parent = _make_chain(root_directory, MAX_DIRECTORY_DEPTH, user)
+        movable = Directory.objects.create(
+            path="movable", title="Movable", parent=root_directory, owner=user
+        )
+        client.force_login(user)
+        client.post(
+            reverse("directory_move", kwargs={"path": "movable"}),
+            {"parent": deep_parent.pk},
+        )
+        movable.refresh_from_db()
+        assert movable.path == "movable"
+        assert movable.parent == root_directory
+
+    def test_move_rejects_when_descendant_would_exceed_depth(
+        self, client, user, root_directory
+    ):
+        # `movable` itself would land right at the cap, but its own child
+        # would be pushed one level past it.
+        deep_parent = _make_chain(
+            root_directory, MAX_DIRECTORY_DEPTH - 1, user
+        )
+        movable = Directory.objects.create(
+            path="movable", title="Movable", parent=root_directory, owner=user
+        )
+        Directory.objects.create(
+            path="movable/child",
+            title="Child",
+            parent=movable,
+            owner=user,
+        )
+        client.force_login(user)
+        client.post(
+            reverse("directory_move", kwargs={"path": "movable"}),
+            {"parent": deep_parent.pk},
+        )
+        movable.refresh_from_db()
+        assert movable.path == "movable"
 
 
 class TestDeleteDirectory:

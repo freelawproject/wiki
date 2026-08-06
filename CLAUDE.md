@@ -112,6 +112,22 @@ wiki/
    - Simple property access works: `x-show="open"`, `x-if="visible"`
    - Do NOT use `x-model` — use `:checked`/`:value` + `@change`/`@input` instead
 
+12. **Directory permission checks at scale**: `can_view_directory`, `can_view_page`, `can_edit_*`,
+   `can_administer_*`, and `resolve_effective_value` (`wiki/lib/permissions.py`,
+   `wiki/lib/inheritance.py`) each walk the directory's ancestor chain live
+   (`d = d.parent`), costing queries proportional to nesting depth per call. That's fine for a
+   single item — depth is capped (`MAX_DIRECTORY_DEPTH` in `wiki/lib/path_utils.py`) precisely to
+   bound it — but calling one of these functions inside a loop over a listing multiplies that cost
+   by N, and N (page/directory count) is NOT capped. MUST NOT write
+   `[d for d in directories if can_view_directory(user, d)]` or equivalent over more than one item;
+   use `filter_viewable_directories(user, directories)` for view access or
+   `filter_administerable_directories(user, directories)` for owner-level access
+   (`wiki/lib/permissions.py`) instead — they bulk-resolve visibility/ownership, ancestry, and
+   grants in a fixed number of queries. For pages, prefer `viewable_pages_q(user)` — a Q filter
+   usable directly in `.filter()` — over looping `can_view_page`. See
+   `wiki/lib/tests.py::TestViewableDirectoryQueryCost` and `TestBulkAdministerDirectoryResolver`
+   for the query-count regression guards.
+
 
 ## Testing
 

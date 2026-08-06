@@ -4,7 +4,7 @@ from django.contrib.auth.models import Group
 from wiki.directories.models import Directory
 from wiki.lib.data_source import is_domain_allowed
 from wiki.lib.inheritance import resolve_effective_value
-from wiki.lib.permissions import can_administer_directory
+from wiki.lib.permissions import filter_administerable_directories
 from wiki.users.models import AllowedDomain
 
 from .models import Page, PagePermission
@@ -29,7 +29,7 @@ class PageMoveForm(forms.Form):
         # access (which would also leak private directory names).
         if user:
             allowed_pks = [
-                d.pk for d in qs if can_administer_directory(user, d)
+                d.pk for d in filter_administerable_directories(user, qs)
             ]
             qs = qs.filter(pk__in=allowed_pks)
         self.fields["directory"].queryset = qs

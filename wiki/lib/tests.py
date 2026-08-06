@@ -1,7 +1,10 @@
 """Tests for shared lib: permissions, markdown, storage, edit locks."""
 
+import pytest
 import time_machine
-from django.contrib.auth.models import AnonymousUser
+from django.contrib.auth.models import AnonymousUser, User
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
 
@@ -17,11 +20,17 @@ from wiki.lib.edit_lock import (
 )
 from wiki.lib.models import EditLock
 from wiki.lib.permissions import (
+    _bulk_administer_directory_resolver,
+    _bulk_viewable_directory_resolver,
+    _viewable_directory_ids,
+    can_administer_directory,
     can_edit_directory,
     can_edit_page,
     can_view_directory,
     can_view_page,
     editable_page_ids,
+    filter_administerable_directories,
+    filter_viewable_directories,
     is_system_owner,
 )
 from wiki.pages.models import Page, PagePermission, PageRevision
@@ -146,6 +155,360 @@ class TestCanViewPage:
         if hasattr(other_user, "_group_ids_cache"):
             del other_user._group_ids_cache
         assert can_view_page(other_user, p)
+
+
+class TestBulkViewableDirectoryResolver:
+    """The bulk resolver (used by search, listings, and the move-target
+    dropdown — see issue #145) must agree with can_view_directory() for
+    every directory. A divergence here is a visibility bug, not just a
+    performance regression, so this is checked directly against the
+    per-item function across every visibility/inheritance/grant shape."""
+
+    @pytest.fixture
+    def carol(self, db):
+        """A directory owner who is never one of the viewers under test,
+        so ownership doesn't leak into the guest/staff/grant scenarios."""
+        return User.objects.create_user(
+            username="carol@free.law", email="carol@free.law"
+        )
+
+    @pytest.fixture
+    def tree(self, root_directory, carol, other_user, group):
+        top_public = Directory.objects.create(
+            path="top-public",
+            title="Top Public",
+            parent=root_directory,
+            owner=carol,
+            visibility="public",
+        )
+        mid_private = Directory.objects.create(
+            path="top-public/mid-private",
+            title="Mid Private",
+            parent=top_public,
+            owner=carol,
+            visibility="private",
+        )
+        leaf_public = Directory.objects.create(
+            path="top-public/mid-private/leaf-public",
+            title="Leaf Public",
+            parent=mid_private,
+            owner=carol,
+            visibility="public",
+        )
+        leaf_inherit = Directory.objects.create(
+            path="top-public/mid-private/leaf-inherit",
+            title="Leaf Inherit",
+            parent=mid_private,
+            owner=carol,
+            visibility="inherit",
+        )
+        top_internal = Directory.objects.create(
+            path="top-internal",
+            title="Top Internal",
+            parent=root_directory,
+            owner=carol,
+            visibility="internal",
+        )
+        mid_inherit_internal = Directory.objects.create(
+            path="top-internal/mid-inherit",
+            title="Mid Inherit",
+            parent=top_internal,
+            owner=carol,
+            visibility="inherit",
+        )
+        top_private_grant = Directory.objects.create(
+            path="top-private-grant",
+            title="Top Private Grant",
+            parent=root_directory,
+            owner=carol,
+            visibility="private",
+        )
+        DirectoryPermission.objects.create(
+            directory=top_private_grant,
+            user=other_user,
+            permission_type=DirectoryPermission.PermissionType.VIEW,
+        )
+        mid_inherit_from_grant = Directory.objects.create(
+            path="top-private-grant/mid-inherit",
+            title="Mid Inherit Grant",
+            parent=top_private_grant,
+            owner=carol,
+            visibility="inherit",
+        )
+        top_private_group = Directory.objects.create(
+            path="top-private-group",
+            title="Top Private Group",
+            parent=root_directory,
+            owner=carol,
+            visibility="private",
+        )
+        DirectoryPermission.objects.create(
+            directory=top_private_group,
+            group=group,
+            permission_type=DirectoryPermission.PermissionType.VIEW,
+        )
+        top_private_domain = Directory.objects.create(
+            path="top-private-domain",
+            title="Top Private Domain",
+            parent=root_directory,
+            owner=carol,
+            visibility="private",
+        )
+        DirectoryPermission.objects.create(
+            directory=top_private_domain,
+            grant_domain="free.law",
+            permission_type=DirectoryPermission.PermissionType.VIEW,
+        )
+        top_private_owner = Directory.objects.create(
+            path="top-private-owner",
+            title="Top Private Owner",
+            parent=root_directory,
+            owner=other_user,
+            visibility="private",
+        )
+        return [
+            root_directory,
+            top_public,
+            mid_private,
+            leaf_public,
+            leaf_inherit,
+            top_internal,
+            mid_inherit_internal,
+            top_private_grant,
+            mid_inherit_from_grant,
+            top_private_group,
+            top_private_domain,
+            top_private_owner,
+        ]
+
+    def test_matches_for_anon_guest_group_and_staff(
+        self, tree, user, other_user, group
+    ):
+        other_user.groups.add(group)
+        staff_user = User.objects.create_user(
+            username="dave@free.law", email="dave@free.law", is_staff=True
+        )
+
+        for viewer in (AnonymousUser(), user, other_user, staff_user):
+            resolve = _bulk_viewable_directory_resolver(viewer)
+            for d in tree:
+                assert resolve(d.id) == can_view_directory(viewer, d), (
+                    f"resolver disagreed with can_view_directory for "
+                    f"{viewer} on {d.path!r}"
+                )
+
+    def test_matches_for_system_owner(self, tree, owner_user):
+        resolve = _bulk_viewable_directory_resolver(owner_user)
+        for d in tree:
+            assert resolve(d.id) is True
+            assert can_view_directory(owner_user, d) is True
+
+
+class TestViewableDirectoryQueryCost:
+    """Regression guard for issue #145: bulk visibility resolution must stay
+    a fixed number of queries as the tree grows, not scale with directory
+    count or nesting depth."""
+
+    @staticmethod
+    def _grow_tree(root, prefix, depth, siblings, owner):
+        parent = root
+        for i in range(depth):
+            slug = f"{prefix}-{i}"
+            path = f"{parent.path}/{slug}" if parent.path else slug
+            parent = Directory.objects.create(
+                path=path, title=slug, parent=parent, owner=owner
+            )
+        for i in range(siblings):
+            Directory.objects.create(
+                path=f"{prefix}-sib-{i}",
+                title=f"{prefix} sib {i}",
+                parent=root,
+                owner=owner,
+            )
+
+    def test_viewable_directory_ids_query_count_is_flat(
+        self, root_directory, user
+    ):
+        self._grow_tree(
+            root_directory, "small", depth=2, siblings=2, owner=user
+        )
+        # Fetch a fresh user instance for each measurement — _user_group_ids,
+        # _user_domain, and is_internal_user all cache on the user object, so
+        # reusing one instance would make the second call look artificially
+        # cheap regardless of tree size.
+        with CaptureQueriesContext(connection) as small:
+            _viewable_directory_ids(User.objects.get(pk=user.pk))
+
+        self._grow_tree(
+            root_directory, "big", depth=12, siblings=30, owner=user
+        )
+        with CaptureQueriesContext(connection) as big:
+            _viewable_directory_ids(User.objects.get(pk=user.pk))
+
+        assert len(big.captured_queries) == len(small.captured_queries)
+
+    def test_filter_viewable_directories_query_count_is_flat(
+        self, root_directory, user
+    ):
+        self._grow_tree(
+            root_directory, "small", depth=2, siblings=2, owner=user
+        )
+        small_dirs = list(Directory.objects.all())
+        with CaptureQueriesContext(connection) as small:
+            filter_viewable_directories(
+                User.objects.get(pk=user.pk), small_dirs
+            )
+
+        self._grow_tree(
+            root_directory, "big", depth=12, siblings=30, owner=user
+        )
+        big_dirs = list(Directory.objects.all())
+        with CaptureQueriesContext(connection) as big:
+            filter_viewable_directories(User.objects.get(pk=user.pk), big_dirs)
+
+        assert len(big.captured_queries) == len(small.captured_queries)
+
+
+class TestBulkAdministerDirectoryResolver:
+    """Same bulk-vs-live-walk equivalence check as
+    TestBulkViewableDirectoryResolver, for the owner-level resolver used by
+    the page-move destination dropdown (issue #149)."""
+
+    @pytest.fixture
+    def carol(self, db):
+        return User.objects.create_user(
+            username="carol@free.law", email="carol@free.law"
+        )
+
+    @pytest.fixture
+    def tree(self, root_directory, carol, other_user, group):
+        top_owned_by_other = Directory.objects.create(
+            path="top-owned",
+            title="Top Owned",
+            parent=root_directory,
+            owner=other_user,
+        )
+        mid_no_grant = Directory.objects.create(
+            path="top-owned/mid",
+            title="Mid",
+            parent=top_owned_by_other,
+            owner=carol,
+        )
+        top_grant = Directory.objects.create(
+            path="top-grant",
+            title="Top Grant",
+            parent=root_directory,
+            owner=carol,
+        )
+        DirectoryPermission.objects.create(
+            directory=top_grant,
+            user=other_user,
+            permission_type=DirectoryPermission.PermissionType.OWNER,
+        )
+        mid_inherits_grant = Directory.objects.create(
+            path="top-grant/mid",
+            title="Mid Grant",
+            parent=top_grant,
+            owner=carol,
+        )
+        top_group_grant = Directory.objects.create(
+            path="top-group-grant",
+            title="Top Group Grant",
+            parent=root_directory,
+            owner=carol,
+        )
+        DirectoryPermission.objects.create(
+            directory=top_group_grant,
+            group=group,
+            permission_type=DirectoryPermission.PermissionType.OWNER,
+        )
+        # An EDIT (not OWNER) grant must NOT confer administer access.
+        top_edit_only = Directory.objects.create(
+            path="top-edit-only",
+            title="Top Edit Only",
+            parent=root_directory,
+            owner=carol,
+        )
+        DirectoryPermission.objects.create(
+            directory=top_edit_only,
+            user=other_user,
+            permission_type=DirectoryPermission.PermissionType.EDIT,
+        )
+        top_unrelated = Directory.objects.create(
+            path="top-unrelated",
+            title="Top Unrelated",
+            parent=root_directory,
+            owner=carol,
+        )
+        return [
+            root_directory,
+            top_owned_by_other,
+            mid_no_grant,
+            top_grant,
+            mid_inherits_grant,
+            top_group_grant,
+            top_edit_only,
+            top_unrelated,
+        ]
+
+    def test_matches_can_administer_directory(
+        self, tree, user, other_user, group
+    ):
+        other_user.groups.add(group)
+
+        for viewer in (AnonymousUser(), user, other_user):
+            resolve = _bulk_administer_directory_resolver(viewer)
+            for d in tree:
+                assert resolve(d.id) == can_administer_directory(viewer, d), (
+                    f"resolver disagreed with can_administer_directory for "
+                    f"{viewer} on {d.path!r}"
+                )
+
+    def test_matches_for_system_owner(self, tree, owner_user):
+        resolve = _bulk_administer_directory_resolver(owner_user)
+        for d in tree:
+            assert resolve(d.id) is True
+            assert can_administer_directory(owner_user, d) is True
+
+    def test_query_count_is_flat(self, root_directory, user):
+        small_parent = root_directory
+        for i in range(2):
+            small_parent = Directory.objects.create(
+                path=f"small-{i}"
+                if small_parent.path == ""
+                else f"{small_parent.path}/small-{i}",
+                title=f"Small {i}",
+                parent=small_parent,
+                owner=user,
+            )
+        with CaptureQueriesContext(connection) as small:
+            filter_administerable_directories(
+                User.objects.get(pk=user.pk), Directory.objects.all()
+            )
+
+        big_parent = root_directory
+        for i in range(12):
+            big_parent = Directory.objects.create(
+                path=f"big-{i}"
+                if big_parent.path == ""
+                else f"{big_parent.path}/big-{i}",
+                title=f"Big {i}",
+                parent=big_parent,
+                owner=user,
+            )
+        for i in range(30):
+            Directory.objects.create(
+                path=f"sib-{i}",
+                title=f"Sib {i}",
+                parent=root_directory,
+                owner=user,
+            )
+        with CaptureQueriesContext(connection) as big:
+            filter_administerable_directories(
+                User.objects.get(pk=user.pk), Directory.objects.all()
+            )
+
+        assert len(big.captured_queries) == len(small.captured_queries)
 
 
 class TestCanEditPage:

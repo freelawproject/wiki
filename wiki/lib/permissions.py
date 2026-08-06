@@ -166,15 +166,176 @@ def can_view_page(user, page):
     return False
 
 
+def _bulk_viewable_directory_resolver(user):
+    """Return ``resolve(dir_id) -> bool`` mirroring can_view_directory().
+
+    can_view_directory() walks ``d.parent`` live, costing ~2 unbatched
+    queries per level of ancestry *per call*. That's fine for checking one
+    directory, but multiplying it across every directory in the wiki (search,
+    recent-changes, the move-target dropdown) turns depth into a query-count
+    multiplier on top of N. This preloads the parent/owner map, bulk-resolved
+    visibility, and this user's grants in a fixed handful of queries, then
+    resolves each directory by walking the in-memory maps (memoized) instead
+    of hitting the database — see issue #145. Prefer can_view_directory() for
+    a single directory; use this whenever a check runs across many.
+    """
+    if is_system_owner(user):
+        return lambda dir_id: True
+
+    parent_of = {}
+    owner_of = {}
+    root_id = None
+    for did, pid, oid, path in Directory.objects.values_list(
+        "id", "parent_id", "owner_id", "path"
+    ):
+        parent_of[did] = pid
+        owner_of[did] = oid
+        if path == "":
+            root_id = did
+
+    visibility = resolve_all_directory_settings("visibility")
+
+    authenticated = user.is_authenticated
+    grant_ids = set()
+    if authenticated:
+        grant_ids = set(
+            DirectoryPermission.objects.filter(
+                _grant_target_q(user)
+            ).values_list("directory_id", flat=True)
+        )
+    internal_ok = authenticated and is_internal_user(user)
+
+    ancestor_access_cache = {}
+
+    def has_ancestor_access(dir_id):
+        if dir_id in ancestor_access_cache:
+            return ancestor_access_cache[dir_id]
+        cur = dir_id
+        seen = set()
+        result = False
+        while cur is not None and cur not in seen:
+            seen.add(cur)
+            if owner_of.get(cur) == user.id or cur in grant_ids:
+                result = True
+                break
+            cur = parent_of.get(cur)
+        ancestor_access_cache[dir_id] = result
+        return result
+
+    def resolve(dir_id):
+        # Root directory is always accessible, regardless of its visibility.
+        if dir_id == root_id:
+            return True
+
+        entry = visibility.get(dir_id)
+        effective_visibility = entry[0] if entry else "public"
+
+        if effective_visibility == "public":
+            return True
+        if not authenticated:
+            return False
+        if has_ancestor_access(dir_id):
+            return True
+        if effective_visibility == "internal" and internal_ok:
+            return True
+        return False
+
+    return resolve
+
+
 def _viewable_directory_ids(user):
     """Return the set of directory IDs the user can view.
 
-    Loads all directories (small table) and checks each via
-    can_view_directory(). Called once per search request.
+    Called once per search request; uses the bulk resolver so the cost stays
+    a fixed handful of queries regardless of directory count or nesting
+    depth (see _bulk_viewable_directory_resolver).
     """
+    resolve = _bulk_viewable_directory_resolver(user)
     return {
-        d.id for d in Directory.objects.all() if can_view_directory(user, d)
+        d_id
+        for d_id in Directory.objects.values_list("id", flat=True)
+        if resolve(d_id)
     }
+
+
+def filter_viewable_directories(user, directories):
+    """Return the subset of ``directories`` the user can view.
+
+    Use this instead of ``[d for d in directories if can_view_directory(user,
+    d)]`` whenever filtering more than one directory (a listing, a dropdown)
+    — the list comprehension calls can_view_directory's live ancestor walk
+    once per item, multiplying query count by depth on top of list length.
+    This resolves the whole batch with a fixed handful of queries; see
+    _bulk_viewable_directory_resolver.
+    """
+    directories = list(directories)
+    resolve = _bulk_viewable_directory_resolver(user)
+    return [d for d in directories if resolve(d.id)]
+
+
+def _bulk_administer_directory_resolver(user):
+    """Return ``resolve(dir_id) -> bool`` mirroring can_administer_directory().
+
+    Owner-level only — ownership or an OWNER-type grant on the directory or
+    any ancestor — so unlike _bulk_viewable_directory_resolver there's no
+    visibility/baseline branch to resolve. Preloads the parent/owner map and
+    this user's OWNER-type grants in a fixed handful of queries, then walks
+    in-memory maps instead of can_administer_directory()'s live ancestor
+    walk. Use for bulk admin-access filtering (e.g. the page-move
+    destination dropdown); call can_administer_directory() directly for a
+    single directory.
+    """
+    if not user.is_authenticated:
+        return lambda dir_id: False
+    if is_system_owner(user):
+        return lambda dir_id: True
+
+    parent_of = {}
+    owner_of = {}
+    for did, pid, oid in Directory.objects.values_list(
+        "id", "parent_id", "owner_id"
+    ):
+        parent_of[did] = pid
+        owner_of[did] = oid
+
+    owner_grant_ids = set(
+        DirectoryPermission.objects.filter(
+            _grant_target_q(user),
+            permission_type=DirectoryPermission.PermissionType.OWNER,
+        ).values_list("directory_id", flat=True)
+    )
+
+    cache = {}
+
+    def resolve(dir_id):
+        if dir_id in cache:
+            return cache[dir_id]
+        cur = dir_id
+        seen = set()
+        result = False
+        while cur is not None and cur not in seen:
+            seen.add(cur)
+            if owner_of.get(cur) == user.id or cur in owner_grant_ids:
+                result = True
+                break
+            cur = parent_of.get(cur)
+        cache[dir_id] = result
+        return result
+
+    return resolve
+
+
+def filter_administerable_directories(user, directories):
+    """Return the subset of ``directories`` the user may administer.
+
+    Use this instead of ``[d for d in directories if
+    can_administer_directory(user, d)]`` whenever filtering more than one
+    directory — see filter_viewable_directories for why the per-item loop
+    doesn't scale; this is the same fix for owner-level access.
+    """
+    directories = list(directories)
+    resolve = _bulk_administer_directory_resolver(user)
+    return [d for d in directories if resolve(d.id)]
 
 
 def _effectively_matching_dir_ids(field_name, values):
