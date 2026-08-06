@@ -20,13 +20,16 @@ from wiki.lib.edit_lock import (
 )
 from wiki.lib.models import EditLock
 from wiki.lib.permissions import (
+    _bulk_administer_directory_resolver,
     _bulk_viewable_directory_resolver,
     _viewable_directory_ids,
+    can_administer_directory,
     can_edit_directory,
     can_edit_page,
     can_view_directory,
     can_view_page,
     editable_page_ids,
+    filter_administerable_directories,
     filter_viewable_directories,
     is_system_owner,
 )
@@ -362,6 +365,148 @@ class TestViewableDirectoryQueryCost:
         big_dirs = list(Directory.objects.all())
         with CaptureQueriesContext(connection) as big:
             filter_viewable_directories(User.objects.get(pk=user.pk), big_dirs)
+
+        assert len(big.captured_queries) == len(small.captured_queries)
+
+
+class TestBulkAdministerDirectoryResolver:
+    """Same bulk-vs-live-walk equivalence check as
+    TestBulkViewableDirectoryResolver, for the owner-level resolver used by
+    the page-move destination dropdown (issue #149)."""
+
+    @pytest.fixture
+    def carol(self, db):
+        return User.objects.create_user(
+            username="carol@free.law", email="carol@free.law"
+        )
+
+    @pytest.fixture
+    def tree(self, root_directory, carol, other_user, group):
+        top_owned_by_other = Directory.objects.create(
+            path="top-owned",
+            title="Top Owned",
+            parent=root_directory,
+            owner=other_user,
+        )
+        mid_no_grant = Directory.objects.create(
+            path="top-owned/mid",
+            title="Mid",
+            parent=top_owned_by_other,
+            owner=carol,
+        )
+        top_grant = Directory.objects.create(
+            path="top-grant",
+            title="Top Grant",
+            parent=root_directory,
+            owner=carol,
+        )
+        DirectoryPermission.objects.create(
+            directory=top_grant,
+            user=other_user,
+            permission_type=DirectoryPermission.PermissionType.OWNER,
+        )
+        mid_inherits_grant = Directory.objects.create(
+            path="top-grant/mid",
+            title="Mid Grant",
+            parent=top_grant,
+            owner=carol,
+        )
+        top_group_grant = Directory.objects.create(
+            path="top-group-grant",
+            title="Top Group Grant",
+            parent=root_directory,
+            owner=carol,
+        )
+        DirectoryPermission.objects.create(
+            directory=top_group_grant,
+            group=group,
+            permission_type=DirectoryPermission.PermissionType.OWNER,
+        )
+        # An EDIT (not OWNER) grant must NOT confer administer access.
+        top_edit_only = Directory.objects.create(
+            path="top-edit-only",
+            title="Top Edit Only",
+            parent=root_directory,
+            owner=carol,
+        )
+        DirectoryPermission.objects.create(
+            directory=top_edit_only,
+            user=other_user,
+            permission_type=DirectoryPermission.PermissionType.EDIT,
+        )
+        top_unrelated = Directory.objects.create(
+            path="top-unrelated",
+            title="Top Unrelated",
+            parent=root_directory,
+            owner=carol,
+        )
+        return [
+            root_directory,
+            top_owned_by_other,
+            mid_no_grant,
+            top_grant,
+            mid_inherits_grant,
+            top_group_grant,
+            top_edit_only,
+            top_unrelated,
+        ]
+
+    def test_matches_can_administer_directory(
+        self, tree, user, other_user, group
+    ):
+        other_user.groups.add(group)
+
+        for viewer in (AnonymousUser(), user, other_user):
+            resolve = _bulk_administer_directory_resolver(viewer)
+            for d in tree:
+                assert resolve(d.id) == can_administer_directory(viewer, d), (
+                    f"resolver disagreed with can_administer_directory for "
+                    f"{viewer} on {d.path!r}"
+                )
+
+    def test_matches_for_system_owner(self, tree, owner_user):
+        resolve = _bulk_administer_directory_resolver(owner_user)
+        for d in tree:
+            assert resolve(d.id) is True
+            assert can_administer_directory(owner_user, d) is True
+
+    def test_query_count_is_flat(self, root_directory, user):
+        small_parent = root_directory
+        for i in range(2):
+            small_parent = Directory.objects.create(
+                path=f"small-{i}"
+                if small_parent.path == ""
+                else f"{small_parent.path}/small-{i}",
+                title=f"Small {i}",
+                parent=small_parent,
+                owner=user,
+            )
+        with CaptureQueriesContext(connection) as small:
+            filter_administerable_directories(
+                User.objects.get(pk=user.pk), Directory.objects.all()
+            )
+
+        big_parent = root_directory
+        for i in range(12):
+            big_parent = Directory.objects.create(
+                path=f"big-{i}"
+                if big_parent.path == ""
+                else f"{big_parent.path}/big-{i}",
+                title=f"Big {i}",
+                parent=big_parent,
+                owner=user,
+            )
+        for i in range(30):
+            Directory.objects.create(
+                path=f"sib-{i}",
+                title=f"Sib {i}",
+                parent=root_directory,
+                owner=user,
+            )
+        with CaptureQueriesContext(connection) as big:
+            filter_administerable_directories(
+                User.objects.get(pk=user.pk), Directory.objects.all()
+            )
 
         assert len(big.captured_queries) == len(small.captured_queries)
 

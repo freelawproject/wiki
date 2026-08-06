@@ -1586,9 +1586,6 @@ def page_search_htmx(request):
     if len(q) < 2:
         return HttpResponse("")
 
-    # SECURITY: select_related("directory") needed for permission checks
-    # that walk the directory tree. Without it each can_view_page() call
-    # would trigger extra queries.
     qs = Page.objects.filter(title__icontains=q).select_related("directory")
     exclude_path = request.GET.get("exclude", "").strip()
     if exclude_path:
@@ -1602,13 +1599,11 @@ def page_search_htmx(request):
             )
 
     # SECURITY: filter results by permission so private pages are never
-    # revealed in autocomplete to users who lack access.
-    results = []
-    for p in qs.iterator():
-        if can_view_page(request.user, p):
-            results.append(p)
-        if len(results) >= 10:
-            break
+    # revealed in autocomplete to users who lack access. viewable_pages_q()
+    # is the vectorized equivalent of can_view_page() — filtering in SQL
+    # instead of looping can_view_page() per candidate, which would walk
+    # each page's directory ancestor chain individually (see CLAUDE.md §12).
+    results = list(qs.filter(viewable_pages_q(request.user))[:10])
 
     html = ""
     for p in results:

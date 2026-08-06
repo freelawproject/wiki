@@ -273,6 +273,71 @@ def filter_viewable_directories(user, directories):
     return [d for d in directories if resolve(d.id)]
 
 
+def _bulk_administer_directory_resolver(user):
+    """Return ``resolve(dir_id) -> bool`` mirroring can_administer_directory().
+
+    Owner-level only — ownership or an OWNER-type grant on the directory or
+    any ancestor — so unlike _bulk_viewable_directory_resolver there's no
+    visibility/baseline branch to resolve. Preloads the parent/owner map and
+    this user's OWNER-type grants in a fixed handful of queries, then walks
+    in-memory maps instead of can_administer_directory()'s live ancestor
+    walk. Use for bulk admin-access filtering (e.g. the page-move
+    destination dropdown); call can_administer_directory() directly for a
+    single directory.
+    """
+    if not user.is_authenticated:
+        return lambda dir_id: False
+    if is_system_owner(user):
+        return lambda dir_id: True
+
+    parent_of = {}
+    owner_of = {}
+    for did, pid, oid in Directory.objects.values_list(
+        "id", "parent_id", "owner_id"
+    ):
+        parent_of[did] = pid
+        owner_of[did] = oid
+
+    owner_grant_ids = set(
+        DirectoryPermission.objects.filter(
+            _grant_target_q(user),
+            permission_type=DirectoryPermission.PermissionType.OWNER,
+        ).values_list("directory_id", flat=True)
+    )
+
+    cache = {}
+
+    def resolve(dir_id):
+        if dir_id in cache:
+            return cache[dir_id]
+        cur = dir_id
+        seen = set()
+        result = False
+        while cur is not None and cur not in seen:
+            seen.add(cur)
+            if owner_of.get(cur) == user.id or cur in owner_grant_ids:
+                result = True
+                break
+            cur = parent_of.get(cur)
+        cache[dir_id] = result
+        return result
+
+    return resolve
+
+
+def filter_administerable_directories(user, directories):
+    """Return the subset of ``directories`` the user may administer.
+
+    Use this instead of ``[d for d in directories if
+    can_administer_directory(user, d)]`` whenever filtering more than one
+    directory — see filter_viewable_directories for why the per-item loop
+    doesn't scale; this is the same fix for owner-level access.
+    """
+    directories = list(directories)
+    resolve = _bulk_administer_directory_resolver(user)
+    return [d for d in directories if resolve(d.id)]
+
+
 def _effectively_matching_dir_ids(field_name, values):
     """Return directory IDs whose effective field value is in `values`.
 

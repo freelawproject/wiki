@@ -729,40 +729,58 @@ def _move_directory(directory, new_parent):
     Returns an error message string if the move would cause a path
     collision, or None on success.
     """
-    slug = slugify(directory.title)
-    new_path = f"{new_parent.path}/{slug}" if new_parent.path else slug
-
-    if (
-        Directory.objects.filter(path=new_path)
-        .exclude(pk=directory.pk)
-        .exists()
-    ):
-        return f'A directory named "{directory.title}" already exists in the destination.'
-
-    if directory_path_conflicts_with_page(new_path):
-        return f'A page named "{directory.title}" already exists at the destination path.'
-
-    # Moving a directory can push it, and everything nested beneath it,
-    # deeper than the cap — check the deepest resulting descendant, not just
-    # the directory itself.
-    old_path = directory.path
-    descendant_paths = Directory.objects.filter(
-        path__startswith=f"{old_path}/"
-    ).values_list("path", flat=True)
-    max_relative_depth = max(
-        (
-            directory_depth(p) - directory_depth(old_path)
-            for p in descendant_paths
-        ),
-        default=0,
-    )
-    if directory_depth(new_path) + max_relative_depth > MAX_DIRECTORY_DEPTH:
-        return (
-            "Moving this directory would nest it, or its contents, more "
-            f"than {MAX_DIRECTORY_DEPTH} levels deep."
-        )
-
     with transaction.atomic():
+        # Lock the moving directory and its destination parent for the rest
+        # of the transaction, in a stable (pk-sorted) order to avoid
+        # deadlocking against a concurrent move locking the same two rows.
+        # Without this, two concurrent moves could each validate against the
+        # same stale tree state and then both commit — landing on a path
+        # collision or past MAX_DIRECTORY_DEPTH despite the checks below.
+        lock_pks = sorted({directory.pk, new_parent.pk})
+        list(
+            Directory.objects.select_for_update()
+            .filter(pk__in=lock_pks)
+            .order_by("pk")
+        )
+        directory.refresh_from_db()
+        new_parent.refresh_from_db()
+
+        slug = slugify(directory.title)
+        new_path = f"{new_parent.path}/{slug}" if new_parent.path else slug
+
+        if (
+            Directory.objects.filter(path=new_path)
+            .exclude(pk=directory.pk)
+            .exists()
+        ):
+            return f'A directory named "{directory.title}" already exists in the destination.'
+
+        if directory_path_conflicts_with_page(new_path):
+            return f'A page named "{directory.title}" already exists at the destination path.'
+
+        # Moving a directory can push it, and everything nested beneath it,
+        # deeper than the cap — check the deepest resulting descendant, not
+        # just the directory itself.
+        old_path = directory.path
+        descendant_paths = Directory.objects.filter(
+            path__startswith=f"{old_path}/"
+        ).values_list("path", flat=True)
+        max_relative_depth = max(
+            (
+                directory_depth(p) - directory_depth(old_path)
+                for p in descendant_paths
+            ),
+            default=0,
+        )
+        if (
+            directory_depth(new_path) + max_relative_depth
+            > MAX_DIRECTORY_DEPTH
+        ):
+            return (
+                "Moving this directory would nest it, or its contents, more "
+                f"than {MAX_DIRECTORY_DEPTH} levels deep."
+            )
+
         directory.parent = new_parent
         directory.path = new_path
         directory.save()
@@ -857,12 +875,8 @@ def directory_search_htmx(request):
 
     # SECURITY: filter results by permission so private directories are
     # never revealed in autocomplete to users who lack access.
-    results = []
-    for d in qs.iterator():
-        if can_view_directory(request.user, d):
-            results.append({"path": d.path, "title": d.title})
-        if len(results) >= 15:
-            break
+    viewable = filter_viewable_directories(request.user, qs)[:15]
+    results = [{"path": d.path, "title": d.title} for d in viewable]
 
     return JsonResponse(results, safe=False)
 
