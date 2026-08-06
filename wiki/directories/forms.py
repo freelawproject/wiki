@@ -3,8 +3,12 @@ from django.contrib.auth.models import Group
 from django.utils.text import slugify
 
 from wiki.lib.inheritance import resolve_effective_value
-from wiki.lib.path_utils import directory_path_conflicts_with_page
-from wiki.lib.permissions import can_view_directory
+from wiki.lib.path_utils import (
+    MAX_DIRECTORY_DEPTH,
+    directory_depth,
+    directory_path_conflicts_with_page,
+)
+from wiki.lib.permissions import filter_viewable_directories
 from wiki.users.models import AllowedDomain
 
 from .models import Directory, DirectoryPermission
@@ -29,7 +33,7 @@ class DirectoryMoveForm(forms.Form):
         # SECURITY: only show directories the user can view so that
         # private directory names are never leaked in the dropdown.
         if user:
-            visible_pks = [d.pk for d in qs if can_view_directory(user, d)]
+            visible_pks = [d.pk for d in filter_viewable_directories(user, qs)]
             qs = qs.filter(pk__in=visible_pks)
         self.fields["parent"].queryset = qs
         self.fields["parent"].label_from_instance = lambda d: (
@@ -302,6 +306,11 @@ class DirectoryCreateForm(forms.ModelForm):
         if directory_path_conflicts_with_page(full_path):
             raise forms.ValidationError(
                 f'A page named "{title}" already exists at this path.'
+            )
+        if directory_depth(full_path) > MAX_DIRECTORY_DEPTH:
+            raise forms.ValidationError(
+                "Directories can be nested at most "
+                f"{MAX_DIRECTORY_DEPTH} levels deep."
             )
         return title
 

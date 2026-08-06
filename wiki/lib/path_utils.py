@@ -4,6 +4,20 @@ from django.utils.text import slugify
 
 from wiki.directories.models import Directory
 
+# Directory nesting is capped to bound the cost of ancestor-walking
+# permission/inheritance checks (see wiki.lib.permissions), which scale with
+# depth. See issue #145.
+MAX_DIRECTORY_DEPTH = 15
+
+
+def directory_depth(path):
+    """Return the nesting depth of a directory path.
+
+    The root directory (``path=""``) is depth 0; each ``/``-separated
+    segment below it adds one level, e.g. ``"engineering/devops"`` is depth 2.
+    """
+    return path.count("/") + 1 if path else 0
+
 
 def page_path_conflicts_with_directory(slug, directory):
     """Check if a page's effective path would collide with an existing directory.

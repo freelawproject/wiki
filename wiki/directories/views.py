@@ -22,13 +22,18 @@ from wiki.lib.inheritance import (
     resolve_effective_value,
 )
 from wiki.lib.markdown import render_markdown
-from wiki.lib.path_utils import directory_path_conflicts_with_page
+from wiki.lib.path_utils import (
+    MAX_DIRECTORY_DEPTH,
+    directory_depth,
+    directory_path_conflicts_with_page,
+)
 from wiki.lib.permissions import (
     annotate_access_domains,
     can_administer_directory,
     can_edit_directory,
     can_view_directory,
     can_view_page,
+    filter_viewable_directories,
 )
 from wiki.lib.ratelimiter import ratelimit_search
 from wiki.lib.seo import (
@@ -150,9 +155,7 @@ def root_view(request):
     ).exclude(path="")
 
     # Filter subdirectories by view permission
-    subdirectories = [
-        d for d in all_subdirs if can_view_directory(request.user, d)
-    ]
+    subdirectories = filter_viewable_directories(request.user, all_subdirs)
 
     # Show pages in root directory + unassigned pages
     pages = Page.objects.filter(Q(directory=root) | Q(directory__isnull=True))
@@ -308,9 +311,7 @@ def directory_detail(request, path):
         raise Http404
 
     all_subdirs = directory.children.all()
-    subdirectories = [
-        d for d in all_subdirs if can_view_directory(request.user, d)
-    ]
+    subdirectories = filter_viewable_directories(request.user, all_subdirs)
     pages = directory.pages.all()
     visible_pages = [p for p in pages if can_view_page(request.user, p)]
 
@@ -740,6 +741,26 @@ def _move_directory(directory, new_parent):
 
     if directory_path_conflicts_with_page(new_path):
         return f'A page named "{directory.title}" already exists at the destination path.'
+
+    # Moving a directory can push it, and everything nested beneath it,
+    # deeper than the cap — check the deepest resulting descendant, not just
+    # the directory itself.
+    old_path = directory.path
+    descendant_paths = Directory.objects.filter(
+        path__startswith=f"{old_path}/"
+    ).values_list("path", flat=True)
+    max_relative_depth = max(
+        (
+            directory_depth(p) - directory_depth(old_path)
+            for p in descendant_paths
+        ),
+        default=0,
+    )
+    if directory_depth(new_path) + max_relative_depth > MAX_DIRECTORY_DEPTH:
+        return (
+            "Moving this directory would nest it, or its contents, more "
+            f"than {MAX_DIRECTORY_DEPTH} levels deep."
+        )
 
     with transaction.atomic():
         directory.parent = new_parent
