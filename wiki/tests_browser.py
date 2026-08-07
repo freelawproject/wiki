@@ -1081,3 +1081,36 @@ class TestContentTabs:
             "() => navigator.clipboard.readText()"
         )
         assert "curl -L" in clipboard
+
+
+@pytest.mark.django_db(transaction=True)
+class TestMobileTocToggle:
+    """Issue #150: mobile "On this page" accordion for the TOC."""
+
+    def test_toggle_expands_and_jumps_to_heading(
+        self, browser_page, live_server, page
+    ):
+        browser_page.set_viewport_size({"width": 375, "height": 800})
+        browser_page.goto(f"{live_server.url}{page.get_absolute_url()}")
+
+        # title is a static marker for the button; aria-label/aria-expanded
+        # change with state, so don't use them to locate the element.
+        button = browser_page.locator('button[title="On this page"]')
+        panel = browser_page.locator('[x-data="tocToggle"] nav')
+
+        expect(panel).to_be_hidden()
+        expect(button).to_have_attribute("aria-expanded", "false")
+        expect(button).to_have_attribute("aria-label", "On this page")
+
+        button.click()
+        expect(panel).to_be_visible()
+        expect(button).to_have_attribute("aria-expanded", "true")
+        expect(button).to_have_attribute(
+            "aria-label", "Hide table of contents"
+        )
+
+        link = panel.locator("a").first
+        href = link.get_attribute("href")
+        link.click()
+
+        assert browser_page.url.endswith(href)
