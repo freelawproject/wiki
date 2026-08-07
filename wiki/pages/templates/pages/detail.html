@@ -55,7 +55,7 @@
 <div class="flex gap-8">
   {# Main content #}
   <article class="flex-1 min-w-0">
-    <div class="flex flex-col justify-between gap-3 mb-6">
+    <div class="flex flex-col justify-between gap-3 mb-6" x-data="tocToggle">
       <h1>{{ page.title|inline_code }} <c-visibility-badge visibility="{{ effective_visibility }}" /><c-domain-access-badges :domains="page.access_domains" /></h1>
       <div class="flex items-center gap-2 flex-shrink-0">
         {% if can_edit %}
@@ -113,7 +113,23 @@
             {% endif %}
           </div>
         </div>
+        {% if toc %}
+        {# Mobile TOC toggle — hidden at lg: and up, where the sidebar takes over #}
+        <button @click="toggle" :aria-expanded="open" :aria-label="buttonLabel" type="button"
+                title="On this page" class="btn-outline p-2 lg:hidden">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 6.75h12M8.25 12h12M8.25 17.25h12M3.75 6.75h.007v.008H3.75V6.75Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0ZM3.75 12h.007v.008H3.75V12Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Zm-.375 5.25h.007v.008H3.75v-.008Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Z" />
+          </svg>
+        </button>
+        {% endif %}
       </div>
+      {% if toc %}
+      <nav x-show="open" x-cloak class="toc-nav lg:hidden rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 p-3 text-sm max-h-64 overflow-y-auto">
+        <div class="space-y-1 text-gray-600 dark:text-gray-400">
+          {{ toc|safe }}
+        </div>
+      </nav>
+      {% endif %}
     </div>
 
     <textarea id="page-markdown-source" class="hidden" aria-hidden="true">{{ page.content }}</textarea>
@@ -182,10 +198,10 @@
     </div>
   </article>
 
-  {# TOC sidebar #}
-  {% if toc %}
+  {# TOC sidebar — always reserves the gutter at lg: and up, even without a TOC, so line-width stays consistent (issue #150) #}
   <aside class="hidden lg:block w-64 flex-shrink-0">
-    <nav id="toc-nav" class="sticky top-4 max-h-[calc(100vh-2rem)] overflow-y-auto text-sm">
+    {% if toc %}
+    <nav id="toc-nav" class="toc-nav sticky top-4 max-h-[calc(100vh-2rem)] overflow-y-auto text-sm">
       <h3 class="text-xs font-semibold uppercase tracking-wider text-gray-400 dark:text-gray-500 mb-3">
         On this page
       </h3>
@@ -193,10 +209,10 @@
         {{ toc|safe }}
       </div>
     </nav>
+    <link rel="stylesheet" href="{% static 'css/toc.css' %}">
+    <script src="{% static 'js/toc-highlight.js' %}" defer></script>
+    {% endif %}
   </aside>
-  <link rel="stylesheet" href="{% static 'css/toc.css' %}">
-  <script src="{% static 'js/toc-highlight.js' %}" defer></script>
-  {% endif %}
 </div>
 {% endblock %}
 
