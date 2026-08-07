@@ -201,6 +201,15 @@ document.addEventListener('alpine:init', () => {
     },
   }))
 
+  // Mobile TOC accordion toggle — page detail, below lg breakpoint
+  Alpine.data('tocToggle', () => ({
+    open: false,
+    toggle() { this.open = !this.open },
+    get buttonLabel() {
+      return this.open ? 'Hide table of contents' : 'On this page'
+    },
+  }))
+
   // Search sort dropdown
   Alpine.data('searchSort', () => ({
     change(event) {

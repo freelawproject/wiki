@@ -331,6 +331,31 @@ class TestPageDetail:
         r = client.get(page.get_absolute_url())
         assert b"<h2" in r.content
 
+    def test_mobile_toc_toggle_present_with_headings(self, client, page):
+        """Issue #150: a page with headings gets the mobile TOC icon button."""
+        r = client.get(page.get_absolute_url())
+        assert b'title="On this page"' in r.content
+        assert b'id="toc-nav"' in r.content
+
+    def test_mobile_toc_toggle_absent_without_headings(
+        self, client, user, private_page
+    ):
+        """Issue #150: no headings means no TOC content, so no icon
+        button and no populated sidebar nav either."""
+        client.force_login(user)
+        r = client.get(private_page.get_absolute_url())
+        assert b'title="On this page"' not in r.content
+        assert b'id="toc-nav"' not in r.content
+
+    def test_toc_gutter_reserved_without_headings(
+        self, client, user, private_page
+    ):
+        """Issue #150: the desktop TOC gutter is reserved even when there's
+        no TOC, so line-width is consistent whether or not a page has one."""
+        client.force_login(user)
+        r = client.get(private_page.get_absolute_url())
+        assert b'class="hidden lg:block w-64 flex-shrink-0"' in r.content
+
 
 class TestPageAbsoluteUrl:
     def test_page_without_directory(self, page):
