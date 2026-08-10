@@ -41,3 +41,8 @@ This PR...
 <!-- YOUR IMAGE(S) HERE -->
 </details>
 <!-- END DELETE -->
+
+## AI Disclosure
+<!-- Please check the one box that applies. -->
+- [ ] No AI tools were used to create the content of this PR.
+- [ ] Parts of this PR were created with the help of an AI tool, and I have carefully reviewed all of its content and take full responsibility for it.
