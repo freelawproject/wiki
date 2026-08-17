@@ -7,7 +7,7 @@ from django.http import HttpResponse
 from django.test import RequestFactory
 from django.urls import reverse
 
-from wiki.directories.models import Directory
+from wiki.directories.models import Directory, DirectoryRevision
 from wiki.lib.middleware import SEOHeadersMiddleware
 from wiki.lib.seo import (
     build_article_jsonld,
@@ -15,7 +15,7 @@ from wiki.lib.seo import (
     build_collection_jsonld,
     extract_description,
 )
-from wiki.pages.models import Page
+from wiki.pages.models import Page, PageRevision
 
 # ── extract_description ──────────────────────────────────────────────
 
@@ -830,3 +830,160 @@ class TestDirectorySeoDescription:
         response = client.get(directory.get_absolute_url())
         content = response.content.decode()
         assert "Auto extracted directory blurb." in content
+
+
+# ── nofollow on history and email-subscription links ─────────────────
+
+
+@pytest.mark.django_db
+class TestHistoryAndEmailLinkNofollow:
+    """Links to history and email-subscription pages need rel=nofollow.
+
+    Those views carry no indexable content and aren't noindex'd by
+    ``SEOHeadersMiddleware``, so every link pointing at one must tell
+    crawlers not to follow it.
+    """
+
+    def _assert_nofollow(self, content, url):
+        """Every anchor for ``url`` in ``content`` must be nofollow."""
+        assert f'href="{url}"' in content, f"No link to {url} rendered"
+        assert f'href="{url}" rel="nofollow"' in content
+        # No other anchor to the same URL sneaks through without it.
+        assert content.count(f'href="{url}"') == content.count(
+            f'href="{url}" rel="nofollow"'
+        )
+
+    def test_page_detail_history_links(self, client, page):
+        """Both the Actions item and the "Last updated" link are nofollow."""
+        page.history_is_public = True
+        page.save(update_fields=["history_is_public"])
+        content = client.get(page.get_absolute_url()).content.decode()
+        history_url = reverse(
+            "page_history", kwargs={"path": page.content_path}
+        )
+        self._assert_nofollow(content, history_url)
+        assert content.count(f'href="{history_url}" rel="nofollow"') == 2
+
+    def test_page_detail_email_subscribe_link(self, client, page):
+        page.history_is_public = True
+        page.save(update_fields=["history_is_public"])
+        content = client.get(page.get_absolute_url()).content.decode()
+        self._assert_nofollow(
+            content,
+            reverse(
+                "page_email_subscribe", kwargs={"path": page.content_path}
+            ),
+        )
+
+    def test_page_history_email_subscribe_link(self, client, page):
+        page.history_is_public = True
+        page.save(update_fields=["history_is_public"])
+        history_url = reverse(
+            "page_history", kwargs={"path": page.content_path}
+        )
+        content = client.get(history_url).content.decode()
+        self._assert_nofollow(
+            content,
+            reverse(
+                "page_email_subscribe", kwargs={"path": page.content_path}
+            ),
+        )
+
+    def test_page_diff_back_to_history_link(self, client, user, page):
+        PageRevision.objects.create(
+            page=page,
+            title=page.title,
+            content="Changed content",
+            change_message="Second edit",
+            revision_number=2,
+            created_by=user,
+        )
+        client.force_login(user)
+        content = client.get(
+            reverse(
+                "page_diff",
+                kwargs={"path": page.content_path, "v1": 1, "v2": 2},
+            )
+        ).content.decode()
+        self._assert_nofollow(
+            content,
+            reverse("page_history", kwargs={"path": page.content_path}),
+        )
+
+    def test_page_revert_confirm_cancel_link(self, client, user, page):
+        client.force_login(user)
+        content = client.get(
+            reverse(
+                "page_revert",
+                kwargs={"path": page.content_path, "rev_num": 1},
+            )
+        ).content.decode()
+        self._assert_nofollow(
+            content,
+            reverse("page_history", kwargs={"path": page.content_path}),
+        )
+
+    def test_directory_detail_history_link(self, client, user, sub_directory):
+        client.force_login(user)
+        content = client.get(sub_directory.get_absolute_url()).content.decode()
+        self._assert_nofollow(
+            content,
+            reverse("directory_history", kwargs={"path": sub_directory.path}),
+        )
+
+    def test_root_directory_history_link(self, client, user, root_directory):
+        client.force_login(user)
+        content = client.get(
+            root_directory.get_absolute_url()
+        ).content.decode()
+        self._assert_nofollow(content, reverse("directory_history_root"))
+
+    def test_directory_diff_back_to_history_link(
+        self, client, user, sub_directory
+    ):
+        for num in (1, 2):
+            DirectoryRevision.objects.create(
+                directory=sub_directory,
+                title=f"Engineering v{num}",
+                description=f"Desc v{num}",
+                visibility="public",
+                editability="restricted",
+                change_message=f"v{num}",
+                revision_number=num,
+                created_by=user,
+            )
+        content = client.get(
+            reverse(
+                "directory_diff",
+                kwargs={"path": sub_directory.path, "v1": 1, "v2": 2},
+            )
+        ).content.decode()
+        self._assert_nofollow(
+            content,
+            reverse("directory_history", kwargs={"path": sub_directory.path}),
+        )
+
+    def test_directory_revert_confirm_cancel_link(
+        self, client, user, sub_directory
+    ):
+        DirectoryRevision.objects.create(
+            directory=sub_directory,
+            title="Engineering",
+            description="Old desc",
+            visibility="public",
+            editability="restricted",
+            change_message="v1",
+            revision_number=1,
+            created_by=user,
+        )
+        client.force_login(user)
+        content = client.get(
+            reverse(
+                "directory_revert",
+                kwargs={"path": sub_directory.path, "rev_num": 1},
+            )
+        ).content.decode()
+        self._assert_nofollow(
+            content,
+            reverse("directory_history", kwargs={"path": sub_directory.path}),
+        )
