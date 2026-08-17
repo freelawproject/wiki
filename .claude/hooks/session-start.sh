@@ -11,17 +11,41 @@
 # .github/workflows/lint.yml.
 #
 # Runs only in remote sessions; a local checkout already has its own stack.
+#
+# Runs asynchronously: the session starts immediately while the stack builds in
+# the background. Progress goes to /tmp/wiki-session-start.log and the current
+# state is a single word in /tmp/wiki-stack-status — "starting", "ready" or
+# "failed". Check that file before running anything that needs the containers.
 set -euo pipefail
 
 if [ "${CLAUDE_CODE_REMOTE:-}" != "true" ]; then
     exit 0
 fi
 
+# Must be the first line of stdout: hands the session back while we keep working.
+echo '{"async": true, "asyncTimeout": 900000}'
+
 REPO_DIR="${CLAUDE_PROJECT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 COMPOSE_DIR="$REPO_DIR/docker/wiki"
 DOCKERD_LOG="/tmp/dockerd.log"
+HOOK_LOG="/tmp/wiki-session-start.log"
+STATUS_FILE="/tmp/wiki-stack-status"
+
+# Everything from here on is also written to the log, so a session that starts
+# before the stack is up can read what happened.
+exec >>"$HOOK_LOG" 2>&1
 
 log() { echo "[session-start] $*"; }
+status() { echo "$1" >"$STATUS_FILE"; }
+
+status starting
+
+# COMPOSE_FILE lets `docker compose ...` run from anywhere in the repo instead of
+# only from docker/wiki/. Written before the slow work below, since the session
+# is already running by then.
+if [ -n "${CLAUDE_ENV_FILE:-}" ]; then
+    echo "export COMPOSE_FILE=$COMPOSE_DIR/docker-compose.yml" >>"$CLAUDE_ENV_FILE"
+fi
 
 # ---------------------------------------------------------------------------
 # 1. Environment file
@@ -60,6 +84,7 @@ fi
 if ! docker info >/dev/null 2>&1; then
     log "ERROR: the docker daemon did not come up; see $DOCKERD_LOG"
     log "The wiki stack is NOT running. Django, postgres and the tests are unavailable."
+    status failed
     exit 0
 fi
 
@@ -90,6 +115,7 @@ if ! (cd "$COMPOSE_DIR" && docker compose up -d --build); then
     log "in the environment's network settings, or use an unrestricted policy:"
     log "https://code.claude.com/docs/en/claude-code-on-the-web"
     log "The wiki stack is NOT running. Django, postgres and the tests are unavailable."
+    status failed
     exit 0
 fi
 
@@ -111,21 +137,13 @@ for _ in $(seq 1 120); do
     sleep 1
 done
 
+(cd "$COMPOSE_DIR" && docker compose ps)
+
 if [ "$django_up" = true ]; then
     log "wiki is up at http://localhost:${DJANGO_HOST_PORT:-8001}/"
+    log "run tests with: docker compose exec wiki-django python -m pytest --tb=short -q"
+    status ready
 else
     log "WARNING: django did not answer within 120s; check 'docker compose logs wiki-django'"
+    status failed
 fi
-
-# ---------------------------------------------------------------------------
-# 5. Session environment
-#
-# COMPOSE_FILE lets `docker compose ...` run from anywhere in the repo instead
-# of only from docker/wiki/.
-# ---------------------------------------------------------------------------
-if [ -n "${CLAUDE_ENV_FILE:-}" ]; then
-    echo "export COMPOSE_FILE=$COMPOSE_DIR/docker-compose.yml" >>"$CLAUDE_ENV_FILE"
-fi
-
-(cd "$COMPOSE_DIR" && docker compose ps)
-log "run tests with: docker compose exec wiki-django python -m pytest --tb=short -q"
