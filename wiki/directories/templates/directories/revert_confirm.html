@@ -17,7 +17,7 @@
     <form method="post" class="flex gap-3">
       {% csrf_token %}
       <button type="submit" class="btn-primary">Revert</button>
-      <a href="{{ history_url }}" class="btn-outline">Cancel</a>
+      <a href="{{ history_url }}" rel="nofollow" class="btn-outline">Cancel</a>
     </form>
   </div>
 </div>

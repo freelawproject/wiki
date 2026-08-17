@@ -87,9 +87,9 @@
             {% endif %}
           {% endif %}
           {% if directory.path %}
-            <a href="{% url 'directory_history' path=directory.path %}" class="dropdown-item">History</a>
+            <a href="{% url 'directory_history' path=directory.path %}" rel="nofollow" class="dropdown-item">History</a>
           {% else %}
-            <a href="{% url 'directory_history_root' %}" class="dropdown-item">History</a>
+            <a href="{% url 'directory_history_root' %}" rel="nofollow" class="dropdown-item">History</a>
           {% endif %}
           {% if user.is_authenticated %}
             <button class="dropdown-item"
