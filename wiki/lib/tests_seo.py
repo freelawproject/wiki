@@ -1038,3 +1038,21 @@ class TestActivityLinkNofollow:
             )
         ).content.decode()
         assert_all_anchors_nofollow(content, reverse("recent_changes"))
+
+    def test_activity_feed_pagination_links(self, client, page, staff_user):
+        """Pagination hrefs are relative, so they land on /activity/ too."""
+        PageRevision.objects.bulk_create(
+            PageRevision(
+                page=page,
+                title=page.title,
+                content=page.content,
+                change_message=f"Edit {num}",
+                revision_number=num,
+                created_by=staff_user,
+            )
+            # The feed paginates at 50; the fixture supplies revision 1.
+            for num in range(2, 52)
+        )
+        client.force_login(staff_user)
+        content = client.get(reverse("recent_changes")).content.decode()
+        assert_all_anchors_nofollow(content, "?page=2")

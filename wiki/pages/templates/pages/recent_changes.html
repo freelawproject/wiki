@@ -42,7 +42,7 @@
   <nav class="mt-6 flex items-center justify-between text-sm">
     <div>
       {% if page_obj.has_previous %}
-      <a href="?page={{ page_obj.previous_page_number }}{% if filter_user %}&user={{ filter_user|handle }}{% endif %}" class="btn-outline text-sm">Previous</a>
+      <a href="?page={{ page_obj.previous_page_number }}{% if filter_user %}&user={{ filter_user|handle }}{% endif %}" rel="nofollow" class="btn-outline text-sm">Previous</a>
       {% endif %}
     </div>
     <span class="text-gray-500 dark:text-gray-400">
@@ -50,7 +50,7 @@
     </span>
     <div>
       {% if page_obj.has_next %}
-      <a href="?page={{ page_obj.next_page_number }}{% if filter_user %}&user={{ filter_user|handle }}{% endif %}" class="btn-outline text-sm">Next</a>
+      <a href="?page={{ page_obj.next_page_number }}{% if filter_user %}&user={{ filter_user|handle }}{% endif %}" rel="nofollow" class="btn-outline text-sm">Next</a>
       {% endif %}
     </div>
   </nav>
