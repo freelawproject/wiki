@@ -15,6 +15,7 @@ from wiki.lib.seo import (
     build_collection_jsonld,
     extract_description,
 )
+from wiki.lib.templatetags.wiki_tags import handle
 from wiki.pages.models import Page, PageRevision
 
 # ── extract_description ──────────────────────────────────────────────
@@ -832,7 +833,17 @@ class TestDirectorySeoDescription:
         assert "Auto extracted directory blurb." in content
 
 
-# ── nofollow on history and email-subscription links ─────────────────
+# ── nofollow on crawl-disallowed utility links ───────────────────────
+
+
+def assert_all_anchors_nofollow(content, url):
+    """Every anchor pointing at ``url`` in ``content`` must be nofollow."""
+    assert f'href="{url}"' in content, f"No link to {url} rendered"
+    assert f'href="{url}" rel="nofollow"' in content
+    # No other anchor to the same URL sneaks through without it.
+    assert content.count(f'href="{url}"') == content.count(
+        f'href="{url}" rel="nofollow"'
+    )
 
 
 @pytest.mark.django_db
@@ -844,15 +855,6 @@ class TestHistoryAndEmailLinkNofollow:
     crawlers not to follow it.
     """
 
-    def _assert_nofollow(self, content, url):
-        """Every anchor for ``url`` in ``content`` must be nofollow."""
-        assert f'href="{url}"' in content, f"No link to {url} rendered"
-        assert f'href="{url}" rel="nofollow"' in content
-        # No other anchor to the same URL sneaks through without it.
-        assert content.count(f'href="{url}"') == content.count(
-            f'href="{url}" rel="nofollow"'
-        )
-
     def test_page_detail_history_links(self, client, page):
         """Both the Actions item and the "Last updated" link are nofollow."""
         page.history_is_public = True
@@ -861,14 +863,14 @@ class TestHistoryAndEmailLinkNofollow:
         history_url = reverse(
             "page_history", kwargs={"path": page.content_path}
         )
-        self._assert_nofollow(content, history_url)
+        assert_all_anchors_nofollow(content, history_url)
         assert content.count(f'href="{history_url}" rel="nofollow"') == 2
 
     def test_page_detail_email_subscribe_link(self, client, page):
         page.history_is_public = True
         page.save(update_fields=["history_is_public"])
         content = client.get(page.get_absolute_url()).content.decode()
-        self._assert_nofollow(
+        assert_all_anchors_nofollow(
             content,
             reverse(
                 "page_email_subscribe", kwargs={"path": page.content_path}
@@ -882,7 +884,7 @@ class TestHistoryAndEmailLinkNofollow:
             "page_history", kwargs={"path": page.content_path}
         )
         content = client.get(history_url).content.decode()
-        self._assert_nofollow(
+        assert_all_anchors_nofollow(
             content,
             reverse(
                 "page_email_subscribe", kwargs={"path": page.content_path}
@@ -905,7 +907,7 @@ class TestHistoryAndEmailLinkNofollow:
                 kwargs={"path": page.content_path, "v1": 1, "v2": 2},
             )
         ).content.decode()
-        self._assert_nofollow(
+        assert_all_anchors_nofollow(
             content,
             reverse("page_history", kwargs={"path": page.content_path}),
         )
@@ -918,7 +920,7 @@ class TestHistoryAndEmailLinkNofollow:
                 kwargs={"path": page.content_path, "rev_num": 1},
             )
         ).content.decode()
-        self._assert_nofollow(
+        assert_all_anchors_nofollow(
             content,
             reverse("page_history", kwargs={"path": page.content_path}),
         )
@@ -926,7 +928,7 @@ class TestHistoryAndEmailLinkNofollow:
     def test_directory_detail_history_link(self, client, user, sub_directory):
         client.force_login(user)
         content = client.get(sub_directory.get_absolute_url()).content.decode()
-        self._assert_nofollow(
+        assert_all_anchors_nofollow(
             content,
             reverse("directory_history", kwargs={"path": sub_directory.path}),
         )
@@ -936,7 +938,7 @@ class TestHistoryAndEmailLinkNofollow:
         content = client.get(
             root_directory.get_absolute_url()
         ).content.decode()
-        self._assert_nofollow(content, reverse("directory_history_root"))
+        assert_all_anchors_nofollow(content, reverse("directory_history_root"))
 
     def test_directory_diff_back_to_history_link(
         self, client, user, sub_directory
@@ -958,7 +960,7 @@ class TestHistoryAndEmailLinkNofollow:
                 kwargs={"path": sub_directory.path, "v1": 1, "v2": 2},
             )
         ).content.decode()
-        self._assert_nofollow(
+        assert_all_anchors_nofollow(
             content,
             reverse("directory_history", kwargs={"path": sub_directory.path}),
         )
@@ -983,7 +985,56 @@ class TestHistoryAndEmailLinkNofollow:
                 kwargs={"path": sub_directory.path, "rev_num": 1},
             )
         ).content.decode()
-        self._assert_nofollow(
+        assert_all_anchors_nofollow(
             content,
             reverse("directory_history", kwargs={"path": sub_directory.path}),
         )
+
+
+@pytest.mark.django_db
+class TestActivityLinkNofollow:
+    """Links to the /activity/ feeds need rel=nofollow.
+
+    ``robots.txt`` disallows /activity/, and page detail already marks
+    its contributor badges nofollow; the activity feed's own links must
+    match so no crawlable page links there un-tagged.
+    """
+
+    @pytest.fixture
+    def staff_user(self, user):
+        """recent_changes is staff-only."""
+        user.is_staff = True
+        user.save(update_fields=["is_staff"])
+        return user
+
+    def test_page_detail_contributor_links(self, client, page):
+        content = client.get(page.get_absolute_url()).content.decode()
+        assert_all_anchors_nofollow(
+            content,
+            reverse(
+                "recent_changes_user",
+                kwargs={"username": handle(page.created_by)},
+            ),
+        )
+
+    def test_activity_feed_contributor_link(self, client, page, staff_user):
+        client.force_login(staff_user)
+        content = client.get(reverse("recent_changes")).content.decode()
+        assert_all_anchors_nofollow(
+            content,
+            reverse(
+                "recent_changes_user",
+                kwargs={"username": handle(page.created_by)},
+            ),
+        )
+
+    def test_activity_feed_view_all_link(self, client, page, staff_user):
+        """The "View all recent changes" link on a filtered feed."""
+        client.force_login(staff_user)
+        content = client.get(
+            reverse(
+                "recent_changes_user",
+                kwargs={"username": handle(staff_user)},
+            )
+        ).content.decode()
+        assert_all_anchors_nofollow(content, reverse("recent_changes"))
