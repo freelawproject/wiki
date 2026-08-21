@@ -223,9 +223,9 @@ def test_bulk_move_invalidates_each_page(
 def test_create_revision_invalidates_feed_url(mock_invalidate, page, user):
     """Creating a revision should invalidate the page's feed URL.
 
-    Revisions can be created without a Page.save() firing (e.g., via
-    QuerySet.update() in import_api_docs), so a dedicated PageRevision
-    signal is needed to purge the feed.
+    Revisions can be created without a Page.save() firing (e.g. by a caller
+    that writes the page with QuerySet.update()), so a dedicated
+    PageRevision signal is needed to purge the feed.
     """
     mock_invalidate.reset_mock()
     with transaction.atomic():
