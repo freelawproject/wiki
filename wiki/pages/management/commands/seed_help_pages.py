@@ -6,8 +6,10 @@ updated in place; new ones are created.
 
 from django.contrib.auth.models import User
 from django.core.management.base import BaseCommand
+from django.db import transaction
 
 from wiki.directories.models import Directory
+from wiki.lib.page_utils import record_page_move
 from wiki.pages.models import Page, PageRevision
 from wiki.users.models import SystemConfig
 
@@ -80,7 +82,8 @@ The **Actions** dropdown on each page gives you access to:
 
 - **Subscribe / Unsubscribe** — toggle email notifications
 - **Permissions** — manage who can view and edit (owners/admins only)
-- **Move** — move the page to a different directory
+- **Move** — move the page to a different directory (its old
+  URL redirects to the new one)
 - **Feedback** — see pending comments and proposals (editors only)
 - **Propose Change** — suggest edits through the review workflow
 - **History** — view all revisions
@@ -466,11 +469,22 @@ The path is the directory plus slug, matching the URL. For example:
 - **Path**: `help/getting-started-guide`
 - **URL**: `/c/help/getting-started-guide`
 
-### Slug redirects
+### Redirects
 
-When a page's title changes, the slug changes too. The old
-(directory, slug) combination is preserved as a redirect, so
-existing `#old-slug` links continue to work.
+A page's address is its directory plus its slug, and the slug
+follows the title — so renaming a page, moving it to another
+directory, or both at once changes its address.
+
+Every one of those changes leaves a redirect behind. The old
+address keeps working: `#old-slug` links resolve, and the old URL
+sends visitors to the page's current location. That holds through
+any number of moves and renames — each old address points at the
+page itself, not at another address, so nothing depends on a chain
+of redirects staying intact.
+
+Moving a directory is covered too: every page beneath it keeps its
+old URL working, however deeply nested, and qualified
+`#old-dir/slug` links still resolve.
 
 ### Autocomplete
 
@@ -884,9 +898,12 @@ Include a change message to explain why you're making the change.
 Click **Actions → Move** to move a directory to a different
 parent. All pages and subdirectories inside it move along with it.
 
-Note: Moving a directory updates the URL paths of everything
-inside it, so existing bookmarks will break. Wiki links (#slug)
-are not affected since they use slugs, not paths.
+Moving a directory changes the URL of every page inside it, at any
+depth. Existing links keep working: the old URLs redirect to the
+new ones, and wiki links resolve either way — bare `#slug` links
+because they don't name a directory at all, qualified
+`#dir/slug` links because the old directory path still resolves.
+See #linking-pages for how redirects work.
 
 ### Deleting a directory
 
@@ -1901,22 +1918,28 @@ class Command(BaseCommand):
             or page.is_pinned != is_pinned
         )
         if needs_update:
+            old_slug = page.slug
             page.content = data["content"]
             page.title = data["title"]
             page.is_pinned = is_pinned
             page.change_message = "Updated by seed_help_pages"
             page.updated_by = owner
-            page.save()
+            with transaction.atomic():
+                page.save()
+                # A retitled help page gets a new slug, and every link to
+                # the old one — including ones we don't control — has to
+                # keep working.
+                record_page_move(page, help_dir, old_slug)
 
-            last_rev = page.revisions.order_by("-revision_number").first()
-            rev_num = (last_rev.revision_number + 1) if last_rev else 1
-            PageRevision.objects.create(
-                page=page,
-                title=page.title,
-                content=page.content,
-                change_message="Updated by seed_help_pages",
-                revision_number=rev_num,
-                created_by=owner,
-            )
+                last_rev = page.revisions.order_by("-revision_number").first()
+                rev_num = (last_rev.revision_number + 1) if last_rev else 1
+                PageRevision.objects.create(
+                    page=page,
+                    title=page.title,
+                    content=page.content,
+                    change_message="Updated by seed_help_pages",
+                    revision_number=rev_num,
+                    created_by=owner,
+                )
 
         return page, False

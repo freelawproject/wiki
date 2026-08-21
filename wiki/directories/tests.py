@@ -13,8 +13,10 @@ from django.utils import timezone
 from wiki.directories.models import (
     Directory,
     DirectoryPermission,
+    DirectoryRedirect,
     DirectoryRevision,
 )
+from wiki.directories.views import _move_directory
 from wiki.lib.edit_lock import acquire_lock_for_directory
 from wiki.lib.inheritance import clean_redundant_overrides
 from wiki.lib.models import EditLock
@@ -853,6 +855,207 @@ class TestMoveDirectory:
         sub_directory.refresh_from_db()
         assert sub_directory.parent == other
         assert sub_directory.path == "other/engineering"
+
+    def test_move_redirects_old_directory_url(
+        self, client, user, sub_directory, root_directory
+    ):
+        other = Directory.objects.create(
+            path="other",
+            title="Other",
+            parent=root_directory,
+            owner=user,
+            created_by=user,
+        )
+        old_url = sub_directory.get_absolute_url()
+        client.force_login(user)
+        client.post(
+            reverse("directory_move", kwargs={"path": "engineering"}),
+            {"parent": other.pk},
+        )
+        sub_directory.refresh_from_db()
+        r = client.get(old_url)
+        assert r.status_code == 302
+        assert r.url == sub_directory.get_absolute_url()
+
+    def test_move_redirects_pages_under_moved_directory(
+        self,
+        client,
+        user,
+        sub_directory,
+        nested_directory,
+        page_in_directory,
+        root_directory,
+    ):
+        """Moving a directory changes the URL of every page beneath it, at
+        any depth — each of those old URLs has to keep resolving."""
+        deep_page = Page.objects.create(
+            title="Runbook",
+            slug="runbook",
+            content="x",
+            directory=nested_directory,
+            owner=user,
+            created_by=user,
+            updated_by=user,
+        )
+        other = Directory.objects.create(
+            path="other",
+            title="Other",
+            parent=root_directory,
+            owner=user,
+            created_by=user,
+        )
+        old_page_url = page_in_directory.get_absolute_url()
+        old_deep_url = deep_page.get_absolute_url()
+        old_nested_url = nested_directory.get_absolute_url()
+
+        client.force_login(user)
+        client.post(
+            reverse("directory_move", kwargs={"path": "engineering"}),
+            {"parent": other.pk},
+        )
+
+        page_in_directory.refresh_from_db()
+        deep_page.refresh_from_db()
+        nested_directory.refresh_from_db()
+
+        r = client.get(old_page_url)
+        assert r.status_code == 302
+        assert r.url == page_in_directory.get_absolute_url()
+
+        r = client.get(old_deep_url)
+        assert r.status_code == 302
+        assert r.url == deep_page.get_absolute_url()
+
+        r = client.get(old_nested_url)
+        assert r.status_code == 302
+        assert r.url == nested_directory.get_absolute_url()
+
+    def test_second_move_keeps_the_first_old_url_working(
+        self, client, user, sub_directory, page_in_directory, root_directory
+    ):
+        """Redirects point at the page, not at a path, so a chain of moves
+        never needs following — the very first URL still resolves."""
+        first_url = page_in_directory.get_absolute_url()
+        client.force_login(user)
+        for name in ("one", "two"):
+            target = Directory.objects.create(
+                path=name,
+                title=name.title(),
+                parent=root_directory,
+                owner=user,
+                created_by=user,
+            )
+            sub_directory.refresh_from_db()
+            client.post(
+                reverse("directory_move", kwargs={"path": sub_directory.path}),
+                {"parent": target.pk},
+            )
+
+        page_in_directory.refresh_from_db()
+        sub_directory.refresh_from_db()
+        assert sub_directory.path == "two/engineering"
+        assert page_in_directory.get_absolute_url() != first_url
+        r = client.get(first_url)
+        assert r.status_code == 302
+        assert r.url == page_in_directory.get_absolute_url()
+
+    def test_admin_path_change_moves_subtree_and_redirects(
+        self, client, user, sub_directory, nested_directory
+    ):
+        """The admin exposes ``path`` directly, so a save there moves the
+        directory just like the move view does."""
+        old_url = sub_directory.get_absolute_url()
+        old_nested_url = nested_directory.get_absolute_url()
+        user.is_staff = True
+        user.is_superuser = True
+        user.save()
+        client.force_login(user)
+        client.post(
+            reverse(
+                "admin:directories_directory_change", args=[sub_directory.pk]
+            ),
+            {
+                "title": sub_directory.title,
+                "path": "eng",
+                "description": sub_directory.description,
+                "parent": sub_directory.parent_id,
+                "owner": user.pk,
+                "created_by": user.pk,
+                "visibility": Directory.Visibility.PUBLIC,
+                "editability": Directory.Editability.INTERNAL,
+                "permissions-TOTAL_FORMS": "0",
+                "permissions-INITIAL_FORMS": "0",
+                "_save": "Save",
+            },
+        )
+        sub_directory.refresh_from_db()
+        nested_directory.refresh_from_db()
+        assert sub_directory.path == "eng"
+        assert nested_directory.path == "eng/devops"
+
+        r = client.get(old_url)
+        assert r.status_code == 302
+        assert r.url == sub_directory.get_absolute_url()
+
+        r = client.get(old_nested_url)
+        assert r.status_code == 302
+        assert r.url == nested_directory.get_absolute_url()
+
+    def test_reused_old_path_is_reassigned_not_duplicated(
+        self, client, user, sub_directory, root_directory
+    ):
+        """Two directories can successively occupy and vacate one path.
+
+        The second one to leave has to claim the redirect for it — the row is
+        unique on old_path, and the delete pass can't free a path no
+        directory currently sits at.
+        """
+        away = Directory.objects.create(
+            path="away",
+            title="Away",
+            parent=root_directory,
+            owner=user,
+            created_by=user,
+        )
+        assert _move_directory(sub_directory, away) is None
+
+        # A second directory takes the vacated "engineering" path, then leaves
+        # it too. Same title, so the move recomputes the same slug.
+        second = Directory.objects.create(
+            path="engineering",
+            title="Engineering",
+            parent=root_directory,
+            owner=user,
+            created_by=user,
+        )
+        page = Page.objects.create(
+            title="Onboarding",
+            slug="onboarding",
+            content="x",
+            directory=second,
+            owner=user,
+            created_by=user,
+            updated_by=user,
+        )
+        old_url = page.get_absolute_url()
+        elsewhere = Directory.objects.create(
+            path="elsewhere",
+            title="Elsewhere",
+            parent=root_directory,
+            owner=user,
+            created_by=user,
+        )
+        assert _move_directory(second, elsewhere) is None
+
+        assert (
+            DirectoryRedirect.objects.filter(old_path="engineering").count()
+            == 1
+        )
+        client.force_login(user)
+        page.refresh_from_db()
+        r = client.get(old_url)
+        assert r.status_code == 302
+        assert r.url == page.get_absolute_url()
 
     def test_move_updates_descendant_paths(
         self,

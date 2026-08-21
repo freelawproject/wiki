@@ -37,7 +37,9 @@ from wiki.lib.inheritance import resolve_effective_value
 from wiki.lib.markdown import render_markdown
 from wiki.lib.page_utils import (
     get_page_from_path,
+    moved_target,
     page_at_path,
+    record_page_move,
     slug_redirect_at_path,
 )
 from wiki.lib.path_utils import page_path_conflicts_with_directory
@@ -82,7 +84,6 @@ from .models import (
     PageRevision,
     PageViewTally,
     PendingUpload,
-    SlugRedirect,
 )
 from .ocr import (
     MAX_IMAGE_BYTES,
@@ -319,7 +320,8 @@ def resolve_path(request, path):
     1. Page at exact (directory_path, slug) → page view
     2. Directory at exact path → directory view
     3. SlugRedirect at (directory, old_slug) → redirect
-    4. 404
+    4. DirectoryRedirect on the directory component → redirect
+    5. 404
     """
     # Inline import to avoid circular dependency (directories/views imports pages/views)
     from wiki.directories.views import directory_detail
@@ -340,18 +342,25 @@ def resolve_path(request, path):
     if redirect_obj is not None:
         return redirect(redirect_obj.page.get_absolute_url())
 
-    raise Http404
-
-
-def page_detail(request, path):
-    """Display a wiki page. Handles slug redirects and view counting."""
-    page = page_at_path(path)
-    if page is not None:
-        return _render_page_detail(request, page)
-
-    redirect_obj = slug_redirect_at_path(path)
-    if redirect_obj is not None:
-        return redirect(redirect_obj.page.get_absolute_url())
+    # 4. Directory-move history: the page or directory itself didn't move, but
+    # an ancestor directory did, so the old path is stale only in its
+    # directory component.
+    target = moved_target(clean_path)
+    if target is not None:
+        # Gate on the target's own view permission before redirecting. A 302
+        # naming where the content went would disclose the existence, current
+        # path, and (via the slug) roughly the title of something the viewer
+        # can't see — precisely what directory_detail and _render_page_detail
+        # hide behind a 404. An old path must stay as opaque as a path that
+        # was never anything.
+        can_view = (
+            can_view_directory(request.user, target)
+            if isinstance(target, Directory)
+            else can_view_page(request.user, target)
+        )
+        if not can_view:
+            raise Http404
+        return redirect(target.get_absolute_url())
 
     raise Http404
 
@@ -439,7 +448,7 @@ def _build_page_breadcrumbs(request, page):
 
 
 def _render_page_detail(request, page):
-    """Render the page detail view (shared by resolve_path and page_detail)."""
+    """Render the page detail view."""
     if not can_view_page(request.user, page):
         raise Http404
 
@@ -711,12 +720,7 @@ def page_edit(request, path):
         with transaction.atomic():
             page.save()
             _link_uploads_to_page(page, request.user)
-            if page.slug != old_slug:
-                SlugRedirect.objects.update_or_create(
-                    directory=old_directory,
-                    old_slug=old_slug,
-                    defaults={"page": page},
-                )
+            record_page_move(page, old_directory, old_slug)
             rev = page.create_revision(request.user)
             PageSubscription.objects.get_or_create(
                 user=request.user, page=page
@@ -839,6 +843,7 @@ def _move_page_to_directory(page, new_directory):
         )
 
     original_directory = page.directory
+    original_slug = page.slug
     page.directory = new_directory
     try:
         # A nested atomic() gives this its own savepoint: if a concurrent
@@ -849,6 +854,7 @@ def _move_page_to_directory(page, new_directory):
         # request.
         with transaction.atomic():
             page.save()
+            record_page_move(page, original_directory, original_slug)
     except IntegrityError:
         page.directory = original_directory
         return False, (
@@ -1325,8 +1331,11 @@ def page_revert(request, path, rev_num):
         page.content = old_rev.content
         page.change_message = f"Reverted to version {rev_num}"
         page.updated_by = request.user
+        old_slug = page.slug
         with transaction.atomic():
             page.save()
+            # Reverting the title regenerates the slug, which moves the page.
+            record_page_move(page, page.directory, old_slug)
             _link_uploads_to_page(page, request.user)
             rev = page.create_revision(request.user)
 

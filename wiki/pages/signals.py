@@ -102,10 +102,10 @@ def invalidate_on_page_save(sender, instance, **kwargs):
 def invalidate_on_revision_create(sender, instance, created, **kwargs):
     """Invalidate the page's revision feed when a new revision is created.
 
-    PageRevision objects can be created without a Page.save() (e.g., via
-    QuerySet.update() in import_api_docs), so the page_save handler won't
-    always fire. This ensures the .rss feed gets purged when revisions are
-    added, even when the page itself wasn't saved.
+    PageRevision objects can be created without a Page.save() — e.g. by a
+    caller that writes the page with QuerySet.update() — so the page_save
+    handler won't always fire. This ensures the .rss feed gets purged when
+    revisions are added, even when the page itself wasn't saved.
     """
     if not created:
         return

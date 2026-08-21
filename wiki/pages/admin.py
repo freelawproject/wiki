@@ -1,4 +1,8 @@
 from django.contrib import admin
+from django.db import transaction
+
+from wiki.directories.models import Directory
+from wiki.lib.page_utils import record_page_move
 
 from .models import (
     FileUpload,
@@ -125,6 +129,31 @@ class PageAdmin(admin.ModelAdmin):
     def get_queryset(self, request):
         """Show all pages (including deleted) in admin."""
         return Page.all_objects.all()
+
+    def save_model(self, request, obj, form, change):
+        """Save the page, leaving a redirect behind if it moved.
+
+        The admin exposes both ``slug`` and ``directory``, so a save here can
+        relocate a page exactly as the edit and move views can — and the old
+        URL has to keep working.
+        """
+        old_directory_id, old_slug = None, None
+        if change and obj.pk:
+            old_directory_id, old_slug = (
+                Page.all_objects.filter(pk=obj.pk)
+                .values_list("directory_id", "slug")
+                .first()
+            ) or (None, None)
+
+        with transaction.atomic():
+            super().save_model(request, obj, form, change)
+            if old_slug is not None:
+                old_directory = (
+                    Directory.objects.filter(pk=old_directory_id).first()
+                    if old_directory_id
+                    else None
+                )
+                record_page_move(obj, old_directory, old_slug)
 
     @admin.action(description="Restore selected pages")
     def restore_pages(self, request, queryset):

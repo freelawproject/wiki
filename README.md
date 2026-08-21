@@ -431,10 +431,16 @@ dormant past `DORMANT_GRANT_RETENTION_DAYS` (default 180).
 Pages and directories share one URL space. The catch-all resolver
 (`resolve_path`) checks in order:
 
-1. Does the path match a **Directory**? Render directory view.
-2. Does the last segment match a **Page** slug? Render page view.
-3. Does it match a **SlugRedirect**? 302 to the current URL.
-4. 404.
+1. Is there a **Page** at this exact `(directory path, slug)`? Render page view.
+2. Is there a **Directory** at this exact path? Render directory view.
+3. Is there a **SlugRedirect** at `(directory, old_slug)`? 302 to the current URL.
+4. Does a **DirectoryRedirect** cover the path's directory component? Resolve the
+   page or directory under its current directory and 302 there.
+5. 404.
+
+Step 4 is gated on the target's own view permission: an old path 404s for a
+viewer who can't see where it leads, so a redirect can't be used to probe for
+private content the literal path would have hidden.
 
 Fixed routes (`/login/`, `/search/`, `/api/`, etc.) are registered first so
 they take priority.
@@ -446,17 +452,31 @@ During rendering, the `resolve_wiki_links` preprocessor:
 
 - Resolves known slugs to titled links: `#deploy-guide` becomes
   `[Deploy Guide](/engineering/deploy-guide)`
-- Resolves old slugs via the `SlugRedirect` table
+- Resolves old slugs via the `SlugRedirect` table, and qualified
+  `#old-dir/slug` refs whose directory has since moved via
+  `DirectoryRedirect` — including a page that was renamed *and* carried
+  along by an ancestor's move
 - Renders unknown slugs as red links (page doesn't exist yet)
 
 The editor provides autocomplete: typing `#` + two characters triggers an
 HTMX-powered dropdown of matching page titles.
 
-### Slug Stability
+### Address Stability
 
-When a page title changes, the slug updates and a `SlugRedirect` is created
-mapping the old slug to the page. This means `#old-slug` wiki links and
+A page's address is `(directory path, slug)`, and the slug is derived from the
+title — so renaming a page, moving it to another directory, or both at once
+changes its address. Every such move records a `SlugRedirect` for the address
+it left (`record_page_move` in `wiki/lib/page_utils.py`), so old wiki links and
 bookmarks keep working indefinitely.
+
+Moving a *directory* rewrites its path and every descendant's, changing the URL
+of every page beneath it. `SlugRedirect`'s FK follows the directory as it moves
+and so can't express a stale path; a `DirectoryRedirect` row per directory in
+the moved subtree records `old path → directory` instead.
+
+Both redirect kinds point at their target by foreign key, not by address, so a
+page that has been renamed and moved repeatedly resolves from any address it
+ever had in a single hop — there is no redirect chain to keep intact.
 
 ### Permission Model
 
