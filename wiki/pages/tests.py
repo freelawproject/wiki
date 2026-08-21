@@ -23,11 +23,16 @@ from django.utils import timezone
 from PIL import Image as PILImage
 
 from wiki.directories.models import Directory
+from wiki.directories.views import _move_directory
 from wiki.lib.edit_lock import acquire_lock_for_page
 from wiki.lib.markdown import render_markdown, resolve_wiki_links
 from wiki.lib.models import EditLock
+from wiki.lib.page_utils import record_page_move
 from wiki.lib.permissions import can_edit_page
 from wiki.pages.diff_utils import unified_diff
+from wiki.pages.management.commands import (
+    seed_help_pages as seed_help_pages_module,
+)
 from wiki.pages.models import (
     FileUpload,
     Page,
@@ -874,6 +879,334 @@ class TestSlugRedirect:
         r = client.get(reverse("resolve_path", kwargs={"path": "old-name"}))
         assert r.status_code == 302
         assert r.url == page.get_absolute_url()
+
+
+class TestMoveLeavesRedirect:
+    """Every path that relocates a page must leave its old URL working."""
+
+    def test_move_to_directory_redirects_old_url(
+        self, client, user, page, sub_directory
+    ):
+        old_url = page.get_absolute_url()
+        client.force_login(user)
+        client.post(
+            reverse("page_move", kwargs={"path": page.content_path}),
+            {"directory": sub_directory.pk},
+        )
+        page.refresh_from_db()
+        r = client.get(old_url)
+        assert r.status_code == 302
+        assert r.url == page.get_absolute_url()
+
+    def test_move_to_root_redirects_old_url(
+        self, client, user, page_in_directory
+    ):
+        old_url = page_in_directory.get_absolute_url()
+        client.force_login(user)
+        client.post(
+            reverse(
+                "page_move",
+                kwargs={"path": page_in_directory.content_path},
+            ),
+            {"directory": ""},
+        )
+        page_in_directory.refresh_from_db()
+        r = client.get(old_url)
+        assert r.status_code == 302
+        assert r.url == page_in_directory.get_absolute_url()
+
+    def test_bulk_move_redirects_old_url(
+        self, client, owner_user, page, sub_directory
+    ):
+        old_url = page.get_absolute_url()
+        client.force_login(owner_user)
+        client.post(
+            reverse("page_bulk_move"),
+            {"page_ids": [page.pk], "directory": sub_directory.pk},
+        )
+        page.refresh_from_db()
+        assert page.directory == sub_directory
+        r = client.get(old_url)
+        assert r.status_code == 302
+        assert r.url == page.get_absolute_url()
+
+    def test_edit_that_only_changes_directory_redirects_old_url(
+        self, client, owner_user, page, sub_directory
+    ):
+        old_url = page.get_absolute_url()
+        client.force_login(owner_user)
+        client.post(
+            reverse("page_edit", kwargs={"path": page.content_path}),
+            {
+                "title": page.title,
+                "content": page.content,
+                "visibility": Page.Visibility.PUBLIC,
+                "change_message": "Moved to engineering",
+                "directory_path": sub_directory.path,
+            },
+        )
+        page.refresh_from_db()
+        assert page.directory == sub_directory
+        r = client.get(old_url)
+        assert r.status_code == 302
+        assert r.url == page.get_absolute_url()
+
+    def test_revert_of_renamed_page_redirects_old_url(
+        self, client, user, page
+    ):
+        client.force_login(user)
+        client.post(
+            reverse("page_edit", kwargs={"path": page.content_path}),
+            {
+                "title": "Renamed Page",
+                "content": page.content,
+                "visibility": Page.Visibility.PUBLIC,
+                "change_message": "Renamed",
+            },
+        )
+        page.refresh_from_db()
+        renamed_url = page.get_absolute_url()
+
+        client.post(
+            reverse(
+                "page_revert",
+                kwargs={"path": page.content_path, "rev_num": 1},
+            )
+        )
+        page.refresh_from_db()
+        assert page.slug == "getting-started"
+        r = client.get(renamed_url)
+        assert r.status_code == 302
+        assert r.url == page.get_absolute_url()
+
+    def test_admin_move_redirects_old_url(
+        self, client, user, page, sub_directory
+    ):
+        """Moving a page through the Django admin also leaves a redirect."""
+        old_url = page.get_absolute_url()
+        user.is_staff = True
+        user.is_superuser = True
+        user.save()
+        client.force_login(user)
+        client.post(
+            reverse("admin:pages_page_change", args=[page.pk]),
+            {
+                "title": page.title,
+                "slug": "renamed-in-admin",
+                "content": page.content,
+                "directory": sub_directory.pk,
+                "visibility": Page.Visibility.PUBLIC,
+                "editability": Page.Editability.INTERNAL,
+                "change_message": "",
+                "owner": user.pk,
+                "created_by": user.pk,
+                "updated_by": user.pk,
+                "in_sitemap": Page.SitemapStatus.INHERIT,
+                "in_llms_txt": Page.LlmsTxtStatus.INHERIT,
+                "permissions-TOTAL_FORMS": "0",
+                "permissions-INITIAL_FORMS": "0",
+                "slug_redirects-TOTAL_FORMS": "0",
+                "slug_redirects-INITIAL_FORMS": "0",
+                "revisions-TOTAL_FORMS": "0",
+                "revisions-INITIAL_FORMS": "0",
+                "_save": "Save",
+            },
+        )
+        page.refresh_from_db()
+        assert page.slug == "renamed-in-admin"
+        assert page.directory == sub_directory
+        r = client.get(old_url)
+        assert r.status_code == 302
+        assert r.url == page.get_absolute_url()
+
+
+class TestRenameAndMoveCombined:
+    """A page's address is (directory, slug). Both halves can change, in
+    either order or at once, any number of times — every address it ever had
+    has to keep resolving."""
+
+    def _edit(self, client, page, title, directory_path):
+        return client.post(
+            reverse("page_edit", kwargs={"path": page.content_path}),
+            {
+                "title": title,
+                "content": page.content,
+                "visibility": Page.Visibility.PUBLIC,
+                "change_message": "x",
+                "directory_path": directory_path,
+            },
+        )
+
+    def test_title_and_directory_changed_in_one_save(
+        self, client, owner_user, page, sub_directory
+    ):
+        old_url = page.get_absolute_url()
+        client.force_login(owner_user)
+        self._edit(client, page, "Renamed Page", sub_directory.path)
+
+        page.refresh_from_db()
+        assert page.slug == "renamed-page"
+        assert page.directory == sub_directory
+
+        r = client.get(old_url)
+        assert r.status_code == 302
+        assert r.url == page.get_absolute_url()
+
+    def test_rename_then_move(self, client, owner_user, page, sub_directory):
+        first_url = page.get_absolute_url()
+        client.force_login(owner_user)
+
+        self._edit(client, page, "Renamed Page", "")
+        page.refresh_from_db()
+        renamed_url = page.get_absolute_url()
+
+        self._edit(client, page, page.title, sub_directory.path)
+        page.refresh_from_db()
+        assert page.directory == sub_directory
+
+        for stale_url in (first_url, renamed_url):
+            r = client.get(stale_url)
+            assert r.status_code == 302
+            assert r.url == page.get_absolute_url()
+
+    def test_move_then_rename(self, client, owner_user, page, sub_directory):
+        first_url = page.get_absolute_url()
+        client.force_login(owner_user)
+
+        self._edit(client, page, page.title, sub_directory.path)
+        page.refresh_from_db()
+        moved_url = page.get_absolute_url()
+
+        self._edit(client, page, "Renamed Page", sub_directory.path)
+        page.refresh_from_db()
+        assert page.slug == "renamed-page"
+
+        for stale_url in (first_url, moved_url):
+            r = client.get(stale_url)
+            assert r.status_code == 302
+            assert r.url == page.get_absolute_url()
+
+    def test_rename_then_ancestor_directory_move(
+        self,
+        client,
+        owner_user,
+        page_in_directory,
+        sub_directory,
+        root_directory,
+    ):
+        """Both halves stale for different reasons: the page's own rename
+        moved the slug, and an ancestor's move rewrote the directory path."""
+        first_url = page_in_directory.get_absolute_url()
+        client.force_login(owner_user)
+        self._edit(
+            client,
+            page_in_directory,
+            "Coding Standards v2",
+            sub_directory.path,
+        )
+        page_in_directory.refresh_from_db()
+        assert page_in_directory.slug == "coding-standards-v2"
+
+        other = Directory.objects.create(
+            path="other",
+            title="Other",
+            parent=root_directory,
+            owner=owner_user,
+            created_by=owner_user,
+        )
+        assert _move_directory(sub_directory, other) is None
+
+        page_in_directory.refresh_from_db()
+        r = client.get(first_url)
+        assert r.status_code == 302
+        assert r.url == page_in_directory.get_absolute_url()
+
+    def test_every_address_in_a_long_chain_still_resolves(
+        self, client, owner_user, page, sub_directory, nested_directory
+    ):
+        """Rename, move, rename, move — four addresses, all still good."""
+        client.force_login(owner_user)
+        seen = [page.get_absolute_url()]
+
+        for title, dir_path in (
+            ("Second Title", ""),
+            ("Second Title", sub_directory.path),
+            ("Third Title", sub_directory.path),
+            ("Third Title", nested_directory.path),
+        ):
+            self._edit(client, page, title, dir_path)
+            page.refresh_from_db()
+            seen.append(page.get_absolute_url())
+
+        current = seen.pop()
+        assert page.directory == nested_directory
+        assert page.slug == "third-title"
+
+        for stale_url in seen:
+            r = client.get(stale_url)
+            assert r.status_code == 302, stale_url
+            assert r.url == current, stale_url
+
+
+class TestMovedPathPermissions:
+    """An old path must stay as opaque as a path that was never anything."""
+
+    def test_moved_private_directory_old_path_404s_for_anonymous(
+        self, client, user, private_directory, root_directory
+    ):
+        """A 302 naming the new location would disclose the existence and
+        current name of a directory directory_detail hides behind a 404."""
+        old_url = private_directory.get_absolute_url()
+        other = Directory.objects.create(
+            path="other",
+            title="Other",
+            parent=root_directory,
+            owner=user,
+            created_by=user,
+        )
+        _move_directory(private_directory, other)
+
+        r = client.get(old_url)
+        assert r.status_code == 404
+
+        # The owner, who can see it, still gets the redirect.
+        client.force_login(user)
+        private_directory.refresh_from_db()
+        r = client.get(old_url)
+        assert r.status_code == 302
+        assert r.url == private_directory.get_absolute_url()
+
+    def test_private_page_under_moved_directory_404s_for_anonymous(
+        self, client, user, sub_directory, root_directory
+    ):
+        secret = Page.objects.create(
+            title="Layoff Plan",
+            slug="layoff-plan",
+            content="x",
+            directory=sub_directory,
+            owner=user,
+            created_by=user,
+            updated_by=user,
+            visibility=Page.Visibility.PRIVATE,
+        )
+        old_url = secret.get_absolute_url()
+        other = Directory.objects.create(
+            path="other",
+            title="Other",
+            parent=root_directory,
+            owner=user,
+            created_by=user,
+        )
+        _move_directory(sub_directory, other)
+
+        r = client.get(old_url)
+        assert r.status_code == 404
+
+        client.force_login(user)
+        secret.refresh_from_db()
+        r = client.get(old_url)
+        assert r.status_code == 302
+        assert r.url == secret.get_absolute_url()
 
 
 class TestResolvePathView:
@@ -1832,6 +2165,36 @@ class TestSeedHelpPages:
         )
         assert r.status_code == 200
         assert b"Markdown Syntax" in r.content
+
+    def test_retitled_help_page_leaves_redirect(
+        self, client, owner_user, monkeypatch
+    ):
+        """Re-seeding with a new title re-slugs the page, so its published
+        URL has to keep resolving."""
+        monkeypatch.setattr(
+            seed_help_pages_module,
+            "HELP_PAGES",
+            [{"slug": "how-to", "title": "How To", "content": "a"}],
+        )
+        call_command("seed_help_pages")
+        page = Page.objects.get(slug="how-to")
+        old_url = page.get_absolute_url()
+
+        monkeypatch.setattr(
+            seed_help_pages_module,
+            "HELP_PAGES",
+            [{"slug": "how-to", "title": "How To Wiki", "content": "b"}],
+        )
+        call_command("seed_help_pages")
+
+        page.refresh_from_db()
+        assert page.slug == "how-to-wiki"
+        assert SlugRedirect.objects.filter(
+            old_slug="how-to", page=page
+        ).exists()
+        r = client.get(old_url)
+        assert r.status_code == 302
+        assert r.url == page.get_absolute_url()
 
     def test_wiki_links_resolve_between_help_pages(self, owner_user):
         call_command("seed_help_pages")
@@ -2969,6 +3332,61 @@ class TestPageLinks:
         page.content = "See #old-slug for details."
         page.save()
         assert PageLink.objects.filter(from_page=page, to_page=other).exists()
+
+    def test_qualified_link_survives_directory_move(
+        self, user, page, page_in_directory, sub_directory, root_directory
+    ):
+        """A #dir/slug reference keeps resolving after its directory moves."""
+        page.content = f"See #{sub_directory.path}/{page_in_directory.slug}."
+        page.save()
+        assert PageLink.objects.filter(
+            from_page=page, to_page=page_in_directory
+        ).exists()
+
+        other = Directory.objects.create(
+            path="other",
+            title="Other",
+            parent=root_directory,
+            owner=user,
+            created_by=user,
+        )
+        assert _move_directory(sub_directory, other) is None
+        sub_directory.refresh_from_db()
+        assert sub_directory.path == "other/engineering"
+
+        html = render_markdown(page.content)
+        page_in_directory.refresh_from_db()
+        assert page_in_directory.get_absolute_url() in html
+
+    def test_qualified_link_survives_rename_and_directory_move(
+        self, user, page, page_in_directory, sub_directory, root_directory
+    ):
+        """Both halves of a #dir/slug ref can go stale at once: the page is
+        renamed and an ancestor directory moves. URL resolution handles that
+        pair, so link rendering has to agree."""
+        old_ref = f"{sub_directory.path}/{page_in_directory.slug}"
+        page.content = f"See #{old_ref}."
+        page.save()
+
+        page_in_directory.title = "Coding Standards v2"
+        page_in_directory.save()
+        record_page_move(page_in_directory, sub_directory, "coding-standards")
+        assert page_in_directory.slug == "coding-standards-v2"
+
+        other = Directory.objects.create(
+            path="other",
+            title="Other",
+            parent=root_directory,
+            owner=user,
+            created_by=user,
+        )
+        assert _move_directory(sub_directory, other) is None
+        sub_directory.refresh_from_db()
+        assert sub_directory.path == "other/engineering"
+
+        html = render_markdown(page.content)
+        page_in_directory.refresh_from_db()
+        assert page_in_directory.get_absolute_url() in html
 
     def test_delete_blocked_by_incoming_links(self, client, user, page):
         """Cannot delete a page that has incoming links."""

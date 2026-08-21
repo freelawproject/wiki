@@ -241,3 +241,21 @@ class DirectoryPermission(models.Model):
     def __str__(self):
         target = self.user or self.group or self.grant_domain
         return f"{target} → {self.directory} ({self.permission_type})"
+
+
+class DirectoryRedirect(models.Model):
+    """Maps an old directory path to the directory that now lives there.
+
+    Moving a directory rewrites its path and every descendant's path, which
+    changes the URL of every page beneath it. One row per affected directory
+    keeps those old URLs resolvable: ``resolve_path`` maps the stale directory
+    component back to the current directory and re-resolves the page under it.
+    """
+
+    old_path = models.CharField(max_length=500, unique=True)
+    directory = models.ForeignKey(
+        Directory, on_delete=models.CASCADE, related_name="path_redirects"
+    )
+
+    def __str__(self):
+        return f"{self.old_path} → {self.directory.path}"

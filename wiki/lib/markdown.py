@@ -15,7 +15,7 @@ from django.conf import settings
 from django.db.models import Q
 from django.urls import Resolver404, resolve
 
-from wiki.directories.models import Directory
+from wiki.directories.models import Directory, DirectoryRedirect
 from wiki.lib.inheritance import resolve_effective_value
 
 # ── Alert types (GitHub-style) ───────────────────────────────────────
@@ -298,7 +298,8 @@ def resolve_references(references, exclude_pk=None):
     ``dir_path``) match on ``(directory.path, slug)`` exactly. Bare refs
     (``dir_path == ""``) use a ``created_at`` tiebreaker — the oldest
     active page with that slug wins, across any directory. ``SlugRedirect``
-    is consulted as a fallback for anything that didn't match directly.
+    is consulted as a fallback for anything that didn't match directly, and
+    ``DirectoryRedirect`` for qualified refs whose directory has since moved.
 
     Shared by ``resolve_wiki_links`` (link rendering) and
     ``Page._update_page_links`` (PageLink graph maintenance), so both
@@ -336,6 +337,55 @@ def resolve_references(references, exclude_pk=None):
                 "page__directory", "directory"
             ):
                 resolved[(r.directory.path, r.old_slug)] = r.page
+
+        missing = qualified_refs - set(resolved.keys())
+        if missing:
+            # The directory component may be stale rather than the slug: an
+            # ancestor directory moved and took the page along with it. The
+            # fallback above can't see these — it matches a redirect by its
+            # directory's *current* path, which the move just rewrote.
+            moved = {
+                r.old_path: r.directory_id
+                for r in DirectoryRedirect.objects.filter(
+                    old_path__in={d for d, _ in missing}
+                )
+            }
+            stale_dir_refs = [(d, s) for d, s in missing if d in moved]
+
+            mq = Q()
+            for d, s in stale_dir_refs:
+                mq |= Q(directory_id=moved[d], slug=s)
+            if mq:
+                by_dir_slug = {
+                    (p.directory_id, p.slug): p
+                    for p in page_qs.filter(mq).select_related("directory")
+                }
+                for d, s in stale_dir_refs:
+                    page = by_dir_slug.get((moved[d], s))
+                    if page is not None:
+                        resolved[(d, s)] = page
+
+            # A page can be renamed *and* carried along by an ancestor's
+            # move, leaving both halves of the ref stale. Resolve the
+            # directory hop first, then the rename within it — the same two
+            # steps ``moved_target`` takes for the equivalent URL.
+            renamed_refs = [
+                (d, s) for d, s in stale_dir_refs if (d, s) not in resolved
+            ]
+            rq = Q()
+            for d, s in renamed_refs:
+                rq |= Q(directory_id=moved[d], old_slug=s)
+            if rq:
+                by_dir_old_slug = {
+                    (r.directory_id, r.old_slug): r.page
+                    for r in redirect_qs.filter(rq).select_related(
+                        "page__directory"
+                    )
+                }
+                for d, s in renamed_refs:
+                    page = by_dir_old_slug.get((moved[d], s))
+                    if page is not None:
+                        resolved[(d, s)] = page
 
     if bare_slugs:
         seen = set()
