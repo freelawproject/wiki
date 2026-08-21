@@ -34,8 +34,10 @@ wiki/settings/*private.py
 .vscode/*
 /.history
 
-# Claude Code — ignore everything except skills (shared with team)
+# Claude Code — ignore everything except things shared with the team
 .claude/*
 !.claude/skills/
+!.claude/hooks/
+!.claude/settings.json
 
 /wiki/assets/media/uploads/

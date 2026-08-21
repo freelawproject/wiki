@@ -201,6 +201,28 @@ Key patterns:
 
 ## Docker
 
+### Remote sessions (Claude Code on the web)
+
+`.claude/hooks/session-start.sh` brings the stack up in the background, so it is
+usually still building when the session starts. Before running anything that
+needs the containers — tests, `manage.py`, `docker compose exec` — check the
+one-word status file:
+
+```bash
+cat /tmp/wiki-stack-status   # starting | ready | failed
+```
+
+- `ready` — the stack is up; carry on.
+- `starting` — still building. Wait and re-check rather than starting a second stack.
+- `failed` — read `/tmp/wiki-session-start.log` for the reason and tell the user.
+  Django, postgres and the test suite are unavailable; lint still works.
+
+The stack needs egress to `production.cloudfront.docker.com`,
+`pkg-containers.githubusercontent.com`, `deb.debian.org`, `security.debian.org`
+and `cdn.playwright.dev`. If the environment's network policy denies any of
+them the images cannot be pulled or built; report the blocked hosts instead of
+trying to work around them.
+
 ### Starting and Stopping
 
 ```bash
