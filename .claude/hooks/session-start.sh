@@ -13,11 +13,16 @@
 # Runs only in remote sessions; a local checkout already has its own stack.
 #
 # Runs asynchronously: the session starts immediately while the stack builds in
-# the background. Short status lines go to the session itself — stdout of an async
-# hook is streamed as progress and handed to the agent as context once the hook
-# finishes — while the full transcript goes to /tmp/wiki-session-start.log. The
-# state is also a single word in /tmp/wiki-stack-status: "starting", "ready" or
-# "failed". Check that file before running anything that needs the containers.
+# the background. That means the agent is generally already working by the time
+# this finishes, so the result has to be left somewhere it can be looked up:
+#
+#   /tmp/wiki-stack-status   one word: "starting", "ready" or "failed"
+#   /tmp/wiki-session-start.log  full transcript of this script
+#
+# The status file is the contract, and CLAUDE.md points the agent at it. The
+# short lines written by `say` go to the hook's real stdout, which the web UI
+# may surface as progress, but do NOT count on them reaching the agent: in
+# testing they did not appear in the session at all.
 #
 # Re-running is cheap: if the stack is already up the hook says so and exits, so
 # it costs nothing on resume, /clear or after a compaction.
@@ -72,8 +77,9 @@ status starting
 # COMPOSE_FILE lets `docker compose ...` run from anywhere in the repo instead of
 # only from docker/wiki/. Written before the slow work below, since the session
 # is already running by then.
-if [ -n "${CLAUDE_ENV_FILE:-}" ]; then
-    echo "export COMPOSE_FILE=$COMPOSE_DIR/docker-compose.yml" >>"$CLAUDE_ENV_FILE"
+compose_export="export COMPOSE_FILE=$COMPOSE_DIR/docker-compose.yml"
+if [ -n "${CLAUDE_ENV_FILE:-}" ] && ! grep -qxF "$compose_export" "$CLAUDE_ENV_FILE" 2>/dev/null; then
+    echo "$compose_export" >>"$CLAUDE_ENV_FILE"
 fi
 
 # Names which of REQUIRED_HOSTS this session cannot reach. The egress policy denies
@@ -140,7 +146,23 @@ if ! docker info >/dev/null 2>&1; then
 fi
 
 # ---------------------------------------------------------------------------
-# 3. Already running?
+# 3. Lint tooling (mirrors .github/workflows/lint.yml)
+#
+# Deliberately ahead of the "already running" check below: a running stack says
+# nothing about pre-commit being installed, so ordering it after that early exit
+# would leave `pre-commit run --all-files` broken in exactly the sessions that
+# skip straight past it. Both steps below are no-ops once they have run.
+# ---------------------------------------------------------------------------
+if ! command -v pre-commit >/dev/null 2>&1; then
+    log "installing pre-commit"
+    uv tool install --quiet pre-commit || log "WARNING: could not install pre-commit"
+fi
+if command -v pre-commit >/dev/null 2>&1; then
+    (cd "$REPO_DIR" && pre-commit install-hooks) || log "WARNING: could not pre-build pre-commit hook environments"
+fi
+
+# ---------------------------------------------------------------------------
+# 4. Already running?
 #
 # SessionStart also fires on resume, /clear and compaction, and the stack
 # survives all three. Nothing below this point needs redoing in that case.
@@ -151,17 +173,6 @@ if curl -fsS -o /dev/null --max-time 5 "$DJANGO_URL"; then
     say "wiki dev stack: already running at $DJANGO_URL"
     say "Run tests with: docker compose exec wiki-django python -m pytest --tb=short -q"
     exit 0
-fi
-
-# ---------------------------------------------------------------------------
-# 4. Lint tooling (mirrors .github/workflows/lint.yml)
-# ---------------------------------------------------------------------------
-if ! command -v pre-commit >/dev/null 2>&1; then
-    log "installing pre-commit"
-    uv tool install --quiet pre-commit || log "WARNING: could not install pre-commit"
-fi
-if command -v pre-commit >/dev/null 2>&1; then
-    (cd "$REPO_DIR" && pre-commit install-hooks) || log "WARNING: could not pre-build pre-commit hook environments"
 fi
 
 # ---------------------------------------------------------------------------
