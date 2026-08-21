@@ -22,10 +22,12 @@ from wiki.lib.inheritance import (
     resolve_effective_value,
 )
 from wiki.lib.markdown import render_markdown
+from wiki.lib.page_utils import record_directory_move
 from wiki.lib.path_utils import (
     MAX_DIRECTORY_DEPTH,
     directory_depth,
     directory_path_conflicts_with_page,
+    update_descendant_paths,
 )
 from wiki.lib.permissions import (
     annotate_access_domains,
@@ -781,23 +783,21 @@ def _move_directory(directory, new_parent):
                 f"than {MAX_DIRECTORY_DEPTH} levels deep."
             )
 
+        # Snapshot the whole subtree's paths before the move: every one of
+        # them needs a redirect afterwards, or every URL beneath this
+        # directory 404s.
+        old_subtree_paths = list(
+            Directory.objects.filter(
+                Q(pk=directory.pk) | Q(path__startswith=f"{old_path}/")
+            ).values_list("pk", "path")
+        )
+
         directory.parent = new_parent
         directory.path = new_path
         directory.save()
-        _update_descendant_paths(directory)
+        update_descendant_paths(directory)
+        record_directory_move(old_subtree_paths)
     return None
-
-
-def _update_descendant_paths(directory):
-    """Recursively update paths of all descendants."""
-    for child in directory.children.all():
-        slug = slugify(child.title)
-        if directory.path:
-            child.path = f"{directory.path}/{slug}"
-        else:
-            child.path = slug
-        child.save()
-        _update_descendant_paths(child)
 
 
 @login_required

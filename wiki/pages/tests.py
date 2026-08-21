@@ -23,11 +23,15 @@ from django.utils import timezone
 from PIL import Image as PILImage
 
 from wiki.directories.models import Directory
+from wiki.directories.views import _move_directory
 from wiki.lib.edit_lock import acquire_lock_for_page
 from wiki.lib.markdown import render_markdown, resolve_wiki_links
 from wiki.lib.models import EditLock
 from wiki.lib.permissions import can_edit_page
 from wiki.pages.diff_utils import unified_diff
+from wiki.pages.management.commands import (
+    seed_help_pages as seed_help_pages_module,
+)
 from wiki.pages.models import (
     FileUpload,
     Page,
@@ -872,6 +876,145 @@ class TestSlugRedirect:
     def test_old_slug_redirects_to_new(self, client, page):
         SlugRedirect.objects.create(old_slug="old-name", page=page)
         r = client.get(reverse("resolve_path", kwargs={"path": "old-name"}))
+        assert r.status_code == 302
+        assert r.url == page.get_absolute_url()
+
+
+class TestMoveLeavesRedirect:
+    """Every path that relocates a page must leave its old URL working."""
+
+    def test_move_to_directory_redirects_old_url(
+        self, client, user, page, sub_directory
+    ):
+        old_url = page.get_absolute_url()
+        client.force_login(user)
+        client.post(
+            reverse("page_move", kwargs={"path": page.content_path}),
+            {"directory": sub_directory.pk},
+        )
+        page.refresh_from_db()
+        r = client.get(old_url)
+        assert r.status_code == 302
+        assert r.url == page.get_absolute_url()
+
+    def test_move_to_root_redirects_old_url(
+        self, client, user, page_in_directory
+    ):
+        old_url = page_in_directory.get_absolute_url()
+        client.force_login(user)
+        client.post(
+            reverse(
+                "page_move",
+                kwargs={"path": page_in_directory.content_path},
+            ),
+            {"directory": ""},
+        )
+        page_in_directory.refresh_from_db()
+        r = client.get(old_url)
+        assert r.status_code == 302
+        assert r.url == page_in_directory.get_absolute_url()
+
+    def test_bulk_move_redirects_old_url(
+        self, client, owner_user, page, sub_directory
+    ):
+        old_url = page.get_absolute_url()
+        client.force_login(owner_user)
+        client.post(
+            reverse("page_bulk_move"),
+            {"page_ids": [page.pk], "directory": sub_directory.pk},
+        )
+        page.refresh_from_db()
+        assert page.directory == sub_directory
+        r = client.get(old_url)
+        assert r.status_code == 302
+        assert r.url == page.get_absolute_url()
+
+    def test_edit_that_only_changes_directory_redirects_old_url(
+        self, client, owner_user, page, sub_directory
+    ):
+        old_url = page.get_absolute_url()
+        client.force_login(owner_user)
+        client.post(
+            reverse("page_edit", kwargs={"path": page.content_path}),
+            {
+                "title": page.title,
+                "content": page.content,
+                "visibility": Page.Visibility.PUBLIC,
+                "change_message": "Moved to engineering",
+                "directory_path": sub_directory.path,
+            },
+        )
+        page.refresh_from_db()
+        assert page.directory == sub_directory
+        r = client.get(old_url)
+        assert r.status_code == 302
+        assert r.url == page.get_absolute_url()
+
+    def test_revert_of_renamed_page_redirects_old_url(
+        self, client, user, page
+    ):
+        client.force_login(user)
+        client.post(
+            reverse("page_edit", kwargs={"path": page.content_path}),
+            {
+                "title": "Renamed Page",
+                "content": page.content,
+                "visibility": Page.Visibility.PUBLIC,
+                "change_message": "Renamed",
+            },
+        )
+        page.refresh_from_db()
+        renamed_url = page.get_absolute_url()
+
+        client.post(
+            reverse(
+                "page_revert",
+                kwargs={"path": page.content_path, "rev_num": 1},
+            )
+        )
+        page.refresh_from_db()
+        assert page.slug == "getting-started"
+        r = client.get(renamed_url)
+        assert r.status_code == 302
+        assert r.url == page.get_absolute_url()
+
+    def test_admin_move_redirects_old_url(
+        self, client, user, page, sub_directory
+    ):
+        """Moving a page through the Django admin also leaves a redirect."""
+        old_url = page.get_absolute_url()
+        user.is_staff = True
+        user.is_superuser = True
+        user.save()
+        client.force_login(user)
+        client.post(
+            reverse("admin:pages_page_change", args=[page.pk]),
+            {
+                "title": page.title,
+                "slug": "renamed-in-admin",
+                "content": page.content,
+                "directory": sub_directory.pk,
+                "visibility": Page.Visibility.PUBLIC,
+                "editability": Page.Editability.INTERNAL,
+                "change_message": "",
+                "owner": user.pk,
+                "created_by": user.pk,
+                "updated_by": user.pk,
+                "in_sitemap": Page.SitemapStatus.INHERIT,
+                "in_llms_txt": Page.LlmsTxtStatus.INHERIT,
+                "permissions-TOTAL_FORMS": "0",
+                "permissions-INITIAL_FORMS": "0",
+                "slug_redirects-TOTAL_FORMS": "0",
+                "slug_redirects-INITIAL_FORMS": "0",
+                "revisions-TOTAL_FORMS": "0",
+                "revisions-INITIAL_FORMS": "0",
+                "_save": "Save",
+            },
+        )
+        page.refresh_from_db()
+        assert page.slug == "renamed-in-admin"
+        assert page.directory == sub_directory
+        r = client.get(old_url)
         assert r.status_code == 302
         assert r.url == page.get_absolute_url()
 
@@ -1832,6 +1975,30 @@ class TestSeedHelpPages:
         )
         assert r.status_code == 200
         assert b"Markdown Syntax" in r.content
+
+    def test_retitled_help_page_leaves_redirect(self, owner_user, monkeypatch):
+        """Re-seeding with a new title re-slugs the page, so its published
+        URL has to keep resolving."""
+        monkeypatch.setattr(
+            seed_help_pages_module,
+            "HELP_PAGES",
+            [{"slug": "how-to", "title": "How To", "content": "a"}],
+        )
+        call_command("seed_help_pages")
+        page = Page.objects.get(slug="how-to")
+
+        monkeypatch.setattr(
+            seed_help_pages_module,
+            "HELP_PAGES",
+            [{"slug": "how-to", "title": "How To Wiki", "content": "b"}],
+        )
+        call_command("seed_help_pages")
+
+        page.refresh_from_db()
+        assert page.slug == "how-to-wiki"
+        assert SlugRedirect.objects.filter(
+            old_slug="how-to", page=page
+        ).exists()
 
     def test_wiki_links_resolve_between_help_pages(self, owner_user):
         call_command("seed_help_pages")
@@ -2969,6 +3136,29 @@ class TestPageLinks:
         page.content = "See #old-slug for details."
         page.save()
         assert PageLink.objects.filter(from_page=page, to_page=other).exists()
+
+    def test_qualified_link_survives_directory_move(
+        self, user, page, page_in_directory, sub_directory, root_directory
+    ):
+        """A #dir/slug reference keeps resolving after its directory moves."""
+        page.content = f"See #{sub_directory.path}/{page_in_directory.slug}."
+        page.save()
+        assert PageLink.objects.filter(
+            from_page=page, to_page=page_in_directory
+        ).exists()
+
+        other = Directory.objects.create(
+            path="other",
+            title="Other",
+            parent=root_directory,
+            owner=user,
+            created_by=user,
+        )
+        _move_directory(sub_directory, other)
+
+        html = render_markdown(page.content)
+        page_in_directory.refresh_from_db()
+        assert page_in_directory.get_absolute_url() in html
 
     def test_delete_blocked_by_incoming_links(self, client, user, page):
         """Cannot delete a page that has incoming links."""

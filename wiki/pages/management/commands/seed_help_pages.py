@@ -8,6 +8,7 @@ from django.contrib.auth.models import User
 from django.core.management.base import BaseCommand
 
 from wiki.directories.models import Directory
+from wiki.lib.page_utils import record_page_move
 from wiki.pages.models import Page, PageRevision
 from wiki.users.models import SystemConfig
 
@@ -1901,12 +1902,16 @@ class Command(BaseCommand):
             or page.is_pinned != is_pinned
         )
         if needs_update:
+            old_slug = page.slug
             page.content = data["content"]
             page.title = data["title"]
             page.is_pinned = is_pinned
             page.change_message = "Updated by seed_help_pages"
             page.updated_by = owner
             page.save()
+            # A retitled help page gets a new slug, and every link to the
+            # old one — including ones we don't control — has to keep working.
+            record_page_move(page, help_dir, old_slug)
 
             last_rev = page.revisions.order_by("-revision_number").first()
             rev_num = (last_rev.revision_number + 1) if last_rev else 1

@@ -280,6 +280,32 @@ class TestProposalAccept:
         proposal.refresh_from_db()
         assert proposal.status == "accepted"
 
+    def test_accept_of_retitled_page_redirects_old_url(
+        self, client, user, other_user, page
+    ):
+        """Accepting a proposal that changes the title regenerates the slug,
+        so the page's old URL has to keep resolving."""
+        old_url = page.get_absolute_url()
+        proposal = ChangeProposal.objects.create(
+            page=page,
+            proposed_by=other_user,
+            proposed_title="Getting Started v2",
+            proposed_content="Brand new content",
+            change_message="Major rewrite",
+        )
+        client.force_login(user)
+        client.post(
+            reverse(
+                "proposal_accept",
+                kwargs={"path": page.slug, "pk": proposal.pk},
+            ),
+        )
+        page.refresh_from_db()
+        assert page.get_absolute_url() != old_url
+        r = client.get(old_url)
+        assert r.status_code == 302
+        assert r.url == page.get_absolute_url()
+
     def test_accept_creates_revision(self, client, user, other_user, page):
         """Accepting a proposal creates a new page revision."""
         proposal = ChangeProposal.objects.create(

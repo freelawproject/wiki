@@ -1,6 +1,10 @@
 from django.contrib import admin
+from django.db import transaction
 
-from .models import Directory, DirectoryPermission
+from wiki.lib.page_utils import record_directory_move
+from wiki.lib.path_utils import update_descendant_paths
+
+from .models import Directory, DirectoryPermission, DirectoryRedirect
 
 
 class DirectoryPermissionInline(admin.TabularInline):
@@ -42,6 +46,34 @@ class DirectoryAdmin(admin.ModelAdmin):
         ),
     )
 
+    def save_model(self, request, obj, form, change):
+        """Save the directory, keeping the subtree and old URLs intact.
+
+        ``path`` and ``parent`` are both editable here, so an admin save can
+        move a directory just like the move view does. Rewriting the path
+        changes the URL of every page beneath it, so the descendants have to
+        follow and the old paths need redirects.
+        """
+        old_path = None
+        if change and obj.pk:
+            old_path = (
+                Directory.objects.filter(pk=obj.pk)
+                .values_list("path", flat=True)
+                .first()
+            )
+
+        with transaction.atomic():
+            super().save_model(request, obj, form, change)
+            if old_path is None or old_path == obj.path:
+                return
+            old_subtree_paths = [(obj.pk, old_path)] + list(
+                Directory.objects.filter(
+                    path__startswith=f"{old_path}/"
+                ).values_list("pk", "path")
+            )
+            update_descendant_paths(obj)
+            record_directory_move(old_subtree_paths)
+
 
 @admin.register(DirectoryPermission)
 class DirectoryPermissionAdmin(admin.ModelAdmin):
@@ -62,3 +94,11 @@ class DirectoryPermissionAdmin(admin.ModelAdmin):
     ]
     raw_id_fields = ["directory", "user"]
     list_select_related = ["directory", "user", "group"]
+
+
+@admin.register(DirectoryRedirect)
+class DirectoryRedirectAdmin(admin.ModelAdmin):
+    list_display = ["old_path", "directory"]
+    search_fields = ["old_path", "directory__path"]
+    raw_id_fields = ["directory"]
+    list_select_related = ["directory"]

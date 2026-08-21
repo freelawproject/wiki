@@ -11,7 +11,7 @@ from wiki.comments.forms import CommentForm
 from wiki.comments.models import PageComment
 from wiki.comments.tasks import notify_owner_of_comment
 from wiki.lib.markdown import render_markdown
-from wiki.lib.page_utils import get_page_from_path
+from wiki.lib.page_utils import get_page_from_path, record_page_move
 from wiki.lib.permissions import can_edit_page, can_view_page
 from wiki.pages.diff_utils import unified_diff
 from wiki.pages.models import PageRevision
@@ -191,8 +191,12 @@ def proposal_accept(request, path, pk):
     page.change_message = f"Accepted proposal: {proposal.change_message}"
     page.updated_by = request.user
 
+    old_slug = page.slug
     with transaction.atomic():
         page.save()
+        # Accepting a proposal can change the title, which regenerates the
+        # slug and so moves the page to a new URL.
+        record_page_move(page, page.directory, old_slug)
         last_rev = page.revisions.order_by("-revision_number").first()
         rev_num = (last_rev.revision_number + 1) if last_rev else 1
         PageRevision.objects.create(

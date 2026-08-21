@@ -85,3 +85,18 @@ def compute_page_slug(title, directory=None, exclude_pk=None):
         counter += 1
         new_slug = f"{base_slug}-{counter}"
     return new_slug
+
+
+def update_descendant_paths(directory):
+    """Recursively rewrite the paths of every directory below ``directory``.
+
+    Called after a directory's own path changes, so that the subtree stays
+    consistent with its new location. Callers are responsible for recording
+    the redirects that keep the old paths resolvable
+    (``wiki.lib.page_utils.record_directory_move``).
+    """
+    for child in directory.children.all():
+        slug = slugify(child.title)
+        child.path = f"{directory.path}/{slug}" if directory.path else slug
+        child.save()
+        update_descendant_paths(child)
