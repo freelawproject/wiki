@@ -69,7 +69,9 @@ def get_page_from_path(path):
     return page
 
 
-def record_page_move(page, old_directory, old_slug):
+def record_page_move(
+    page: Page, old_directory: Directory | None, old_slug: str
+) -> SlugRedirect | None:
     """Leave a redirect behind when a page's (directory, slug) has changed.
 
     Page URLs are ``(directory path, slug)``, and the slug follows the title,
@@ -99,7 +101,7 @@ def record_page_move(page, old_directory, old_slug):
     return redirect_obj
 
 
-def record_directory_move(old_paths):
+def record_directory_move(old_paths: list[tuple[int, str]]) -> None:
     """Leave a redirect behind for every directory a move relocated.
 
     ``old_paths`` is a list of ``(pk, old_path)`` tuples snapshotted before
@@ -122,13 +124,23 @@ def record_directory_move(old_paths):
     DirectoryRedirect.objects.filter(
         old_path__in=[d.path for d, _ in relocated]
     ).delete()
-    for directory, old_path in relocated:
-        DirectoryRedirect.objects.update_or_create(
-            old_path=old_path, defaults={"directory": directory}
-        )
+
+    # One statement, not one per directory: a subtree's width isn't capped the
+    # way its depth is, and this runs inside the move's transaction.
+    # ``update_conflicts`` covers an old_path this subtree has been at before
+    # (a directory moved away and back), which the delete above can't free.
+    DirectoryRedirect.objects.bulk_create(
+        [
+            DirectoryRedirect(old_path=old_path, directory=directory)
+            for directory, old_path in relocated
+        ],
+        update_conflicts=True,
+        unique_fields=["old_path"],
+        update_fields=["directory"],
+    )
 
 
-def directory_at_old_path(dir_path):
+def directory_at_old_path(dir_path: str) -> Directory | None:
     """Resolve a directory path left behind by a move, or None."""
     if not dir_path:
         return None
@@ -140,7 +152,7 @@ def directory_at_old_path(dir_path):
     return redirect_obj.directory if redirect_obj else None
 
 
-def moved_target(path):
+def moved_target(path: str) -> Directory | Page | None:
     """Resolve ``path`` through directory-move history to a Directory or Page.
 
     Covers a request for a moved directory's own old URL, and for a page whose

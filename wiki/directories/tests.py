@@ -13,8 +13,10 @@ from django.utils import timezone
 from wiki.directories.models import (
     Directory,
     DirectoryPermission,
+    DirectoryRedirect,
     DirectoryRevision,
 )
+from wiki.directories.views import _move_directory
 from wiki.lib.edit_lock import acquire_lock_for_directory
 from wiki.lib.inheritance import clean_redundant_overrides
 from wiki.lib.models import EditLock
@@ -998,6 +1000,62 @@ class TestMoveDirectory:
         r = client.get(old_nested_url)
         assert r.status_code == 302
         assert r.url == nested_directory.get_absolute_url()
+
+    def test_reused_old_path_is_reassigned_not_duplicated(
+        self, client, user, sub_directory, root_directory
+    ):
+        """Two directories can successively occupy and vacate one path.
+
+        The second one to leave has to claim the redirect for it — the row is
+        unique on old_path, and the delete pass can't free a path no
+        directory currently sits at.
+        """
+        away = Directory.objects.create(
+            path="away",
+            title="Away",
+            parent=root_directory,
+            owner=user,
+            created_by=user,
+        )
+        assert _move_directory(sub_directory, away) is None
+
+        # A second directory takes the vacated "engineering" path, then leaves
+        # it too. Same title, so the move recomputes the same slug.
+        second = Directory.objects.create(
+            path="engineering",
+            title="Engineering",
+            parent=root_directory,
+            owner=user,
+            created_by=user,
+        )
+        page = Page.objects.create(
+            title="Onboarding",
+            slug="onboarding",
+            content="x",
+            directory=second,
+            owner=user,
+            created_by=user,
+            updated_by=user,
+        )
+        old_url = page.get_absolute_url()
+        elsewhere = Directory.objects.create(
+            path="elsewhere",
+            title="Elsewhere",
+            parent=root_directory,
+            owner=user,
+            created_by=user,
+        )
+        assert _move_directory(second, elsewhere) is None
+
+        assert (
+            DirectoryRedirect.objects.filter(old_path="engineering").count()
+            == 1
+        )
+        client.force_login(user)
+        page.refresh_from_db()
+        r = client.get(old_url)
+        assert r.status_code == 302
+        assert r.url == page.get_absolute_url()
 
     def test_move_updates_descendant_paths(
         self,
