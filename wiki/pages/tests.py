@@ -27,6 +27,7 @@ from wiki.directories.views import _move_directory
 from wiki.lib.edit_lock import acquire_lock_for_page
 from wiki.lib.markdown import render_markdown, resolve_wiki_links
 from wiki.lib.models import EditLock
+from wiki.lib.page_utils import record_page_move
 from wiki.lib.permissions import can_edit_page
 from wiki.pages.diff_utils import unified_diff
 from wiki.pages.management.commands import (
@@ -1017,6 +1018,67 @@ class TestMoveLeavesRedirect:
         r = client.get(old_url)
         assert r.status_code == 302
         assert r.url == page.get_absolute_url()
+
+
+class TestMovedPathPermissions:
+    """An old path must stay as opaque as a path that was never anything."""
+
+    def test_moved_private_directory_old_path_404s_for_anonymous(
+        self, client, user, private_directory, root_directory
+    ):
+        """A 302 naming the new location would disclose the existence and
+        current name of a directory directory_detail hides behind a 404."""
+        old_url = private_directory.get_absolute_url()
+        other = Directory.objects.create(
+            path="other",
+            title="Other",
+            parent=root_directory,
+            owner=user,
+            created_by=user,
+        )
+        _move_directory(private_directory, other)
+
+        r = client.get(old_url)
+        assert r.status_code == 404
+
+        # The owner, who can see it, still gets the redirect.
+        client.force_login(user)
+        private_directory.refresh_from_db()
+        r = client.get(old_url)
+        assert r.status_code == 302
+        assert r.url == private_directory.get_absolute_url()
+
+    def test_private_page_under_moved_directory_404s_for_anonymous(
+        self, client, user, sub_directory, root_directory
+    ):
+        secret = Page.objects.create(
+            title="Layoff Plan",
+            slug="layoff-plan",
+            content="x",
+            directory=sub_directory,
+            owner=user,
+            created_by=user,
+            updated_by=user,
+            visibility=Page.Visibility.PRIVATE,
+        )
+        old_url = secret.get_absolute_url()
+        other = Directory.objects.create(
+            path="other",
+            title="Other",
+            parent=root_directory,
+            owner=user,
+            created_by=user,
+        )
+        _move_directory(sub_directory, other)
+
+        r = client.get(old_url)
+        assert r.status_code == 404
+
+        client.force_login(user)
+        secret.refresh_from_db()
+        r = client.get(old_url)
+        assert r.status_code == 302
+        assert r.url == secret.get_absolute_url()
 
 
 class TestResolvePathView:
@@ -3146,6 +3208,34 @@ class TestPageLinks:
         assert PageLink.objects.filter(
             from_page=page, to_page=page_in_directory
         ).exists()
+
+        other = Directory.objects.create(
+            path="other",
+            title="Other",
+            parent=root_directory,
+            owner=user,
+            created_by=user,
+        )
+        _move_directory(sub_directory, other)
+
+        html = render_markdown(page.content)
+        page_in_directory.refresh_from_db()
+        assert page_in_directory.get_absolute_url() in html
+
+    def test_qualified_link_survives_rename_and_directory_move(
+        self, user, page, page_in_directory, sub_directory, root_directory
+    ):
+        """Both halves of a #dir/slug ref can go stale at once: the page is
+        renamed and an ancestor directory moves. URL resolution handles that
+        pair, so link rendering has to agree."""
+        old_ref = f"{sub_directory.path}/{page_in_directory.slug}"
+        page.content = f"See #{old_ref}."
+        page.save()
+
+        page_in_directory.title = "Coding Standards v2"
+        page_in_directory.save()
+        record_page_move(page_in_directory, sub_directory, "coding-standards")
+        assert page_in_directory.slug == "coding-standards-v2"
 
         other = Directory.objects.create(
             path="other",

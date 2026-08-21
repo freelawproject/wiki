@@ -37,7 +37,7 @@ from wiki.lib.inheritance import resolve_effective_value
 from wiki.lib.markdown import render_markdown
 from wiki.lib.page_utils import (
     get_page_from_path,
-    moved_target_url,
+    moved_target,
     page_at_path,
     record_page_move,
     slug_redirect_at_path,
@@ -345,9 +345,22 @@ def resolve_path(request, path):
     # 4. Directory-move history: the page or directory itself didn't move, but
     # an ancestor directory did, so the old path is stale only in its
     # directory component.
-    target_url = moved_target_url(clean_path)
-    if target_url is not None:
-        return redirect(target_url)
+    target = moved_target(clean_path)
+    if target is not None:
+        # Gate on the target's own view permission before redirecting. A 302
+        # naming where the content went would disclose the existence, current
+        # path, and (via the slug) roughly the title of something the viewer
+        # can't see — precisely what directory_detail and _render_page_detail
+        # hide behind a 404. An old path must stay as opaque as a path that
+        # was never anything.
+        can_view = (
+            can_view_directory(request.user, target)
+            if isinstance(target, Directory)
+            else can_view_page(request.user, target)
+        )
+        if not can_view:
+            raise Http404
+        return redirect(target.get_absolute_url())
 
     raise Http404
 

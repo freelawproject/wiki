@@ -140,19 +140,26 @@ def directory_at_old_path(dir_path):
     return redirect_obj.directory if redirect_obj else None
 
 
-def moved_target_url(path):
-    """Resolve ``path`` through directory-move history, or return None.
+def moved_target(path):
+    """Resolve ``path`` through directory-move history to a Directory or Page.
 
     Covers a request for a moved directory's own old URL, and for a page whose
-    URL only changed because one of its ancestor directories moved. Redirects
-    point at directories/pages by FK, so a chain of moves never needs
-    following — each hop resolves straight to the current location.
+    URL only changed because one of its ancestor directories moved. Returns
+    None when the path has no move history.
+
+    Returns the object rather than a URL so the caller can apply the same
+    view-permission gate the target's own view would: a 302 naming where a
+    private directory went would disclose exactly what ``directory_detail``
+    hides behind a 404.
+
+    Redirects point at directories/pages by FK, so a chain of moves never
+    needs following — each hop resolves straight to the current location.
     """
     clean_path = path.strip("/")
 
     directory = directory_at_old_path(clean_path)
     if directory is not None:
-        return directory.get_absolute_url()
+        return directory
 
     dir_path, slug = split_content_path(clean_path)
     directory = directory_at_old_path(dir_path)
@@ -161,7 +168,7 @@ def moved_target_url(path):
 
     page = Page.objects.filter(directory=directory, slug=slug).first()
     if page is not None:
-        return page.get_absolute_url()
+        return page
 
     # The page may have been renamed as well as carried along by the move.
     redirect_obj = (
@@ -169,4 +176,4 @@ def moved_target_url(path):
         .select_related("page")
         .first()
     )
-    return redirect_obj.page.get_absolute_url() if redirect_obj else None
+    return redirect_obj.page if redirect_obj else None
