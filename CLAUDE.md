@@ -128,6 +128,20 @@ wiki/
    `wiki/lib/tests.py::TestViewableDirectoryQueryCost` and `TestBulkAdministerDirectoryResolver`
    for the query-count regression guards.
 
+13. **Content moves MUST leave a redirect**: a page's URL is `(directory path, slug)`, and
+   `Page.save()` regenerates the slug from the title — so a rename, a move to another directory,
+   a title revert, and an accepted proposal all change a page's URL. Any code path that relocates
+   a page MUST call `record_page_move(page, old_directory, old_slug)`
+   (`wiki/lib/page_utils.py`) with the values snapshotted *before* the save; it no-ops when
+   nothing moved, so there's no reason to guard the call. NEVER condition it on the slug alone
+   (`if page.slug != old_slug`) — that misses a directory-only move. Relocating a directory MUST
+   call `record_directory_move(old_subtree_paths)` with `(pk, path)` snapshotted for the directory
+   *and every descendant* before the move, since rewriting a directory's path rewrites the URL of
+   every page beneath it. This applies to management commands and `ModelAdmin.save_model` as much
+   as to views — the admin exposes `slug`, `directory`, and `path` as plain editable fields. See
+   `wiki/pages/tests.py::TestRenameAndMoveCombined` and
+   `wiki/directories/tests.py::TestMoveDirectory` for the guards.
+
 
 ## Testing
 

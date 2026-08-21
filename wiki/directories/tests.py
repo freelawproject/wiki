@@ -950,6 +950,8 @@ class TestMoveDirectory:
             )
 
         page_in_directory.refresh_from_db()
+        sub_directory.refresh_from_db()
+        assert sub_directory.path == "two/engineering"
         assert page_in_directory.get_absolute_url() != first_url
         r = client.get(first_url)
         assert r.status_code == 302
