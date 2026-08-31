@@ -3,6 +3,7 @@
 from django.conf import settings
 from django.core.mail import EmailMessage
 
+from wiki.lib.email_utils import quote_original
 from wiki.lib.users import display_name
 
 from .models import PageComment
@@ -66,9 +67,16 @@ def notify_commenter_of_reply(comment_id):
         else "A page editor"
     )
 
+    original = quote_original(
+        comment.message,
+        comment.created_at,
+        label="Your original comment",
+    )
+
     body = (
         f'{replier_name} replied to your comment on "{page.title}".\n\n'
         f"Reply: {comment.reply}\n\n"
+        f"{original}"
         f"View page: {page_url}"
     )
 

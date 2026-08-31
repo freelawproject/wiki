@@ -3,6 +3,7 @@
 from django.conf import settings
 from django.core.mail import EmailMessage
 
+from wiki.lib.email_utils import quote_original
 from wiki.lib.users import display_name
 
 from .models import ChangeProposal
@@ -66,11 +67,18 @@ def notify_proposer_of_decision(proposal_id):
         else "A reviewer"
     )
 
+    original = quote_original(
+        proposal.change_message,
+        proposal.created_at,
+        label="Your original proposal",
+    )
+
     if proposal.status == ChangeProposal.Status.ACCEPTED:
         subject = f'[FLP Wiki] Your proposal for "{page.title}" was accepted'
         body = (
             f"{reviewer_name} accepted your proposed changes to "
             f'"{page.title}".\n\n'
+            f"{original}"
             f"View: {page_url}"
         )
     else:
@@ -80,6 +88,7 @@ def notify_proposer_of_decision(proposal_id):
             f"{reviewer_name} denied your proposed changes to "
             f'"{page.title}".\n\n'
             f"Reason: {reason}\n\n"
+            f"{original}"
             f"View: {page_url}"
         )
 
