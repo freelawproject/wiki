@@ -20,9 +20,7 @@ class TestQuoteOriginal:
     def test_uses_local_time_for_the_date(self):
         """Late-evening UTC timestamps show the reader's local date."""
         # 2026-03-05 04:00 UTC is still March 4th in America/Los_Angeles.
-        sent = datetime.datetime(
-            2026, 3, 5, 4, 0, tzinfo=datetime.timezone.utc
-        )
+        sent = datetime.datetime(2026, 3, 5, 4, 0, tzinfo=datetime.UTC)
         assert "March 4, 2026" in quote_original("Hi", sent)
 
     def test_quotes_every_line(self):
