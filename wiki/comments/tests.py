@@ -202,6 +202,31 @@ class TestCommentReply:
         anon_emails = [m for m in mail.outbox if "anon@example.com" in m.to]
         assert len(anon_emails) == 1
 
+    def test_reply_email_quotes_the_original_comment(
+        self, client, user, other_user, page
+    ):
+        """The reply email quotes the comment it answers, with its date.
+
+        Months can pass between a comment and its reply, so the reply has
+        to carry its own context.
+        """
+        comment = PageComment.objects.create(
+            page=page,
+            author=other_user,
+            message="The intro is out of date.",
+        )
+        client.force_login(user)
+        client.post(
+            reverse(
+                "comment_reply",
+                kwargs={"path": page.slug, "pk": comment.pk},
+            ),
+            {"reply": "Fixed."},
+        )
+        body = [m for m in mail.outbox if other_user.email in m.to][0].body
+        assert "Your original comment, sent" in body
+        assert "> The intro is out of date." in body
+
     def test_reply_requires_edit_permission(self, client, other_user, page):
         """Non-editors cannot reply to comments."""
         comment = PageComment.objects.create(page=page, message="Test")
