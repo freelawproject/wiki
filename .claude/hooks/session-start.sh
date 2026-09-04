@@ -208,10 +208,13 @@ fi
 # 3. Docker daemon
 #
 # The remote image ships the docker CLI but nothing starts dockerd for us.
+# dockerd outlives this script, so it must not inherit the lock descriptor
+# (9>&-): otherwise it holds the lock forever and every later run of the hook
+# in this container exits as "another run is still in progress".
 # ---------------------------------------------------------------------------
 if ! docker info >/dev/null 2>&1; then
     log "starting the docker daemon"
-    dockerd >"$DOCKERD_LOG" 2>&1 &
+    dockerd >"$DOCKERD_LOG" 2>&1 9>&- &
     for _ in $(seq 1 60); do
         if docker info >/dev/null 2>&1; then
             break
