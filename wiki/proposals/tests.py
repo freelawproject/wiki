@@ -477,6 +477,29 @@ class TestProposalDeny:
         assert len(proposer_emails) == 1
         assert "denied" in proposer_emails[0].subject
 
+    def test_decision_email_quotes_the_original_proposal(
+        self, client, user, other_user, page
+    ):
+        """A denial quotes the change message it's responding to."""
+        proposal = ChangeProposal.objects.create(
+            page=page,
+            proposed_by=other_user,
+            proposed_title=page.title,
+            proposed_content="content",
+            change_message="Update the citation format.",
+        )
+        client.force_login(user)
+        client.post(
+            reverse(
+                "proposal_deny",
+                kwargs={"path": page.slug, "pk": proposal.pk},
+            ),
+            {"denial_reason": "Already correct."},
+        )
+        body = [m for m in mail.outbox if other_user.email in m.to][0].body
+        assert "Your original proposal, sent" in body
+        assert "> Update the citation format." in body
+
     def test_deny_notifies_anon_proposer_email(self, client, user, page):
         """Denying notifies an anonymous proposer via their email."""
         proposal = ChangeProposal.objects.create(
