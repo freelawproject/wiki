@@ -212,16 +212,20 @@ one-word status file:
 cat /tmp/wiki-stack-status   # starting | ready | failed
 ```
 
-- `ready` — the stack is up; carry on.
-- `starting` — still building. Wait and re-check rather than starting a second stack.
-- `failed` — read `/tmp/wiki-session-start.log` for the reason and tell the user.
-  Django, postgres and the test suite are unavailable; lint still works.
+- `ready` — the stack is up; carry on. The hook exports `COMPOSE_FILE`, so
+  `docker compose` also works from outside `docker/wiki/`.
+- `starting` — still building, which takes several minutes on a cold container.
+  Wait and re-check rather than starting a second stack.
+- `failed` — the reason is at the end of `/tmp/wiki-session-start.log`. Tell the
+  user; Django, postgres and the test suite are unavailable, lint still works.
+  If the log names hosts the environment's network policy blocks, report them
+  rather than trying to work around the policy.
 
-The stack needs egress to `production.cloudfront.docker.com`,
-`pkg-containers.githubusercontent.com`, `deb.debian.org`, `security.debian.org`
-and `cdn.playwright.dev`. If the environment's network policy denies any of
-them the images cannot be pulled or built; report the blocked hosts instead of
-trying to work around them.
+Containers in a web session reach the internet through the sandbox's egress
+gateway, which re-terminates TLS, so the hook generates a gitignored
+`docker/wiki/docker-compose.override.yml` that makes them trust its CA. The
+hook's header comment explains the mechanism; `docker/django/Dockerfile` is not
+modified.
 
 ### Starting and Stopping
 
