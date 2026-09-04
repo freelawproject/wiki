@@ -13,7 +13,7 @@ services:
   wiki-postgres:
     image: postgres:16-alpine
     ports:
-      - "${POSTGRES_HOST_PORT:-5433}:5432"
+      - "127.0.0.1:${POSTGRES_HOST_PORT:-5433}:5432"
     environment:
       POSTGRES_USER: "postgres"
       POSTGRES_PASSWORD: "postgres"
@@ -68,7 +68,7 @@ services:
       wiki-postgres:
         condition: service_healthy
     ports:
-      - "${DJANGO_HOST_PORT:-8001}:8000"
+      - "127.0.0.1:${DJANGO_HOST_PORT:-8001}:8000"
     user: root
     volumes:
       - ${WIKI_BASE_DIR:-../../}:/opt/wiki
