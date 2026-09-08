@@ -3589,6 +3589,79 @@ class TestPageBacklinks:
         assert r.status_code == 404
 
 
+# ── Rewrite Internal URLs Command ─────────────────────────
+
+
+class TestRewriteInternalUrlsCommand:
+    """rewrite_internal_urls backfills pages saved before the save hook."""
+
+    @pytest.fixture(autouse=True)
+    def _base_url(self, settings):
+        settings.BASE_URL = "https://wiki.free.law"
+
+    @pytest.fixture
+    def stale_page(self, page, page_in_directory):
+        """A page whose stored content still carries a full page URL.
+
+        Written with ``update()`` so ``Page.save()`` can't rewrite it — this
+        is the state pre-existing pages are in.
+        """
+        url = f"https://wiki.free.law{page_in_directory.get_absolute_url()}"
+        Page.objects.filter(pk=page.pk).update(content=f"See [it]({url}).")
+        page.refresh_from_db()
+        return page
+
+    def test_rewrites_content_and_records_revision(
+        self, stale_page, page_in_directory
+    ):
+        revisions_before = stale_page.revisions.count()
+        out = io.StringIO()
+        call_command("rewrite_internal_urls", stdout=out)
+        stale_page.refresh_from_db()
+        assert stale_page.content == "See [it](#engineering/coding-standards)."
+        latest = stale_page.revisions.latest("revision_number")
+        assert stale_page.revisions.count() == revisions_before + 1
+        assert latest.content == stale_page.content
+        assert latest.created_by is None
+        assert "Rewrite page URLs as wiki links" in latest.change_message
+        assert PageLink.objects.filter(
+            from_page=stale_page, to_page=page_in_directory
+        ).exists()
+        assert stale_page.get_absolute_url() in out.getvalue()
+        assert "Rewrote 1 page." in out.getvalue()
+
+    def test_dry_run_changes_nothing(self, stale_page):
+        original = stale_page.content
+        revisions_before = stale_page.revisions.count()
+        out = io.StringIO()
+        call_command("rewrite_internal_urls", "--dry-run", stdout=out)
+        stale_page.refresh_from_db()
+        assert stale_page.content == original
+        assert stale_page.revisions.count() == revisions_before
+        assert "Would rewrite" in out.getvalue()
+        assert "1 page would be rewritten." in out.getvalue()
+
+    def test_pages_without_rewrites_are_untouched(self, page):
+        """No new revision for pages that have nothing to fix."""
+        Page.objects.filter(pk=page.pk).update(
+            content="Plain text and [ext](https://example.com/c/x)."
+        )
+        revisions_before = page.revisions.count()
+        out = io.StringIO()
+        call_command("rewrite_internal_urls", stdout=out)
+        page.refresh_from_db()
+        assert page.revisions.count() == revisions_before
+        assert "Rewrote 0 pages." in out.getvalue()
+
+    def test_second_run_is_a_no_op(self, stale_page):
+        call_command("rewrite_internal_urls", stdout=io.StringIO())
+        revisions_after_first = stale_page.revisions.count()
+        out = io.StringIO()
+        call_command("rewrite_internal_urls", stdout=out)
+        assert stale_page.revisions.count() == revisions_after_first
+        assert "Rewrote 0 pages." in out.getvalue()
+
+
 # ── Cleanup Command ───────────────────────────────────────
 
 

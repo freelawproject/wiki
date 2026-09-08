@@ -579,6 +579,11 @@ docker exec wiki-django python manage.py sync_view_counts
 # Update full-text search vectors for all pages (also run by daemon)
 docker exec wiki-django python manage.py update_search_vectors
 
+# One-time backfill: rewrite pasted page URLs in existing content to
+# #dir/slug wiki links (idempotent; --dry-run lists affected pages)
+docker exec wiki-django python manage.py rewrite_internal_urls --dry-run
+docker exec wiki-django python manage.py rewrite_internal_urls
+
 # Run migrations
 docker exec wiki-django python manage.py migrate
 
