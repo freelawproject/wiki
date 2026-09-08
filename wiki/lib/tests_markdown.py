@@ -17,10 +17,12 @@ from wiki.lib.markdown import (
     _convert_tabs,
     extract_all_wiki_slugs,
     extract_slugs_from_internal_urls,
+    internal_urls_to_wiki_links,
     render_markdown,
+    resolve_wiki_links,
     strip_markdown,
 )
-from wiki.pages.models import Page
+from wiki.pages.models import Page, SlugRedirect
 
 
 class TestStripMarkdown:
@@ -229,6 +231,239 @@ class TestExtractSlugsFromInternalUrls:
         content = f"See {url} for details"
         slugs = extract_slugs_from_internal_urls(content)
         assert "my-page" in slugs
+
+
+class TestInternalUrlsToWikiLinks:
+    """internal_urls_to_wiki_links rewrites pasted page URLs to #dir/slug."""
+
+    BASE = "https://wiki.free.law"
+
+    @pytest.fixture(autouse=True)
+    def _base_url(self, settings):
+        settings.BASE_URL = self.BASE
+
+    def test_markdown_link_with_full_url(self, page_in_directory):
+        url = f"{self.BASE}{page_in_directory.get_absolute_url()}"
+        content = f"you can find help at [Standards]({url})."
+        assert internal_urls_to_wiki_links(content) == (
+            "you can find help at [Standards](#engineering/coding-standards)."
+        )
+
+    def test_markdown_link_with_relative_path(self, page_in_directory):
+        content = f"See [Standards]({page_in_directory.get_absolute_url()})"
+        assert internal_urls_to_wiki_links(content) == (
+            "See [Standards](#engineering/coding-standards)"
+        )
+
+    def test_root_level_page(self, page):
+        content = f"Start at [here]({self.BASE}{page.get_absolute_url()})"
+        assert internal_urls_to_wiki_links(content) == (
+            "Start at [here](#getting-started)"
+        )
+
+    def test_nested_directory_page(self, page_in_nested_directory):
+        url = f"{self.BASE}{page_in_nested_directory.get_absolute_url()}"
+        assert internal_urls_to_wiki_links(f"[CI]({url})") == (
+            "[CI](#engineering/devops/ci-pipeline)"
+        )
+
+    def test_bare_url_in_prose_keeps_trailing_punctuation(
+        self, page_in_directory
+    ):
+        url = f"{self.BASE}{page_in_directory.get_absolute_url()}"
+        content = f"Read {url}, then {url}."
+        assert internal_urls_to_wiki_links(content) == (
+            "Read #engineering/coding-standards, "
+            "then #engineering/coding-standards."
+        )
+
+    def test_trailing_slash_and_http_scheme(self, page_in_directory):
+        url = f"http://wiki.free.law{page_in_directory.get_absolute_url()}/"
+        assert internal_urls_to_wiki_links(f"[x]({url})") == (
+            "[x](#engineering/coding-standards)"
+        )
+
+    def test_fragment_preserved(self, page_in_directory):
+        url = f"{self.BASE}{page_in_directory.get_absolute_url()}#setup"
+        assert internal_urls_to_wiki_links(f"[x]({url})") == (
+            "[x](#engineering/coding-standards#setup)"
+        )
+
+    def test_reference_style_definition(self, page_in_directory):
+        url = f"{self.BASE}{page_in_directory.get_absolute_url()}"
+        content = f"See [the standards][std].\n\n[std]: {url}\n"
+        assert internal_urls_to_wiki_links(content) == (
+            "See [the standards][std].\n\n"
+            "[std]: #engineering/coding-standards\n"
+        )
+
+    def test_rewritten_link_resolves_like_the_original(
+        self, page_in_directory
+    ):
+        """The rewrite must land on syntax resolve_wiki_links understands."""
+        url = f"{self.BASE}{page_in_directory.get_absolute_url()}#setup"
+        rewritten = internal_urls_to_wiki_links(f"[Standards]({url})")
+        assert resolve_wiki_links(rewritten) == (
+            f"[Standards]({page_in_directory.get_absolute_url()}#setup)"
+        )
+
+    def test_redirected_url_rewritten_to_current_path(
+        self, page_in_directory, sub_directory
+    ):
+        """A URL that only works via SlugRedirect points at the new slug."""
+        SlugRedirect.objects.create(
+            directory=sub_directory,
+            old_slug="old-standards",
+            page=page_in_directory,
+        )
+        url = f"{self.BASE}/c/engineering/old-standards"
+        assert internal_urls_to_wiki_links(f"[x]({url})") == (
+            "[x](#engineering/coding-standards)"
+        )
+
+    def test_url_at_start_of_content(self, page_in_directory):
+        """A leading URL has nothing before it — including no ``](``.
+
+        The content deliberately ends in ``](`` so a title check that
+        indexes from the end of the string instead of the start of the
+        match would misfire.
+        """
+        url = f"{self.BASE}{page_in_directory.get_absolute_url()}"
+        content = f"{url} comes first, then [see]("
+        assert internal_urls_to_wiki_links(content) == (
+            "#engineering/coding-standards comes first, then [see]("
+        )
+
+    def test_bare_url_before_parenthetical_still_rewritten(
+        self, page_in_directory
+    ):
+        """Only link targets carry titles; prose punctuation isn't one."""
+        url = f"{self.BASE}{page_in_directory.get_absolute_url()}"
+        content = f'Read {url} (it is short) and {url} "quoted".'
+        assert internal_urls_to_wiki_links(content) == (
+            "Read #engineering/coding-standards (it is short) and "
+            '#engineering/coding-standards "quoted".'
+        )
+
+    def test_repeated_url_resolved_once(
+        self, page_in_directory, django_assert_num_queries
+    ):
+        url = f"{self.BASE}{page_in_directory.get_absolute_url()}"
+        content = f"[a]({url}) [b]({url}) {url}"
+        with django_assert_num_queries(1):
+            assert internal_urls_to_wiki_links(content) == (
+                "[a](#engineering/coding-standards) "
+                "[b](#engineering/coding-standards) "
+                "#engineering/coding-standards"
+            )
+
+    def test_multiple_urls_in_one_document(self, page, page_in_directory):
+        content = (
+            f"[A]({self.BASE}{page.get_absolute_url()}) and "
+            f"[B]({page_in_directory.get_absolute_url()})"
+        )
+        assert internal_urls_to_wiki_links(content) == (
+            "[A](#getting-started) and [B](#engineering/coding-standards)"
+        )
+
+    # ── Left alone ──────────────────────────────────────────────────
+
+    def test_no_internal_urls_returns_same_object(self, db):
+        content = "Plain text with [a link](https://example.com/x)."
+        assert internal_urls_to_wiki_links(content) is content
+
+    def test_other_domain_untouched(self, page_in_directory):
+        content = (
+            f"[x](https://other.org{page_in_directory.get_absolute_url()})"
+        )
+        assert internal_urls_to_wiki_links(content) == content
+
+    def test_unknown_page_untouched(self, db):
+        content = f"[x]({self.BASE}/c/engineering/no-such-page)"
+        assert internal_urls_to_wiki_links(content) == content
+
+    def test_directory_url_untouched(self, page_in_directory, sub_directory):
+        content = f"[dir]({self.BASE}{sub_directory.get_absolute_url()})"
+        assert internal_urls_to_wiki_links(content) == content
+
+    def test_action_url_untouched(self, page_in_directory):
+        url = reverse(
+            "page_edit", kwargs={"path": page_in_directory.content_path}
+        )
+        content = f"[edit it]({self.BASE}{url})"
+        assert internal_urls_to_wiki_links(content) == content
+
+    def test_raw_markdown_export_untouched(self, page_in_directory):
+        content = f"[md]({self.BASE}{page_in_directory.get_absolute_url()}.md)"
+        assert internal_urls_to_wiki_links(content) == content
+
+    def test_query_string_untouched(self, page_in_directory):
+        url = f"{self.BASE}{page_in_directory.get_absolute_url()}?rev=3"
+        content = f"[x]({url})"
+        assert internal_urls_to_wiki_links(content) == content
+
+    def test_non_slug_fragment_untouched(self, page_in_directory):
+        url = f"{self.BASE}{page_in_directory.get_absolute_url()}#Step_1"
+        content = f"[x]({url})"
+        assert internal_urls_to_wiki_links(content) == content
+
+    def test_link_title_untouched(self, page_in_directory):
+        url = f"{self.BASE}{page_in_directory.get_absolute_url()}"
+        content = f'[x]({url} "Coding Standards")'
+        assert internal_urls_to_wiki_links(content) == content
+
+    def test_reference_definition_with_title_untouched(
+        self, page_in_directory
+    ):
+        """``[ref]: url "title"`` has no wiki-link spelling either."""
+        url = f"{self.BASE}{page_in_directory.get_absolute_url()}"
+        for content in (
+            f'[std]: {url} "Coding Standards"',
+            f"  [std]: {url} 'Coding Standards'",
+            f"See [it][std].\n\n[std]: {url}\t(Coding Standards)\n",
+        ):
+            assert internal_urls_to_wiki_links(content) == content
+
+    def test_redirect_to_deleted_page_untouched(
+        self, user, page_in_directory, sub_directory
+    ):
+        """A page renamed and then soft-deleted is still gone."""
+        SlugRedirect.objects.create(
+            directory=sub_directory,
+            old_slug="old-standards",
+            page=page_in_directory,
+        )
+        page_in_directory.soft_delete(user)
+        content = f"[x]({self.BASE}/c/engineering/old-standards)"
+        assert internal_urls_to_wiki_links(content) == content
+
+    def test_html_href_untouched(self, page_in_directory):
+        url = f"{self.BASE}{page_in_directory.get_absolute_url()}"
+        content = f'<a href="{url}">x</a>'
+        assert internal_urls_to_wiki_links(content) == content
+
+    def test_angle_bracket_autolink_untouched(self, page_in_directory):
+        url = f"{self.BASE}{page_in_directory.get_absolute_url()}"
+        content = f"<{url}>"
+        assert internal_urls_to_wiki_links(content) == content
+
+    def test_code_regions_untouched(self, page_in_directory):
+        url = f"{self.BASE}{page_in_directory.get_absolute_url()}"
+        content = (
+            f"Inline `{url}` stays.\n\n```\n[x]({url})\n```\n\n[y]({url})"
+        )
+        assert internal_urls_to_wiki_links(content) == (
+            f"Inline `{url}` stays.\n\n```\n[x]({url})\n```\n\n"
+            "[y](#engineering/coding-standards)"
+        )
+
+    def test_deleted_page_untouched(self, user, page_in_directory):
+        page_in_directory.soft_delete(user)
+        content = f"[x]({self.BASE}{page_in_directory.get_absolute_url()})"
+        assert internal_urls_to_wiki_links(content) == content
+
+    def test_empty_content(self, db):
+        assert internal_urls_to_wiki_links("") == ""
 
 
 class TestExtractAllWikiSlugs:

@@ -185,6 +185,16 @@ class Page(models.Model):
             if old_title and old_title != self.title:
                 needs_slug = True
 
+        update_fields = kwargs.get("update_fields")
+        if update_fields is None or "content" in update_fields:
+            # Inline import to avoid circular dependency (pages/models ↔ lib/markdown)
+            from wiki.lib.markdown import internal_urls_to_wiki_links
+
+            # Pasted page URLs become #dir/slug wiki links before they're
+            # stored, so the link graph, redirects, and collision rewrites
+            # all see one canonical form.
+            self.content = internal_urls_to_wiki_links(self.content)
+
         if needs_slug:
             new_slug = slugify(self.title)
             base_slug = new_slug

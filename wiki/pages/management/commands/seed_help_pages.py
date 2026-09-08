@@ -461,6 +461,16 @@ See #help/markdown-syntax#code-blocks for the fenced-code rules.
 3. Unknown paths appear as red links, indicating the page doesn't
    exist yet
 
+### Pasted URLs are converted for you
+
+If you paste a page's URL instead — `https://wiki.free.law/c/help/markdown-syntax`
+or just `/c/help/markdown-syntax`, on its own or inside a `[text](url)`
+link — the wiki rewrites it to the `#help/markdown-syntax` form when
+you save. That keeps every link in the same shape, so redirects, "What
+links here", and slug-collision handling all work the same way no matter
+how the link was typed. URLs that don't point at a page (directories,
+`/edit/` and other action URLs, other websites) are left as they are.
+
 ### Finding a page's path
 
 The path is the directory plus slug, matching the URL. For example:

@@ -118,6 +118,33 @@ _INTERNAL_URL_RE = re.compile(
     r")"
 )
 
+# A URL token that may point at a wiki page — absolute (scheme + host) or
+# root-relative — ending at whitespace or any markdown/HTML link delimiter.
+# Used by ``internal_urls_to_wiki_links`` to rewrite pasted page URLs. The
+# lookbehind skips tokens that are the tail of a word or a longer path,
+# sit inside an HTML attribute (``href="..."``), or are wrapped in
+# ``<angle brackets>``: rewriting any of those would corrupt the syntax
+# around them.
+_INTERNAL_URL_TOKEN_RE = re.compile(
+    r"""(?<![\w/<"'=])"""
+    r"""(?P<url>(?:https?://[^\s<>()\[\]"'/]+)?/c/[^\s<>()\[\]"']+)"""
+)
+
+# The ``[label]:`` opening of a reference-style link definition, up to the
+# URL. Used to recognise ``[ref]: url "title"`` when deciding whether a
+# URL token carries a link title.
+_REF_DEF_PREFIX_RE = re.compile(r"[ \t]{0,3}\[[^\]]+\]:[ \t]*")
+
+# Sentence punctuation that a bare URL in prose commonly runs into:
+# "see https://wiki.free.law/c/hr/handbook." — not part of the URL.
+_TRAILING_PUNCTUATION = ".,;:!?"
+
+# A full wiki-link path (``dir/sub/slug`` or ``slug``) and a bare slug, as
+# whole strings — used to check that a page's current path can be spelled
+# in wiki-link syntax before rewriting a URL to it.
+_WIKI_LINK_PATH_RE = re.compile(rf"{_SLUG_CHARS}(?:/{_SLUG_CHARS})*")
+_SLUG_RE = re.compile(_SLUG_CHARS)
+
 
 def _code_region_ranges(content):
     """Return (start, end) spans for fenced code blocks and inline backticks."""
@@ -128,6 +155,52 @@ def _in_code_region(pos, ranges):
     return any(start <= pos < end for start, end in ranges)
 
 
+def _content_path_from_url_path(url_path):
+    """Return the ``dir/slug`` content path a URL path addresses, or None.
+
+    Runs the path through Django's URL resolver and keeps only hits on the
+    ``resolve_path`` catch-all — the route that serves pages and
+    directories. Anything else under ``/c/`` (``/edit/``, ``/history/``,
+    ``.md`` exports, comment and proposal routes, …) addresses a page's
+    tooling rather than the page and returns None. Leaning on the resolver
+    means new routes are excluded automatically instead of by hand.
+    """
+    try:
+        match = resolve(url_path)
+    except Resolver404:
+        return None
+    if match.url_name != "resolve_path":
+        return None
+    return match.kwargs.get("path", "").strip("/") or None
+
+
+def _parse_internal_url(url, base_host):
+    """Split an internal wiki URL into ``(dir_path, slug, fragment, query)``.
+
+    Accepts absolute URLs on ``base_host`` and root-relative paths. Returns
+    None for other hosts and for anything that isn't a page or directory
+    URL (see ``_content_path_from_url_path``).
+    """
+    parsed = urlparse(url)
+    if parsed.scheme and parsed.hostname != base_host:
+        return None
+    content_path = _content_path_from_url_path(parsed.path)
+    if content_path is None:
+        return None
+    if "/" in content_path:
+        dir_path, slug = content_path.rsplit("/", 1)
+    else:
+        dir_path, slug = "", content_path
+    if not slug:
+        return None
+    return dir_path, slug, parsed.fragment, parsed.query
+
+
+def _base_host():
+    """Hostname of ``settings.BASE_URL`` — the wiki's own domain."""
+    return urlparse(getattr(settings, "BASE_URL", "")).hostname or ""
+
+
 def extract_references_from_internal_urls(content):
     """Extract (dir_path, slug) references from internal wiki URLs.
 
@@ -135,22 +208,9 @@ def extract_references_from_internal_urls(content):
     set of (directory_path, slug) tuples. URL #fragments and code-block
     regions are skipped.
     """
-    base_url = getattr(settings, "BASE_URL", "")
-    base_host = urlparse(base_url).hostname or ""
+    base_host = _base_host()
     code_ranges = _code_region_ranges(content)
     refs = set()
-    action_suffixes = (
-        "/edit",
-        "/move",
-        "/delete",
-        "/history",
-        "/backlinks",
-        "/permissions",
-        "/diff",
-        "/revert",
-        "/subscribe",
-        "/feedback",
-    )
     for match in _INTERNAL_URL_RE.finditer(content):
         if _in_code_region(match.start(), code_ranges):
             continue
@@ -162,29 +222,99 @@ def extract_references_from_internal_urls(content):
         )
         if not url:
             continue
-        # For full URLs, verify the domain matches BASE_URL
-        if url.startswith("http"):
-            parsed = urlparse(url)
-            if parsed.hostname != base_host:
-                continue
-            path = parsed.path
-        else:
-            path = url
-        # Drop #fragment before segment extraction
-        path = path.split("#", 1)[0]
-        path = path.rstrip("/")
-        if not path.startswith("/c/"):
+        parsed = _parse_internal_url(url, base_host)
+        if parsed is None:
             continue
-        content_path = path[3:]  # remove "/c/"
-        if any(content_path.endswith(s) for s in action_suffixes):
-            continue
-        if "/" in content_path:
-            dir_path, slug = content_path.rsplit("/", 1)
-        else:
-            dir_path, slug = "", content_path
-        if slug:
-            refs.add((dir_path, slug))
+        dir_path, slug, _fragment, _query = parsed
+        refs.add((dir_path, slug))
     return refs
+
+
+def _has_link_title(match):
+    """True when a URL token is a link target followed by a ``"title"``.
+
+    ``[text](url "title")`` and ``[ref]: url "title"`` have no wiki-link
+    spelling — neither ``_MD_LINK_WIKI_RE`` nor ``_REF_LINK_WIKI_RE``
+    accepts a title — so rewriting the URL inside them would leave a link
+    the resolver no longer recognises. A bare URL in prose followed by a
+    quote or parenthesis is not a link target and doesn't count.
+    """
+    string = match.string
+    after = string[match.end() :]
+    if after[:1] not in (" ", "\t"):
+        return False
+    if after.lstrip(" \t")[:1] not in ('"', "'", "("):
+        return False
+    start = match.start()
+    if string[max(start - 2, 0) : start] == "](":
+        return True
+    line_start = string.rfind("\n", 0, start) + 1
+    return _REF_DEF_PREFIX_RE.fullmatch(string, line_start, start) is not None
+
+
+def internal_urls_to_wiki_links(content):
+    """Rewrite URLs that point at wiki pages into ``#dir/slug`` wiki links.
+
+    Editors often paste a page's URL — ``[help](https://wiki.free.law/c/help/login)``
+    — where the wiki-link form ``[help](#help/login)`` belongs. Both render,
+    but only the wiki-link form is what the rest of the wiki keys on: link
+    resolution through renames and moves, the collision rewriter, title
+    rendering for bare references, and so on. ``Page.save()`` runs this
+    over content before persisting it so stored pages only ever carry the
+    canonical form.
+
+    Rewrites absolute URLs on ``BASE_URL``'s host and root-relative ``/c/``
+    paths wherever they appear — ``[text](url)``, ``[ref]: url``, or bare
+    in prose — and preserves a ``#fragment``. A URL is only rewritten when
+    it resolves to an existing page, directly or through a redirect, so
+    directory URLs, page-action URLs, typos, and anything that can't be
+    spelled as a wiki link (``.md`` exports, query strings, non-slug
+    fragments) are left untouched. A redirected URL is rewritten to the
+    page's *current* path. Code regions are skipped.
+    """
+    if not content or "/c/" not in content:
+        return content
+
+    # Inline import to avoid circular dependency
+    # (lib/markdown → lib/page_utils → pages/models → lib/markdown)
+    from wiki.lib.page_utils import page_for_url_path
+
+    base_host = _base_host()
+    code_ranges = _code_region_ranges(content)
+    # Each distinct path costs a chain of lookups; resolve it once per call
+    # however many times the content repeats it.
+    resolved = {}
+
+    def resolve_path(content_path):
+        if content_path not in resolved:
+            resolved[content_path] = page_for_url_path(content_path)
+        return resolved[content_path]
+
+    def replace(match):
+        if _in_code_region(match.start(), code_ranges):
+            return match.group(0)
+        if _has_link_title(match):
+            return match.group(0)
+        url = match.group("url")
+        stripped = url.rstrip(_TRAILING_PUNCTUATION)
+        suffix = url[len(stripped) :]
+        parsed = _parse_internal_url(stripped, base_host)
+        if parsed is None:
+            return match.group(0)
+        dir_path, slug, fragment, query = parsed
+        if query:
+            return match.group(0)
+        if fragment and not _SLUG_RE.fullmatch(fragment):
+            return match.group(0)
+        page = resolve_path(f"{dir_path}/{slug}" if dir_path else slug)
+        if page is None:
+            return match.group(0)
+        path = page.content_path
+        if not _WIKI_LINK_PATH_RE.fullmatch(path):
+            return match.group(0)
+        return _append_fragment(f"#{path}", fragment) + suffix
+
+    return _INTERNAL_URL_TOKEN_RE.sub(replace, content)
 
 
 def extract_slugs_from_internal_urls(content):
@@ -689,21 +819,13 @@ def _add_nofollow_to_non_public_links(html):
     if not hrefs:
         return html
 
-    # Use Django's URL resolver to extract content paths from hrefs
+    # Action URLs (edit, move, etc.) resolve to None here; they're already
+    # blocked by robots.txt.
     path_by_href = {}
     slug_set = set()
     for href in hrefs:
-        url_path = urlparse(href).path
-        try:
-            match = resolve(url_path)
-        except Resolver404:
-            continue
-        # Only process the content catch-all; action URLs (edit, move,
-        # etc.) are already blocked by robots.txt.
-        if match.url_name != "resolve_path":
-            continue
-        content_path = match.kwargs.get("path", "")
-        if not content_path:
+        content_path = _content_path_from_url_path(urlparse(href).path)
+        if content_path is None:
             continue
         path_by_href[href] = content_path
         slug_set.add(content_path.rsplit("/", 1)[-1])
