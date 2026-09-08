@@ -3442,6 +3442,91 @@ class TestPageLinks:
 
 
 @pytest.mark.django_db
+class TestPageSaveRewritesInternalUrls:
+    """Page.save() turns pasted page URLs into #dir/slug wiki links."""
+
+    @pytest.fixture(autouse=True)
+    def _base_url(self, settings):
+        settings.BASE_URL = "https://wiki.free.law"
+
+    def test_save_rewrites_full_url_and_links_target(
+        self, page, page_in_directory
+    ):
+        url = f"https://wiki.free.law{page_in_directory.get_absolute_url()}"
+        page.content = f"Help is at [Standards]({url})."
+        page.save()
+        page.refresh_from_db()
+        assert page.content == (
+            "Help is at [Standards](#engineering/coding-standards)."
+        )
+        assert PageLink.objects.filter(
+            from_page=page, to_page=page_in_directory
+        ).exists()
+
+    def test_save_rewrites_relative_path(self, page, page_in_directory):
+        page.content = f"See [it]({page_in_directory.get_absolute_url()})"
+        page.save()
+        page.refresh_from_db()
+        assert page.content == "See [it](#engineering/coding-standards)"
+
+    def test_update_fields_without_content_leaves_content_alone(
+        self, page, page_in_directory
+    ):
+        url = f"https://wiki.free.law{page_in_directory.get_absolute_url()}"
+        Page.objects.filter(pk=page.pk).update(content=f"[x]({url})")
+        page.refresh_from_db()
+        page.visibility = Page.Visibility.INTERNAL
+        page.save(update_fields=["visibility"])
+        page.refresh_from_db()
+        assert page.content == f"[x]({url})"
+
+    def test_edit_view_stores_rewritten_content_and_revision(
+        self, client, user, page, page_in_directory
+    ):
+        client.force_login(user)
+        url = f"https://wiki.free.law{page_in_directory.get_absolute_url()}"
+        r = client.post(
+            reverse("page_edit", kwargs={"path": page.content_path}),
+            {
+                "title": "Getting Started",
+                "content": f"Read [the standards]({url}) first.",
+                "visibility": "public",
+                "change_message": "Link to standards",
+            },
+        )
+        assert r.status_code == 302
+        page.refresh_from_db()
+        expected = "Read [the standards](#engineering/coding-standards) first."
+        assert page.content == expected
+        # The revision snapshot must match what was stored, not the raw POST.
+        assert page.revisions.latest("revision_number").content == expected
+
+    def test_create_view_rewrites_content(
+        self, client, user, page_in_directory
+    ):
+        client.force_login(user)
+        url = f"https://wiki.free.law{page_in_directory.get_absolute_url()}"
+        r = client.post(
+            reverse("page_create"),
+            {
+                "title": "Brand New",
+                "content": f"Start with {url}.",
+                "visibility": "public",
+                "change_message": "Add new page",
+            },
+        )
+        assert r.status_code == 302
+        new_page = Page.objects.get(slug="brand-new")
+        assert new_page.content == "Start with #engineering/coding-standards."
+
+    def test_unknown_url_left_as_is(self, page):
+        page.content = "[x](https://wiki.free.law/c/nowhere/nothing)"
+        page.save()
+        page.refresh_from_db()
+        assert page.content == "[x](https://wiki.free.law/c/nowhere/nothing)"
+
+
+@pytest.mark.django_db
 class TestPageBacklinks:
     def test_backlinks_page_shows_linking_pages(self, client, user, page):
         """The backlinks view lists pages that link to this page."""
