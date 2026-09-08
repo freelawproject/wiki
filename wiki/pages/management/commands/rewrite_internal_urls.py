@@ -16,7 +16,9 @@ CHANGE_MESSAGE = "Rewrite page URLs as wiki links"
 
 
 class Command(BaseCommand):
-    help = "Rewrite page URLs in existing page content to #dir/slug wiki links."
+    help = (
+        "Rewrite page URLs in existing page content to #dir/slug wiki links."
+    )
 
     def add_arguments(self, parser):
         parser.add_argument(
