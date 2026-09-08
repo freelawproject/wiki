@@ -3662,6 +3662,126 @@ class TestRewriteInternalUrlsCommand:
         assert "Rewrote 0 pages." in out.getvalue()
 
 
+class TestPageSaveExpandsTabs:
+    """Page.save() never stores a tab outside a fenced code block."""
+
+    def test_tabs_expanded_on_save(self, page):
+        page.content = "- a\n\t- b\n\n\tindented"
+        page.save()
+        page.refresh_from_db()
+        assert page.content == "- a\n    - b\n\n    indented"
+
+    def test_tabs_expanded_with_content_in_update_fields(self, page):
+        page.content = "\tx"
+        page.save(update_fields=["content"])
+        page.refresh_from_db()
+        assert page.content == "    x"
+
+    def test_fenced_code_keeps_tabs(self, page):
+        page.content = "```make\nall:\n\tgo build\n```"
+        page.save()
+        page.refresh_from_db()
+        assert "\tgo build" in page.content
+
+    def test_edit_view_strips_tabs(self, client, user, page):
+        client.force_login(user)
+        response = client.post(
+            reverse("page_edit", kwargs={"path": page.content_path}),
+            {
+                "title": page.title,
+                "content": "line\n\tnext",
+                "visibility": "public",
+                "change_message": "tabs",
+            },
+        )
+        assert response.status_code == 302
+        page.refresh_from_db()
+        assert page.content == "line\n    next"
+        assert "\t" not in page.revisions.latest("revision_number").content
+
+
+class TestExpandTabsCommand:
+    """expand_tabs backfills content saved before the save hooks."""
+
+    @pytest.fixture
+    def tabbed_page(self, page):
+        """A page whose stored content still carries tabs.
+
+        Written with ``update()`` so ``Page.save()`` can't fix it — this is
+        the state pre-existing pages are in.
+        """
+        Page.objects.filter(pk=page.pk).update(
+            content="- a\n\t- b\n\n```\n\tcode\n```"
+        )
+        page.refresh_from_db()
+        return page
+
+    @pytest.fixture
+    def tabbed_directory(self, sub_directory, user):
+        Directory.objects.filter(pk=sub_directory.pk).update(
+            description="Intro\n\tdetail"
+        )
+        sub_directory.refresh_from_db()
+        return sub_directory
+
+    def test_rewrites_page_and_records_revision(self, tabbed_page):
+        revisions_before = tabbed_page.revisions.count()
+        out = io.StringIO()
+        call_command("expand_tabs", stdout=out)
+        tabbed_page.refresh_from_db()
+        assert tabbed_page.content == "- a\n    - b\n\n```\n\tcode\n```"
+        latest = tabbed_page.revisions.latest("revision_number")
+        assert tabbed_page.revisions.count() == revisions_before + 1
+        assert latest.content == tabbed_page.content
+        assert latest.created_by is None
+        assert latest.change_message == "Replace tabs with spaces"
+        assert tabbed_page.get_absolute_url() in out.getvalue()
+        assert "Rewrote 1 page and 0 directories." in out.getvalue()
+
+    def test_rewrites_directory_description(self, tabbed_directory):
+        out = io.StringIO()
+        call_command("expand_tabs", stdout=out)
+        tabbed_directory.refresh_from_db()
+        assert tabbed_directory.description == "Intro\n    detail"
+        latest = tabbed_directory.revisions.latest("revision_number")
+        assert latest.description == tabbed_directory.description
+        assert latest.change_message == "Replace tabs with spaces"
+        assert tabbed_directory.get_absolute_url() in out.getvalue()
+        assert "Rewrote 0 pages and 1 directory." in out.getvalue()
+
+    def test_dry_run_changes_nothing(self, tabbed_page, tabbed_directory):
+        original = tabbed_page.content
+        revisions_before = tabbed_page.revisions.count()
+        out = io.StringIO()
+        call_command("expand_tabs", "--dry-run", stdout=out)
+        tabbed_page.refresh_from_db()
+        tabbed_directory.refresh_from_db()
+        assert tabbed_page.content == original
+        assert "\t" in tabbed_directory.description
+        assert tabbed_page.revisions.count() == revisions_before
+        assert "Would rewrite" in out.getvalue()
+        assert "1 page and 1 directory would be rewritten." in out.getvalue()
+
+    def test_fenced_only_tabs_are_untouched(self, page):
+        """No new revision when the only tabs sit inside a code fence."""
+        Page.objects.filter(pk=page.pk).update(content="```\n\tcode\n```")
+        revisions_before = page.revisions.count()
+        out = io.StringIO()
+        call_command("expand_tabs", stdout=out)
+        page.refresh_from_db()
+        assert page.content == "```\n\tcode\n```"
+        assert page.revisions.count() == revisions_before
+        assert "Rewrote 0 pages and 0 directories." in out.getvalue()
+
+    def test_second_run_is_a_no_op(self, tabbed_page):
+        call_command("expand_tabs", stdout=io.StringIO())
+        revisions_after_first = tabbed_page.revisions.count()
+        out = io.StringIO()
+        call_command("expand_tabs", stdout=out)
+        assert tabbed_page.revisions.count() == revisions_after_first
+        assert "Rewrote 0 pages and 0 directories." in out.getvalue()
+
+
 # ── Cleanup Command ───────────────────────────────────────
 
 

@@ -6,6 +6,7 @@ from django.contrib.postgres.search import SearchVector, SearchVectorField
 from django.db import models, transaction
 from django.utils.text import slugify
 
+from wiki.lib.markdown_source import expand_tabs
 from wiki.lib.path_utils import page_path_conflicts_with_directory
 
 # Explicit text search config so stemming works ("demos" matches "demo")
@@ -192,8 +193,11 @@ class Page(models.Model):
 
             # Pasted page URLs become #dir/slug wiki links before they're
             # stored, so the link graph, redirects, and collision rewrites
-            # all see one canonical form.
-            self.content = internal_urls_to_wiki_links(self.content)
+            # all see one canonical form. Tabs become spaces so no editor
+            # or import path can put them back into stored content.
+            self.content = expand_tabs(
+                internal_urls_to_wiki_links(self.content)
+            )
 
         if needs_slug:
             new_slug = slugify(self.title)
