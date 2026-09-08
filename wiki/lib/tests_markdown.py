@@ -321,6 +321,42 @@ class TestInternalUrlsToWikiLinks:
             "[x](#engineering/coding-standards)"
         )
 
+    def test_url_at_start_of_content(self, page_in_directory):
+        """A leading URL has nothing before it — including no ``](``.
+
+        The content deliberately ends in ``](`` so a title check that
+        indexes from the end of the string instead of the start of the
+        match would misfire.
+        """
+        url = f"{self.BASE}{page_in_directory.get_absolute_url()}"
+        content = f"{url} comes first, then [see]("
+        assert internal_urls_to_wiki_links(content) == (
+            "#engineering/coding-standards comes first, then [see]("
+        )
+
+    def test_bare_url_before_parenthetical_still_rewritten(
+        self, page_in_directory
+    ):
+        """Only link targets carry titles; prose punctuation isn't one."""
+        url = f"{self.BASE}{page_in_directory.get_absolute_url()}"
+        content = f'Read {url} (it is short) and {url} "quoted".'
+        assert internal_urls_to_wiki_links(content) == (
+            "Read #engineering/coding-standards (it is short) and "
+            '#engineering/coding-standards "quoted".'
+        )
+
+    def test_repeated_url_resolved_once(
+        self, page_in_directory, django_assert_num_queries
+    ):
+        url = f"{self.BASE}{page_in_directory.get_absolute_url()}"
+        content = f"[a]({url}) [b]({url}) {url}"
+        with django_assert_num_queries(1):
+            assert internal_urls_to_wiki_links(content) == (
+                "[a](#engineering/coding-standards) "
+                "[b](#engineering/coding-standards) "
+                "#engineering/coding-standards"
+            )
+
     def test_multiple_urls_in_one_document(self, page, page_in_directory):
         content = (
             f"[A]({self.BASE}{page.get_absolute_url()}) and "
@@ -374,6 +410,31 @@ class TestInternalUrlsToWikiLinks:
     def test_link_title_untouched(self, page_in_directory):
         url = f"{self.BASE}{page_in_directory.get_absolute_url()}"
         content = f'[x]({url} "Coding Standards")'
+        assert internal_urls_to_wiki_links(content) == content
+
+    def test_reference_definition_with_title_untouched(
+        self, page_in_directory
+    ):
+        """``[ref]: url "title"`` has no wiki-link spelling either."""
+        url = f"{self.BASE}{page_in_directory.get_absolute_url()}"
+        for content in (
+            f'[std]: {url} "Coding Standards"',
+            f"  [std]: {url} 'Coding Standards'",
+            f"See [it][std].\n\n[std]: {url}\t(Coding Standards)\n",
+        ):
+            assert internal_urls_to_wiki_links(content) == content
+
+    def test_redirect_to_deleted_page_untouched(
+        self, user, page_in_directory, sub_directory
+    ):
+        """A page renamed and then soft-deleted is still gone."""
+        SlugRedirect.objects.create(
+            directory=sub_directory,
+            old_slug="old-standards",
+            page=page_in_directory,
+        )
+        page_in_directory.soft_delete(user)
+        content = f"[x]({self.BASE}/c/engineering/old-standards)"
         assert internal_urls_to_wiki_links(content) == content
 
     def test_html_href_untouched(self, page_in_directory):

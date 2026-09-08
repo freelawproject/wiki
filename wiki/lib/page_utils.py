@@ -71,9 +71,16 @@ def page_for_url_path(path: str) -> Page | None:
         return page
     redirect_obj = slug_redirect_at_path(clean_path)
     if redirect_obj is not None:
-        return redirect_obj.page
-    target = moved_target(clean_path)
-    return target if isinstance(target, Page) else None
+        page = redirect_obj.page
+    else:
+        target = moved_target(clean_path)
+        page = target if isinstance(target, Page) else None
+    # Redirect rows reach their page through the FK, which uses Page's
+    # unfiltered base manager — so a page renamed and then soft-deleted
+    # still comes back. Its URL 404s, so there is no page to point at.
+    if page is None or page.is_deleted:
+        return None
+    return page
 
 
 def get_page_from_path(path):

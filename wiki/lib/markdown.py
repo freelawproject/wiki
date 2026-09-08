@@ -130,6 +130,11 @@ _INTERNAL_URL_TOKEN_RE = re.compile(
     r"""(?P<url>(?:https?://[^\s<>()\[\]"'/]+)?/c/[^\s<>()\[\]"']+)"""
 )
 
+# The ``[label]:`` opening of a reference-style link definition, up to the
+# URL. Used to recognise ``[ref]: url "title"`` when deciding whether a
+# URL token carries a link title.
+_REF_DEF_PREFIX_RE = re.compile(r"[ \t]{0,3}\[[^\]]+\]:[ \t]*")
+
 # Sentence punctuation that a bare URL in prose commonly runs into:
 # "see https://wiki.free.law/c/hr/handbook." — not part of the URL.
 _TRAILING_PUNCTUATION = ".,;:!?"
@@ -225,6 +230,28 @@ def extract_references_from_internal_urls(content):
     return refs
 
 
+def _has_link_title(match):
+    """True when a URL token is a link target followed by a ``"title"``.
+
+    ``[text](url "title")`` and ``[ref]: url "title"`` have no wiki-link
+    spelling — neither ``_MD_LINK_WIKI_RE`` nor ``_REF_LINK_WIKI_RE``
+    accepts a title — so rewriting the URL inside them would leave a link
+    the resolver no longer recognises. A bare URL in prose followed by a
+    quote or parenthesis is not a link target and doesn't count.
+    """
+    string = match.string
+    after = string[match.end() :]
+    if after[:1] not in (" ", "\t"):
+        return False
+    if after.lstrip(" \t")[:1] not in ('"', "'", "("):
+        return False
+    start = match.start()
+    if string[max(start - 2, 0) : start] == "](":
+        return True
+    line_start = string.rfind("\n", 0, start) + 1
+    return _REF_DEF_PREFIX_RE.fullmatch(string, line_start, start) is not None
+
+
 def internal_urls_to_wiki_links(content):
     """Rewrite URLs that point at wiki pages into ``#dir/slug`` wiki links.
 
@@ -254,16 +281,21 @@ def internal_urls_to_wiki_links(content):
 
     base_host = _base_host()
     code_ranges = _code_region_ranges(content)
+    # Each distinct path costs a chain of lookups; resolve it once per call
+    # however many times the content repeats it.
+    resolved = {}
+
+    def resolve_path(content_path):
+        if content_path not in resolved:
+            resolved[content_path] = page_for_url_path(content_path)
+        return resolved[content_path]
 
     def replace(match):
         if _in_code_region(match.start(), code_ranges):
             return match.group(0)
-        url = match.group("url")
-        # ``[text](url "title")`` — a link title has no wiki-link spelling.
-        if match.string.startswith(
-            "](", match.start() - 2
-        ) and match.string.startswith((" ", "\t"), match.end()):
+        if _has_link_title(match):
             return match.group(0)
+        url = match.group("url")
         stripped = url.rstrip(_TRAILING_PUNCTUATION)
         suffix = url[len(stripped) :]
         parsed = _parse_internal_url(stripped, base_host)
@@ -274,7 +306,7 @@ def internal_urls_to_wiki_links(content):
             return match.group(0)
         if fragment and not _SLUG_RE.fullmatch(fragment):
             return match.group(0)
-        page = page_for_url_path(f"{dir_path}/{slug}" if dir_path else slug)
+        page = resolve_path(f"{dir_path}/{slug}" if dir_path else slug)
         if page is None:
             return match.group(0)
         path = page.content_path
