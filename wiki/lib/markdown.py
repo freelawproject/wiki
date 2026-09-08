@@ -140,21 +140,6 @@ _TRAILING_PUNCTUATION = ".,;:!?"
 _WIKI_LINK_PATH_RE = re.compile(rf"{_SLUG_CHARS}(?:/{_SLUG_CHARS})*")
 _SLUG_RE = re.compile(_SLUG_CHARS)
 
-# URL suffixes that address a page's tooling rather than the page itself:
-# /c/dir/slug/edit/, /c/dir/slug/history/, …
-_PAGE_ACTION_SUFFIXES = (
-    "/edit",
-    "/move",
-    "/delete",
-    "/history",
-    "/backlinks",
-    "/permissions",
-    "/diff",
-    "/revert",
-    "/subscribe",
-    "/feedback",
-)
-
 
 def _code_region_ranges(content):
     """Return (start, end) spans for fenced code blocks and inline backticks."""
@@ -165,22 +150,37 @@ def _in_code_region(pos, ranges):
     return any(start <= pos < end for start, end in ranges)
 
 
+def _content_path_from_url_path(url_path):
+    """Return the ``dir/slug`` content path a URL path addresses, or None.
+
+    Runs the path through Django's URL resolver and keeps only hits on the
+    ``resolve_path`` catch-all — the route that serves pages and
+    directories. Anything else under ``/c/`` (``/edit/``, ``/history/``,
+    ``.md`` exports, comment and proposal routes, …) addresses a page's
+    tooling rather than the page and returns None. Leaning on the resolver
+    means new routes are excluded automatically instead of by hand.
+    """
+    try:
+        match = resolve(url_path)
+    except Resolver404:
+        return None
+    if match.url_name != "resolve_path":
+        return None
+    return match.kwargs.get("path", "").strip("/") or None
+
+
 def _parse_internal_url(url, base_host):
     """Split an internal wiki URL into ``(dir_path, slug, fragment, query)``.
 
-    Accepts absolute URLs on ``base_host`` and root-relative ``/c/`` paths.
-    Returns None for other hosts, paths outside ``/c/``, and page-action
-    URLs (``/edit/``, ``/history/``, …), which address a page's tooling
-    rather than the page.
+    Accepts absolute URLs on ``base_host`` and root-relative paths. Returns
+    None for other hosts and for anything that isn't a page or directory
+    URL (see ``_content_path_from_url_path``).
     """
     parsed = urlparse(url)
     if parsed.scheme and parsed.hostname != base_host:
         return None
-    path = parsed.path.rstrip("/")
-    if not path.startswith("/c/"):
-        return None
-    content_path = path[3:]  # remove "/c/"
-    if any(content_path.endswith(s) for s in _PAGE_ACTION_SUFFIXES):
+    content_path = _content_path_from_url_path(parsed.path)
+    if content_path is None:
         return None
     if "/" in content_path:
         dir_path, slug = content_path.rsplit("/", 1)
@@ -787,21 +787,13 @@ def _add_nofollow_to_non_public_links(html):
     if not hrefs:
         return html
 
-    # Use Django's URL resolver to extract content paths from hrefs
+    # Action URLs (edit, move, etc.) resolve to None here; they're already
+    # blocked by robots.txt.
     path_by_href = {}
     slug_set = set()
     for href in hrefs:
-        url_path = urlparse(href).path
-        try:
-            match = resolve(url_path)
-        except Resolver404:
-            continue
-        # Only process the content catch-all; action URLs (edit, move,
-        # etc.) are already blocked by robots.txt.
-        if match.url_name != "resolve_path":
-            continue
-        content_path = match.kwargs.get("path", "")
-        if not content_path:
+        content_path = _content_path_from_url_path(urlparse(href).path)
+        if content_path is None:
             continue
         path_by_href[href] = content_path
         slug_set.add(content_path.rsplit("/", 1)[-1])
