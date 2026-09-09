@@ -2,6 +2,8 @@ from django.conf import settings
 from django.db import models
 from django.urls import reverse
 
+from wiki.lib.markdown_source import expand_tabs
+
 
 class Directory(models.Model):
     """A directory in the wiki hierarchy.
@@ -98,6 +100,28 @@ class Directory(models.Model):
 
     def __str__(self):
         return self.title
+
+    def save(self, *args, **kwargs):
+        update_fields = kwargs.get("update_fields")
+        if update_fields is None or "description" in update_fields:
+            # Same rule as Page.content: tabs never reach stored markdown.
+            self.description = expand_tabs(self.description)
+        super().save(*args, **kwargs)
+
+    def create_revision(self, user, change_message=""):
+        """Create a new revision snapshot of this directory."""
+        last = self.revisions.order_by("-revision_number").first()
+        rev_num = (last.revision_number + 1) if last else 1
+        return DirectoryRevision.objects.create(
+            directory=self,
+            title=self.title,
+            description=self.description,
+            visibility=self.visibility,
+            editability=self.editability,
+            change_message=change_message,
+            revision_number=rev_num,
+            created_by=user,
+        )
 
     def get_absolute_url(self):
         if self.path:

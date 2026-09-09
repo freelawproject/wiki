@@ -267,6 +267,33 @@ class TestDirectoryModel:
         assert crumbs[0] == ("Home", reverse("root"))
         assert crumbs[-1][0] == "DevOps"
 
+    def test_save_expands_tabs_in_description(self, sub_directory):
+        sub_directory.description = "Intro\n\t- nested\n\n```\n\tcode\n```"
+        sub_directory.save()
+        sub_directory.refresh_from_db()
+        assert sub_directory.description == (
+            "Intro\n    - nested\n\n```\n\tcode\n```"
+        )
+
+    def test_save_expands_tabs_with_update_fields(self, sub_directory):
+        sub_directory.description = "\tx"
+        sub_directory.save(update_fields=["description"])
+        sub_directory.refresh_from_db()
+        assert sub_directory.description == "    x"
+
+    def test_create_revision_snapshots_directory(self, sub_directory, user):
+        sub_directory.description = "Desc"
+        sub_directory.save()
+        rev = sub_directory.create_revision(user, "First")
+        assert rev.revision_number == 1
+        assert rev.title == sub_directory.title
+        assert rev.description == "Desc"
+        assert rev.visibility == sub_directory.visibility
+        assert rev.editability == sub_directory.editability
+        assert rev.change_message == "First"
+        assert rev.created_by == user
+        assert sub_directory.create_revision(None).revision_number == 2
+
 
 class TestCreatePageInDirectory:
     def test_create_page_in_dir(self, client, user, sub_directory):
