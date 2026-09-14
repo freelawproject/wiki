@@ -3442,6 +3442,91 @@ class TestPageLinks:
 
 
 @pytest.mark.django_db
+class TestPageSaveRewritesInternalUrls:
+    """Page.save() turns pasted page URLs into #dir/slug wiki links."""
+
+    @pytest.fixture(autouse=True)
+    def _base_url(self, settings):
+        settings.BASE_URL = "https://wiki.free.law"
+
+    def test_save_rewrites_full_url_and_links_target(
+        self, page, page_in_directory
+    ):
+        url = f"https://wiki.free.law{page_in_directory.get_absolute_url()}"
+        page.content = f"Help is at [Standards]({url})."
+        page.save()
+        page.refresh_from_db()
+        assert page.content == (
+            "Help is at [Standards](#engineering/coding-standards)."
+        )
+        assert PageLink.objects.filter(
+            from_page=page, to_page=page_in_directory
+        ).exists()
+
+    def test_save_rewrites_relative_path(self, page, page_in_directory):
+        page.content = f"See [it]({page_in_directory.get_absolute_url()})"
+        page.save()
+        page.refresh_from_db()
+        assert page.content == "See [it](#engineering/coding-standards)"
+
+    def test_update_fields_without_content_leaves_content_alone(
+        self, page, page_in_directory
+    ):
+        url = f"https://wiki.free.law{page_in_directory.get_absolute_url()}"
+        Page.objects.filter(pk=page.pk).update(content=f"[x]({url})")
+        page.refresh_from_db()
+        page.visibility = Page.Visibility.INTERNAL
+        page.save(update_fields=["visibility"])
+        page.refresh_from_db()
+        assert page.content == f"[x]({url})"
+
+    def test_edit_view_stores_rewritten_content_and_revision(
+        self, client, user, page, page_in_directory
+    ):
+        client.force_login(user)
+        url = f"https://wiki.free.law{page_in_directory.get_absolute_url()}"
+        r = client.post(
+            reverse("page_edit", kwargs={"path": page.content_path}),
+            {
+                "title": "Getting Started",
+                "content": f"Read [the standards]({url}) first.",
+                "visibility": "public",
+                "change_message": "Link to standards",
+            },
+        )
+        assert r.status_code == 302
+        page.refresh_from_db()
+        expected = "Read [the standards](#engineering/coding-standards) first."
+        assert page.content == expected
+        # The revision snapshot must match what was stored, not the raw POST.
+        assert page.revisions.latest("revision_number").content == expected
+
+    def test_create_view_rewrites_content(
+        self, client, user, page_in_directory
+    ):
+        client.force_login(user)
+        url = f"https://wiki.free.law{page_in_directory.get_absolute_url()}"
+        r = client.post(
+            reverse("page_create"),
+            {
+                "title": "Brand New",
+                "content": f"Start with {url}.",
+                "visibility": "public",
+                "change_message": "Add new page",
+            },
+        )
+        assert r.status_code == 302
+        new_page = Page.objects.get(slug="brand-new")
+        assert new_page.content == "Start with #engineering/coding-standards."
+
+    def test_unknown_url_left_as_is(self, page):
+        page.content = "[x](https://wiki.free.law/c/nowhere/nothing)"
+        page.save()
+        page.refresh_from_db()
+        assert page.content == "[x](https://wiki.free.law/c/nowhere/nothing)"
+
+
+@pytest.mark.django_db
 class TestPageBacklinks:
     def test_backlinks_page_shows_linking_pages(self, client, user, page):
         """The backlinks view lists pages that link to this page."""
@@ -3502,6 +3587,199 @@ class TestPageBacklinks:
             )
         )
         assert r.status_code == 404
+
+
+# ── Rewrite Internal URLs Command ─────────────────────────
+
+
+class TestRewriteInternalUrlsCommand:
+    """rewrite_internal_urls backfills pages saved before the save hook."""
+
+    @pytest.fixture(autouse=True)
+    def _base_url(self, settings):
+        settings.BASE_URL = "https://wiki.free.law"
+
+    @pytest.fixture
+    def stale_page(self, page, page_in_directory):
+        """A page whose stored content still carries a full page URL.
+
+        Written with ``update()`` so ``Page.save()`` can't rewrite it — this
+        is the state pre-existing pages are in.
+        """
+        url = f"https://wiki.free.law{page_in_directory.get_absolute_url()}"
+        Page.objects.filter(pk=page.pk).update(content=f"See [it]({url}).")
+        page.refresh_from_db()
+        return page
+
+    def test_rewrites_content_and_records_revision(
+        self, stale_page, page_in_directory
+    ):
+        revisions_before = stale_page.revisions.count()
+        out = io.StringIO()
+        call_command("rewrite_internal_urls", stdout=out)
+        stale_page.refresh_from_db()
+        assert stale_page.content == "See [it](#engineering/coding-standards)."
+        latest = stale_page.revisions.latest("revision_number")
+        assert stale_page.revisions.count() == revisions_before + 1
+        assert latest.content == stale_page.content
+        assert latest.created_by is None
+        assert "Rewrite page URLs as wiki links" in latest.change_message
+        assert PageLink.objects.filter(
+            from_page=stale_page, to_page=page_in_directory
+        ).exists()
+        assert stale_page.get_absolute_url() in out.getvalue()
+        assert "Rewrote 1 page." in out.getvalue()
+
+    def test_dry_run_changes_nothing(self, stale_page):
+        original = stale_page.content
+        revisions_before = stale_page.revisions.count()
+        out = io.StringIO()
+        call_command("rewrite_internal_urls", "--dry-run", stdout=out)
+        stale_page.refresh_from_db()
+        assert stale_page.content == original
+        assert stale_page.revisions.count() == revisions_before
+        assert "Would rewrite" in out.getvalue()
+        assert "1 page would be rewritten." in out.getvalue()
+
+    def test_pages_without_rewrites_are_untouched(self, page):
+        """No new revision for pages that have nothing to fix."""
+        Page.objects.filter(pk=page.pk).update(
+            content="Plain text and [ext](https://example.com/c/x)."
+        )
+        revisions_before = page.revisions.count()
+        out = io.StringIO()
+        call_command("rewrite_internal_urls", stdout=out)
+        page.refresh_from_db()
+        assert page.revisions.count() == revisions_before
+        assert "Rewrote 0 pages." in out.getvalue()
+
+    def test_second_run_is_a_no_op(self, stale_page):
+        call_command("rewrite_internal_urls", stdout=io.StringIO())
+        revisions_after_first = stale_page.revisions.count()
+        out = io.StringIO()
+        call_command("rewrite_internal_urls", stdout=out)
+        assert stale_page.revisions.count() == revisions_after_first
+        assert "Rewrote 0 pages." in out.getvalue()
+
+
+class TestPageSaveExpandsTabs:
+    """Page.save() never stores a tab outside a fenced code block."""
+
+    def test_tabs_expanded_on_save(self, page):
+        page.content = "- a\n\t- b\n\n\tindented"
+        page.save()
+        page.refresh_from_db()
+        assert page.content == "- a\n    - b\n\n    indented"
+
+    def test_tabs_expanded_with_content_in_update_fields(self, page):
+        page.content = "\tx"
+        page.save(update_fields=["content"])
+        page.refresh_from_db()
+        assert page.content == "    x"
+
+    def test_fenced_code_keeps_tabs(self, page):
+        page.content = "```make\nall:\n\tgo build\n```"
+        page.save()
+        page.refresh_from_db()
+        assert "\tgo build" in page.content
+
+    def test_edit_view_strips_tabs(self, client, user, page):
+        client.force_login(user)
+        response = client.post(
+            reverse("page_edit", kwargs={"path": page.content_path}),
+            {
+                "title": page.title,
+                "content": "line\n\tnext",
+                "visibility": "public",
+                "change_message": "tabs",
+            },
+        )
+        assert response.status_code == 302
+        page.refresh_from_db()
+        assert page.content == "line\n    next"
+        assert "\t" not in page.revisions.latest("revision_number").content
+
+
+class TestExpandTabsCommand:
+    """expand_tabs backfills content saved before the save hooks."""
+
+    @pytest.fixture
+    def tabbed_page(self, page):
+        """A page whose stored content still carries tabs.
+
+        Written with ``update()`` so ``Page.save()`` can't fix it — this is
+        the state pre-existing pages are in.
+        """
+        Page.objects.filter(pk=page.pk).update(
+            content="- a\n\t- b\n\n```\n\tcode\n```"
+        )
+        page.refresh_from_db()
+        return page
+
+    @pytest.fixture
+    def tabbed_directory(self, sub_directory, user):
+        Directory.objects.filter(pk=sub_directory.pk).update(
+            description="Intro\n\tdetail"
+        )
+        sub_directory.refresh_from_db()
+        return sub_directory
+
+    def test_rewrites_page_and_records_revision(self, tabbed_page):
+        revisions_before = tabbed_page.revisions.count()
+        out = io.StringIO()
+        call_command("expand_tabs", stdout=out)
+        tabbed_page.refresh_from_db()
+        assert tabbed_page.content == "- a\n    - b\n\n```\n\tcode\n```"
+        latest = tabbed_page.revisions.latest("revision_number")
+        assert tabbed_page.revisions.count() == revisions_before + 1
+        assert latest.content == tabbed_page.content
+        assert latest.created_by is None
+        assert latest.change_message == "Replace tabs with spaces"
+        assert tabbed_page.get_absolute_url() in out.getvalue()
+        assert "Rewrote 1 page and 0 directories." in out.getvalue()
+
+    def test_rewrites_directory_description(self, tabbed_directory):
+        out = io.StringIO()
+        call_command("expand_tabs", stdout=out)
+        tabbed_directory.refresh_from_db()
+        assert tabbed_directory.description == "Intro\n    detail"
+        latest = tabbed_directory.revisions.latest("revision_number")
+        assert latest.description == tabbed_directory.description
+        assert latest.change_message == "Replace tabs with spaces"
+        assert tabbed_directory.get_absolute_url() in out.getvalue()
+        assert "Rewrote 0 pages and 1 directory." in out.getvalue()
+
+    def test_dry_run_changes_nothing(self, tabbed_page, tabbed_directory):
+        original = tabbed_page.content
+        revisions_before = tabbed_page.revisions.count()
+        out = io.StringIO()
+        call_command("expand_tabs", "--dry-run", stdout=out)
+        tabbed_page.refresh_from_db()
+        tabbed_directory.refresh_from_db()
+        assert tabbed_page.content == original
+        assert "\t" in tabbed_directory.description
+        assert tabbed_page.revisions.count() == revisions_before
+        assert "Would rewrite" in out.getvalue()
+        assert "1 page and 1 directory would be rewritten." in out.getvalue()
+
+    def test_fenced_only_tabs_are_untouched(self, page):
+        """No new revision when the only tabs sit inside a code fence."""
+        Page.objects.filter(pk=page.pk).update(content="```\n\tcode\n```")
+        revisions_before = page.revisions.count()
+        out = io.StringIO()
+        call_command("expand_tabs", stdout=out)
+        page.refresh_from_db()
+        assert page.content == "```\n\tcode\n```"
+        assert page.revisions.count() == revisions_before
+        assert "Rewrote 0 pages and 0 directories." in out.getvalue()
+
+    def test_second_run_is_a_no_op(self, tabbed_page):
+        call_command("expand_tabs", stdout=io.StringIO())
+        revisions_after_first = tabbed_page.revisions.count()
+        out = io.StringIO()
+        call_command("expand_tabs", stdout=out)
+        assert tabbed_page.revisions.count() == revisions_after_first
+        assert "Rewrote 0 pages and 0 directories." in out.getvalue()
 
 
 # ── Cleanup Command ───────────────────────────────────────

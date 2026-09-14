@@ -83,22 +83,6 @@ def _grant_copy_kwargs(source_perm, **target):
     return kwargs
 
 
-def _create_revision(directory, user, change_message=""):
-    """Create a new DirectoryRevision for the given directory."""
-    last = directory.revisions.order_by("-revision_number").first()
-    rev_num = (last.revision_number + 1) if last else 1
-    return DirectoryRevision.objects.create(
-        directory=directory,
-        title=directory.title,
-        description=directory.description,
-        visibility=directory.visibility,
-        editability=directory.editability,
-        change_message=change_message,
-        revision_number=rev_num,
-        created_by=user,
-    )
-
-
 def _get_sort_config(request):
     """Read and validate the sort parameter from the request."""
     ALLOWED_SORTS = {"title", "updated", "created", "views"}
@@ -277,8 +261,7 @@ def directory_edit_root(request):
     if request.method == "POST" and form.is_valid():
         with transaction.atomic():
             form.save()
-            _create_revision(
-                root,
+            root.create_revision(
                 request.user,
                 form.cleaned_data.get("change_message", ""),
             )
@@ -453,8 +436,7 @@ def directory_edit(request, path):
             if changed:
                 clean_redundant_overrides(directory, changed)
 
-            _create_revision(
-                directory,
+            directory.create_revision(
                 request.user,
                 form.cleaned_data.get("change_message", ""),
             )
@@ -511,7 +493,7 @@ def directory_create(request, path=""):
             directory.path = f"{parent.path}/{directory.path}"
         with transaction.atomic():
             directory.save()
-            _create_revision(directory, request.user, "Initial creation")
+            directory.create_revision(request.user, "Initial creation")
         messages.success(
             request,
             f'Directory "{directory.title}" created.',
@@ -1184,8 +1166,7 @@ def _directory_revert_inner(request, directory, rev_num):
         directory.description = revision.description
         with transaction.atomic():
             directory.save()
-            _create_revision(
-                directory,
+            directory.create_revision(
                 request.user,
                 f"Reverted to v{rev_num}",
             )

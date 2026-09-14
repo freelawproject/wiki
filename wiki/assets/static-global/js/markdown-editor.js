@@ -269,6 +269,15 @@ var initMarkdownEditor = (function() {
     editor = new EasyMDE({
       element: document.getElementById('markdown-editor'),
       autoDownloadFontAwesome: false,
+      // EasyMDE defaults to indentWithTabs: true, which makes CodeMirror's
+      // smart indent rebuild the leading whitespace of a new line out of
+      // tab characters whenever the previous line was indented — and the
+      // Tab key insert a literal tab. Markdown reads a tab as four
+      // columns (see wiki.lib.markdown_source.TAB_WIDTH); indent with
+      // that many spaces instead so what the editor shows is what the
+      // server stores and renders.
+      indentWithTabs: false,
+      tabSize: 4,
       spellChecker: false,
       autosave: { enabled: false },
       status: ['lines', 'words'],

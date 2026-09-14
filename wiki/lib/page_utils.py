@@ -57,6 +57,32 @@ def slug_redirect_at_path(path):
     return qs.first()
 
 
+def page_for_url_path(path: str) -> Page | None:
+    """Resolve a ``/c/`` content path to the page it serves, or None.
+
+    Follows the same lookup order as the ``resolve_path`` view — literal
+    page, slug redirect, then directory-move history — minus the directory
+    branches, so a path that names a directory returns None. Use this to
+    answer "which page does this URL open?" without a request.
+    """
+    clean_path = path.strip("/")
+    page = page_at_path(clean_path)
+    if page is not None:
+        return page
+    redirect_obj = slug_redirect_at_path(clean_path)
+    if redirect_obj is not None:
+        page = redirect_obj.page
+    else:
+        target = moved_target(clean_path)
+        page = target if isinstance(target, Page) else None
+    # Redirect rows reach their page through the FK, which uses Page's
+    # unfiltered base manager — so a page renamed and then soft-deleted
+    # still comes back. Its URL 404s, so there is no page to point at.
+    if page is None or page.is_deleted:
+        return None
+    return page
+
+
 def get_page_from_path(path):
     """Resolve a content path to a Page or raise Http404.
 

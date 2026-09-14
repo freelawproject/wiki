@@ -1114,3 +1114,70 @@ class TestMobileTocToggle:
         link.click()
 
         assert browser_page.url.endswith(href)
+
+
+def _editor_value(browser_page):
+    """Return the CodeMirror document text (the textarea lags behind it)."""
+    return browser_page.evaluate(
+        "document.querySelector('.CodeMirror').CodeMirror.getValue()"
+    )
+
+
+@pytest.mark.django_db(transaction=True)
+class TestEditorIndentation:
+    """The editor must never put a tab character into the document.
+
+    EasyMDE's default (indentWithTabs: true) made CodeMirror's smart
+    indent rebuild an indented line's leading whitespace out of tabs on
+    Enter, and the Tab key insert a literal tab. Regression guards for
+    both paths.
+    """
+
+    def test_enter_after_indented_line_continues_with_spaces(
+        self, browser_page, live_server, browser_user, dir_tree
+    ):
+        _force_login(browser_page, live_server, browser_user)
+        browser_page.goto(f"{live_server.url}{reverse('page_create')}")
+        _focus_editor(browser_page)
+        browser_page.keyboard.type("    indented")
+        browser_page.keyboard.press("Enter")
+        browser_page.keyboard.type("next")
+
+        value = _editor_value(browser_page)
+        assert "\t" not in value
+        assert value == "    indented\n    next"
+
+    def test_tab_key_indents_list_item_with_spaces(
+        self, browser_page, live_server, browser_user, dir_tree
+    ):
+        """Enter continues the list; Tab nests the new item by four spaces,
+        and the next Enter carries that indentation forward as spaces."""
+        _force_login(browser_page, live_server, browser_user)
+        browser_page.goto(f"{live_server.url}{reverse('page_create')}")
+        _focus_editor(browser_page)
+        browser_page.keyboard.type("- item")
+        browser_page.keyboard.press("Enter")
+        browser_page.keyboard.press("Tab")
+        browser_page.keyboard.type("sub")
+        browser_page.keyboard.press("Enter")
+        browser_page.keyboard.type("next")
+
+        value = _editor_value(browser_page)
+        assert "\t" not in value
+        assert value == "- item\n    - sub\n    - next"
+
+    def test_tab_key_in_paragraph_inserts_spaces(
+        self, browser_page, live_server, browser_user, dir_tree
+    ):
+        _force_login(browser_page, live_server, browser_user)
+        browser_page.goto(f"{live_server.url}{reverse('page_create')}")
+        _focus_editor(browser_page)
+        browser_page.keyboard.type("text")
+        browser_page.keyboard.press("Enter")
+        browser_page.keyboard.press("Enter")
+        browser_page.keyboard.press("Tab")
+        browser_page.keyboard.type("indented")
+
+        value = _editor_value(browser_page)
+        assert "\t" not in value
+        assert value == "text\n\n    indented"
