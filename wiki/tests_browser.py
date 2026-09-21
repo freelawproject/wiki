@@ -1181,3 +1181,177 @@ class TestEditorIndentation:
         value = _editor_value(browser_page)
         assert "\t" not in value
         assert value == "text\n\n    indented"
+
+
+def _editor_cursor(browser_page):
+    """Return the cursor as ``{"line", "ch", "top"}``.
+
+    ``top`` is where the cursor is actually drawn, which is what tells two
+    rows of one wrapped paragraph apart. It is read from the live selection
+    rather than from a rebuilt position, because a position at a wrap point
+    is ambiguous — it ends one row and starts the next, and only the live
+    cursor carries the bias that decides which.
+    """
+    return browser_page.evaluate(
+        "() => {"
+        "  const cm = document.querySelector('.CodeMirror').CodeMirror;"
+        "  const c = cm.getCursor();"
+        "  return {line: c.line, ch: c.ch, top: cm.cursorCoords(null, 'div').top};"
+        "}"
+    )
+
+
+def _editor_selection(browser_page):
+    return browser_page.evaluate(
+        "() => document.querySelector('.CodeMirror').CodeMirror.getSelection()"
+    )
+
+
+def _set_editor(browser_page, text, line, ch):
+    """Replace the document with ``text`` and put the cursor at (line, ch)."""
+    browser_page.evaluate(
+        "([text, line, ch]) => {"
+        "  const cm = document.querySelector('.CodeMirror').CodeMirror;"
+        "  cm.setValue(text);"
+        "  cm.setCursor({line: line, ch: ch});"
+        "  cm.focus();"
+        "}",
+        [text, line, ch],
+    )
+
+
+# One logical line, long enough to wrap onto several rows at any plausible
+# editor width.
+WRAPPING_PARAGRAPH = (
+    "I walk to school each day and when I get there I eat a chocolate pie, "
+    "which is a fine thing to do on a weekday morning when the sun is out "
+    "and the sidewalk is dry and nobody is in any particular hurry at all."
+)
+
+
+@pytest.mark.django_db(transaction=True)
+class TestEditorHomeAndEnd:
+    """Home and End must move within the wrapped row holding the cursor.
+
+    lineWrapping makes a paragraph a single logical line, and CodeMirror's
+    PC keymap moves Home/End by logical line — so they used to jump to the
+    ends of the whole paragraph however many rows it covered.
+    """
+
+    def _open_editor(self, browser_page, live_server, browser_user):
+        _force_login(browser_page, live_server, browser_user)
+        browser_page.goto(f"{live_server.url}{reverse('page_create')}")
+        _focus_editor(browser_page)
+
+    def _row_tops(self, browser_page):
+        """Load the wrapping paragraph; return the first and last row's tops.
+
+        Leaves the cursor at the end of the paragraph.
+        """
+        _set_editor(browser_page, WRAPPING_PARAGRAPH, 0, 0)
+        first_row = _editor_cursor(browser_page)["top"]
+        _set_editor(
+            browser_page, WRAPPING_PARAGRAPH, 0, len(WRAPPING_PARAGRAPH)
+        )
+        last_row = _editor_cursor(browser_page)["top"]
+        # Nothing below is meaningful unless the paragraph really wrapped.
+        assert first_row != last_row
+        return first_row, last_row
+
+    def test_home_goes_to_start_of_wrapped_row(
+        self, browser_page, live_server, browser_user, dir_tree
+    ):
+        self._open_editor(browser_page, live_server, browser_user)
+        _, last_row = self._row_tops(browser_page)
+
+        browser_page.keyboard.press("Home")
+
+        cursor = _editor_cursor(browser_page)
+        assert cursor["line"] == 0
+        # Start of the last row, not of the paragraph.
+        assert 0 < cursor["ch"] < len(WRAPPING_PARAGRAPH)
+        assert cursor["top"] == last_row
+
+    def test_end_goes_to_end_of_wrapped_row(
+        self, browser_page, live_server, browser_user, dir_tree
+    ):
+        self._open_editor(browser_page, live_server, browser_user)
+        first_row, _ = self._row_tops(browser_page)
+        _set_editor(browser_page, WRAPPING_PARAGRAPH, 0, 0)
+
+        browser_page.keyboard.press("End")
+
+        cursor = _editor_cursor(browser_page)
+        assert cursor["line"] == 0
+        # End of the first row, not of the paragraph.
+        assert 0 < cursor["ch"] < len(WRAPPING_PARAGRAPH)
+        assert cursor["top"] == first_row
+
+    def test_shift_home_selects_back_to_start_of_wrapped_row(
+        self, browser_page, live_server, browser_user, dir_tree
+    ):
+        """Selection still extends: CodeMirror reuses the unshifted binding
+        for any command whose name starts with "go"."""
+        self._open_editor(browser_page, live_server, browser_user)
+        _set_editor(
+            browser_page, WRAPPING_PARAGRAPH, 0, len(WRAPPING_PARAGRAPH)
+        )
+
+        browser_page.keyboard.press("Shift+Home")
+
+        selection = _editor_selection(browser_page)
+        assert selection
+        assert WRAPPING_PARAGRAPH.endswith(selection)
+        assert len(selection) < len(WRAPPING_PARAGRAPH)
+
+    def test_shift_end_selects_to_end_of_wrapped_row(
+        self, browser_page, live_server, browser_user, dir_tree
+    ):
+        self._open_editor(browser_page, live_server, browser_user)
+        _set_editor(browser_page, WRAPPING_PARAGRAPH, 0, 0)
+
+        browser_page.keyboard.press("Shift+End")
+
+        selection = _editor_selection(browser_page)
+        assert selection
+        assert WRAPPING_PARAGRAPH.startswith(selection)
+        assert len(selection) < len(WRAPPING_PARAGRAPH)
+
+    def test_home_on_unwrapped_line_keeps_smart_home(
+        self, browser_page, live_server, browser_user, dir_tree
+    ):
+        """On a short indented line Home still goes to the first non-blank
+        character, then to column zero."""
+        self._open_editor(browser_page, live_server, browser_user)
+        _set_editor(browser_page, "    hello", 0, 9)
+
+        browser_page.keyboard.press("Home")
+        assert _editor_cursor(browser_page)["ch"] == 4
+
+        browser_page.keyboard.press("Home")
+        assert _editor_cursor(browser_page)["ch"] == 0
+
+    def test_end_on_unwrapped_line_goes_to_line_end(
+        self, browser_page, live_server, browser_user, dir_tree
+    ):
+        self._open_editor(browser_page, live_server, browser_user)
+        _set_editor(browser_page, "    hello", 0, 0)
+
+        browser_page.keyboard.press("End")
+
+        assert _editor_cursor(browser_page)["ch"] == 9
+
+    def test_home_and_end_stay_on_their_own_line(
+        self, browser_page, live_server, browser_user, dir_tree
+    ):
+        """Neither key may wander onto a neighbouring paragraph."""
+        self._open_editor(browser_page, live_server, browser_user)
+        _set_editor(browser_page, "first line\nsecond line", 1, 6)
+
+        browser_page.keyboard.press("Home")
+        cursor = _editor_cursor(browser_page)
+        assert (cursor["line"], cursor["ch"]) == (1, 0)
+
+        browser_page.keyboard.press("End")
+        cursor = _editor_cursor(browser_page)
+        assert (cursor["line"], cursor["ch"]) == (1, 11)
