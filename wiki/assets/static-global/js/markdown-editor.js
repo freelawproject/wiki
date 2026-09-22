@@ -304,6 +304,35 @@ var initMarkdownEditor = (function() {
       }],
     });
 
+    // ── Home / End: move by visual row, not by paragraph ──────
+    // EasyMDE turns on lineWrapping, so a paragraph is one logical line
+    // however many rows it covers on screen. CodeMirror's PC keymap binds
+    // Home/End to goLineStartSmart/goLineEnd, which move by logical line —
+    // so Home jumped to the top of the whole paragraph instead of the start
+    // of the row under the cursor. goLineLeftSmart/goLineRight are the
+    // wrap-aware equivalents, and on an unwrapped line goLineLeftSmart
+    // still does smart home (first non-blank character, then column zero).
+    // Shift-Home/Shift-End keep extending the selection, because CodeMirror
+    // falls back to the unshifted binding for any "go*" command.
+    //
+    // Bound with addKeyMap, not the extraKeys option: EasyMDE builds
+    // extraKeys from its own shortcut list and drops what we pass in.
+    // Keymaps added this way are consulted first.
+    //
+    // Platforms where Home means something else are left alone — macOS
+    // binds it to goDocStart, which is right there — so ask the keymap what
+    // Home does instead of sniffing the platform. That takes lookupKey:
+    // on a PC the binding sits two fallthroughs deep, in keyMap.basic.
+    var CodeMirror = editor.codemirror.constructor;
+    var homeCommand = '';
+    CodeMirror.lookupKey('Home', editor.codemirror.getOption('keyMap'), function(binding) {
+      homeCommand = binding;
+      return true; // we only want to read the binding, so stop the lookup
+    });
+    if (/^goLine/.test(homeCommand)) {
+      editor.codemirror.addKeyMap({ Home: 'goLineLeftSmart', End: 'goLineRight' });
+    }
+
     // ── Write / Preview tabs ──────────────────────────────────
     var editorContainer = editor.codemirror.getWrapperElement().closest('.EasyMDEContainer');
     if (editorContainer) {
