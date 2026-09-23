@@ -201,6 +201,32 @@ Key patterns:
 
 ## Docker
 
+### Remote sessions (Claude Code on the web)
+
+`.claude/hooks/session-start.sh` brings the stack up in the background, so it is
+usually still building when the session starts. Before running anything that
+needs the containers — tests, `manage.py`, `docker compose exec` — check the
+one-word status file:
+
+```bash
+cat /tmp/wiki-stack-status   # starting | ready | failed
+```
+
+- `ready` — the stack is up; carry on. The hook exports `COMPOSE_FILE`, so
+  `docker compose` also works from outside `docker/wiki/`.
+- `starting` — still building, which takes several minutes on a cold container.
+  Wait and re-check rather than starting a second stack.
+- `failed` — the reason is at the end of `/tmp/wiki-session-start.log`. Tell the
+  user; Django, postgres and the test suite are unavailable, lint still works.
+  If the log names hosts the environment's network policy blocks, report them
+  rather than trying to work around the policy.
+
+Containers in a web session reach the internet through the sandbox's egress
+gateway, which re-terminates TLS, so the hook generates a gitignored
+`docker/wiki/docker-compose.override.yml` that makes them trust its CA. The
+hook's header comment explains the mechanism; `docker/django/Dockerfile` is not
+modified.
+
 ### Starting and Stopping
 
 ```bash
