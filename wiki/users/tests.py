@@ -34,6 +34,13 @@ class TestLoginForm:
         assert r.status_code == 200
         assert b"Send Sign-In Link" in r.content
 
+    def test_login_page_says_staff_only_and_points_to_courtlistener(
+        self, client, db
+    ):
+        r = client.get(reverse("login"))
+        assert b"only for FLP staff" in r.content
+        assert b"https://www.courtlistener.com/" in r.content
+
     def test_disallowed_email_gets_neutral_response(self, client, db):
         # SECURITY: the response must be identical to an allowed address so
         # the form can't be used to enumerate the allowlist — a neutral
