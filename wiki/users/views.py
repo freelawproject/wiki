@@ -1,6 +1,7 @@
 import secrets
 from urllib.parse import urlencode
 
+from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth import login, logout
 from django.contrib.auth.decorators import login_required
@@ -100,7 +101,13 @@ def login_view(request):
         return redirect(login_url)
 
     return render(
-        request, "users/login.html", {"form": form, "next_url": next_url}
+        request,
+        "users/login.html",
+        {
+            "form": form,
+            "next_url": next_url,
+            "courtlistener_login_enabled": settings.COURTLISTENER_LOGIN_ENABLED,
+        },
     )
 
 

@@ -30,6 +30,13 @@ class UserProfile(models.Model):
         ),
     )
     gravatar_url = models.URLField(blank=True)
+    courtlistener_sub = models.CharField(
+        max_length=64,
+        unique=True,
+        null=True,
+        blank=True,
+        help_text="The CourtListener account linked to this user.",
+    )
     magic_link_token = models.CharField(
         max_length=64,
         blank=True,

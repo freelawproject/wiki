@@ -10,7 +10,7 @@ FLP Wiki is the result. It is a Django application designed around a few core id
 
 - **Full version history.** Every edit creates an immutable revision. Users can view diffs between any two versions, revert to a previous state, and see who changed what and when. Directory metadata is versioned the same way.
 
-- **Collaborative editing without accounts.** Authentication uses passwordless magic links — enter an allowed email, click the link, you're in. Outside contributors don't need an account to suggest changes: they submit change proposals through a public feedback form, and editors can review, accept, or reject them with a side-by-side diff.
+- **Collaborative editing without accounts.** Authentication uses passwordless magic links — enter an allowed email, click the link, you're in — or "Sign in with CourtListener" for people who already have an account there. Outside contributors don't need an account to suggest changes: they submit change proposals through a public feedback form, and editors can review, accept, or reject them with a side-by-side diff.
 
 - **AI-friendly content.** The wiki serves an [`llms.txt`](https://llmstxt.org/) endpoint that lists all public pages with links to their raw Markdown. LLMs and other automated tools can discover and read wiki content without scraping HTML.
 
