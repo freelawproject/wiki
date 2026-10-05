@@ -92,9 +92,7 @@ class TestLinking:
         claims = {**CLAIMS, "email": "Alice@Free.law"}
         assert list(backend.filter_users_by_claims(claims)) == [user]
 
-    def test_case_duplicate_usernames_resolve_to_lowercase(
-        self, backend, user
-    ):
+    def test_mixed_case_username_rows_are_ignored(self, backend, user):
         upper = User.objects.create_user(
             username="Alice@free.law", email="Alice@free.law"
         )

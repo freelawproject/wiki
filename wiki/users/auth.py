@@ -27,11 +27,7 @@ class CourtListenerOIDCBackend(OIDCAuthenticationBackend):
         by_sub = User.objects.filter(profile__courtlistener_sub=claims["sub"])
         if by_sub.exists():
             return by_sub
-        email = claims["email"].strip()
-        by_email = User.objects.filter(username__iexact=email)
-        if by_email.count() > 1:
-            return by_email.filter(username=email.lower())
-        return by_email
+        return User.objects.filter(username=claims["email"].strip().lower())
 
     def update_user(self, user, claims):
         if not user.is_active or not is_email_allowed(user.email):
