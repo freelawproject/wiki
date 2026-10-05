@@ -30,6 +30,13 @@ class UserProfile(models.Model):
         ),
     )
     gravatar_url = models.URLField(blank=True)
+    courtlistener_sub = models.CharField(
+        max_length=64,
+        unique=True,
+        null=True,
+        blank=True,
+        help_text="The CourtListener account linked to this user.",
+    )
     magic_link_token = models.CharField(
         max_length=64,
         blank=True,
@@ -65,7 +72,7 @@ class UserProfile(models.Model):
     @staticmethod
     def gravatar_url_for_email(email):
         """Generate Gravatar URL for an email address."""
-        email_hash = hashlib.md5(email.strip().lower().encode()).hexdigest()
+        email_hash = hashlib.sha256(email.strip().lower().encode()).hexdigest()
         return f"https://www.gravatar.com/avatar/{email_hash}?d=mp&s=80"
 
 

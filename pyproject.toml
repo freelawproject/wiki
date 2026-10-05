@@ -39,6 +39,7 @@ dependencies = [
   "sentry-sdk[django]",
   "time-machine",
   "uvicorn[standard]",
+  "mozilla-django-oidc>=5.0.2",
 ]
 
 [dependency-groups]

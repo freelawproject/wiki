@@ -143,6 +143,7 @@ INSTALLED_APPS = [
     "storages",
     "waffle",
     "django_cotton",
+    "mozilla_django_oidc",
     # Wiki Apps
     "wiki.lib",
     "wiki.pages",

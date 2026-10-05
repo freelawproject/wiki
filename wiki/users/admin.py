@@ -18,11 +18,16 @@ from .tasks import notify_access_change, notify_email_access_granted
 class UserProfileInline(admin.StackedInline):
     model = UserProfile
     can_delete = False
-    readonly_fields = ["magic_link_token", "magic_link_expires", "created_at"]
+    readonly_fields = [
+        "courtlistener_sub",
+        "magic_link_token",
+        "magic_link_expires",
+        "created_at",
+    ]
     fieldsets = (
         (
             None,
-            {"fields": ("display_name", "gravatar_url")},
+            {"fields": ("display_name", "gravatar_url", "courtlistener_sub")},
         ),
         (
             "Auth tokens",
@@ -84,6 +89,7 @@ class UserProfileAdmin(admin.ModelAdmin):
     search_fields = ["user__email", "display_name"]
     raw_id_fields = ["user"]
     readonly_fields = [
+        "courtlistener_sub",
         "magic_link_token",
         "magic_link_expires",
         "gravatar_url",
