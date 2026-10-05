@@ -72,7 +72,7 @@ class UserProfile(models.Model):
     @staticmethod
     def gravatar_url_for_email(email):
         """Generate Gravatar URL for an email address."""
-        email_hash = hashlib.md5(email.strip().lower().encode()).hexdigest()
+        email_hash = hashlib.sha256(email.strip().lower().encode()).hexdigest()
         return f"https://www.gravatar.com/avatar/{email_hash}?d=mp&s=80"
 
 
