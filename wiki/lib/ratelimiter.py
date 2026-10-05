@@ -7,6 +7,9 @@ resource-intensive endpoints (login, upload, search).
 from django_ratelimit.decorators import ratelimit
 
 ratelimit_login = ratelimit(key="ip", rate="5/m", method=["POST"], block=True)
+# The CourtListener sign-in routes are GETs: each init writes a session row
+# and each callback can trigger an outbound token request.
+ratelimit_oidc = ratelimit(key="ip", rate="10/m", method=["GET"], block=True)
 ratelimit_upload = ratelimit(
     key="user_or_ip", rate="20/m", method=["POST"], block=True
 )

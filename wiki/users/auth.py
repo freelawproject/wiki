@@ -5,7 +5,6 @@ from mozilla_django_oidc.auth import OIDCAuthenticationBackend
 
 from wiki.lib.access import is_email_allowed
 from wiki.lib.users import provision_user
-from wiki.users.models import UserProfile
 
 logger = logging.getLogger(__name__)
 
@@ -28,12 +27,16 @@ class CourtListenerOIDCBackend(OIDCAuthenticationBackend):
         by_sub = User.objects.filter(profile__courtlistener_sub=claims["sub"])
         if by_sub.exists():
             return by_sub
-        return User.objects.filter(username__iexact=claims["email"].strip())
+        email = claims["email"].strip()
+        by_email = User.objects.filter(username__iexact=email)
+        if by_email.count() > 1:
+            return by_email.filter(username=email.lower())
+        return by_email
 
     def update_user(self, user, claims):
         if not user.is_active or not is_email_allowed(user.email):
             return None
-        profile, _ = UserProfile.objects.get_or_create(user=user)
+        profile = provision_user(user.username).profile
         if profile.courtlistener_sub and profile.courtlistener_sub != str(
             claims["sub"]
         ):

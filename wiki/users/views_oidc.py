@@ -2,10 +2,13 @@ from django.conf import settings
 from django.contrib import messages
 from django.http import Http404
 from django.shortcuts import redirect
+from django.utils.decorators import method_decorator
 from mozilla_django_oidc.views import (
     OIDCAuthenticationCallbackView,
     OIDCAuthenticationRequestView,
 )
+
+from wiki.lib.ratelimiter import ratelimit_oidc
 
 
 class CourtListenerLoginEnabledMixin:
@@ -17,12 +20,14 @@ class CourtListenerLoginEnabledMixin:
         return super().dispatch(request, *args, **kwargs)
 
 
+@method_decorator(ratelimit_oidc, name="dispatch")
 class CourtListenerLoginView(
     CourtListenerLoginEnabledMixin, OIDCAuthenticationRequestView
 ):
     """Send the user to CourtListener to authorize the wiki."""
 
 
+@method_decorator(ratelimit_oidc, name="dispatch")
 class CourtListenerCallbackView(
     CourtListenerLoginEnabledMixin, OIDCAuthenticationCallbackView
 ):

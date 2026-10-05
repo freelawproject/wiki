@@ -5,6 +5,7 @@ from urllib.parse import parse_qs, urlparse
 import pytest
 from django.contrib.auth import SESSION_KEY
 from django.contrib.auth.models import User
+from django.core.cache import cache
 from django.test import Client
 from django.urls import reverse
 
@@ -90,6 +91,26 @@ class TestLinking:
     def test_email_match_is_case_insensitive(self, backend, user):
         claims = {**CLAIMS, "email": "Alice@Free.law"}
         assert list(backend.filter_users_by_claims(claims)) == [user]
+
+    def test_case_duplicate_usernames_resolve_to_lowercase(
+        self, backend, user
+    ):
+        upper = User.objects.create_user(
+            username="Alice@free.law", email="Alice@free.law"
+        )
+        UserProfile.objects.create(user=upper)
+        assert list(backend.filter_users_by_claims(CLAIMS)) == [user]
+
+    def test_update_user_bootstraps_owner(self, backend, db):
+        admin_made = User.objects.create_user(
+            username="alice@free.law", email="alice@free.law"
+        )
+        assert backend.update_user(admin_made, CLAIMS) == admin_made
+        admin_made.refresh_from_db()
+        assert SystemConfig.objects.get(pk=1).owner == admin_made
+        assert admin_made.is_staff and admin_made.is_superuser
+        assert _profile(admin_made).courtlistener_sub == "42"
+        assert _profile(admin_made).handle
 
     def test_matches_by_sub_before_email(self, backend, user, other_user):
         profile = _profile(other_user)
@@ -183,6 +204,16 @@ class TestInitView:
         )
         assert params["state"][0] in client.session["oidc_states"]
         assert client.session["oidc_login_next"] == "/c/engineering/"
+
+    def test_rate_limited_per_ip(self, client, db, oidc_enabled, settings):
+        settings.RATELIMIT_ENABLE = True
+        cache.clear()
+        statuses = [
+            client.get(reverse("oidc_authentication_init")).status_code
+            for _ in range(11)
+        ]
+        assert statuses[:10] == [302] * 10
+        assert statuses[10] == 429
 
     def test_offsite_next_dropped(self, client, db, oidc_enabled):
         client.get(
