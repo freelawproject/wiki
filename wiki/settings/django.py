@@ -120,6 +120,7 @@ MIDDLEWARE = [
     "wiki.lib.middleware.SEOHeadersMiddleware",
     "csp.middleware.CSPMiddleware",
     "django_ratelimit.middleware.RatelimitMiddleware",
+    "wiki.lib.middleware.GlobalWriteRateLimitMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "waffle.middleware.WaffleMiddleware",

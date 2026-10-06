@@ -2,9 +2,11 @@
 
 import pytest
 from django.core import mail
-from django.test import Client
+from django.core.cache import cache
+from django.test import Client, override_settings
 from django.urls import reverse
 
+from wiki.lib.ratelimiter import get_ratelimit_ident, get_viewer_ip
 from wiki.pages.models import Page, PageRevision
 from wiki.proposals.models import ChangeProposal
 
@@ -575,3 +577,117 @@ class TestFLPEditableFeedback:
             )
         )
         assert r.status_code == 200
+
+
+def _viewer(ip_and_port):
+    return {"HTTP_CLOUDFRONT_VIEWER_ADDRESS": ip_and_port}
+
+
+class TestFeedbackRateLimit:
+    @pytest.fixture(autouse=True)
+    def _clear_cache(self, db):
+        cache.clear()
+        yield
+        cache.clear()
+
+    @pytest.fixture
+    def url(self, editable_page):
+        return reverse(
+            "page_feedback", kwargs={"path": editable_page.content_path}
+        )
+
+    @override_settings(RATELIMIT_ENABLE=True)
+    def test_anonymous_proposals_rate_limited(self, client, url):
+        data = {"submit_proposal": "1", "proposed_title": ""}
+        for _ in range(5):
+            assert client.post(url, data).status_code == 200
+        assert client.post(url, data).status_code == 429
+
+    @override_settings(RATELIMIT_ENABLE=True)
+    def test_get_not_rate_limited(self, client, url):
+        for _ in range(15):
+            assert client.get(url).status_code == 200
+
+    @override_settings(RATELIMIT_ENABLE=True)
+    def test_counts_by_viewer_address_not_port_or_remote_addr(
+        self, client, url
+    ):
+        """CloudFront's random port and shifting edge IPs must not matter."""
+        for i in range(5):
+            r = client.post(
+                url,
+                {"submit_proposal": "1"},
+                REMOTE_ADDR=f"10.0.0.{i}",
+                **_viewer(f"203.0.113.7:{50000 + i}"),
+            )
+            assert r.status_code == 200
+        r = client.post(
+            url,
+            {"submit_proposal": "1"},
+            REMOTE_ADDR="10.0.0.99",
+            **_viewer("203.0.113.7:61000"),
+        )
+        assert r.status_code == 429
+
+    @override_settings(RATELIMIT_ENABLE=True)
+    def test_other_viewers_unaffected(self, client, url):
+        for _ in range(6):
+            client.post(
+                url, {"submit_proposal": "1"}, **_viewer("203.0.113.7:1")
+            )
+        r = client.post(
+            url, {"submit_proposal": "1"}, **_viewer("203.0.113.8:1")
+        )
+        assert r.status_code == 200
+
+
+class TestViewerIdent:
+    @pytest.mark.parametrize(
+        "header,expected",
+        [
+            ("96.23.39.106:51396", "96.23.39.106"),
+            ("2600:1f18::1234:51396", "2600:1f18::1234"),
+            ("[2600:1f18::1234]:51396", "2600:1f18::1234"),
+            ("::ffff:96.23.39.106:51396", "96.23.39.106"),
+        ],
+    )
+    def test_get_viewer_ip(self, rf, header, expected):
+        request = rf.get("/", **_viewer(header))
+        assert get_viewer_ip(request) == expected
+
+    @pytest.mark.parametrize("header", ["", "garbage:123"])
+    def test_falls_back_to_remote_addr(self, rf, header):
+        request = rf.get("/", REMOTE_ADDR="192.0.2.1", **_viewer(header))
+        assert get_viewer_ip(request) == "192.0.2.1"
+
+    def test_ipv6_widened_to_slash_64(self, rf):
+        a = rf.get("/", **_viewer("2600:1f18:1:2:aaaa::1:1"))
+        b = rf.get("/", **_viewer("2600:1f18:1:2:bbbb::2:2"))
+        assert get_ratelimit_ident("", a) == get_ratelimit_ident("", b)
+        assert get_ratelimit_ident("", a) == "2600:1f18:1:2::"
+
+
+class TestGlobalWriteRateLimit:
+    @pytest.fixture(autouse=True)
+    def _clear_cache(self, db):
+        cache.clear()
+        yield
+        cache.clear()
+
+    @override_settings(RATELIMIT_ENABLE=True)
+    def test_posts_to_any_url_capped(self, client):
+        # Middleware runs before routing, so even unrouted URLs count.
+        for _ in range(10):
+            assert client.post("/no-such-endpoint/").status_code == 404
+        assert client.post("/no-such-endpoint/").status_code == 429
+
+    @override_settings(RATELIMIT_ENABLE=True)
+    def test_gets_not_capped(self, client):
+        for _ in range(50):
+            assert client.get("/no-such-endpoint/").status_code == 404
+
+    @override_settings(RATELIMIT_ENABLE=True)
+    def test_exempt_endpoints_not_counted(self, client):
+        url = reverse("record_page_view")
+        for _ in range(15):
+            assert client.post(url).status_code != 429
