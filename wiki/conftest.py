@@ -19,6 +19,18 @@ def _no_anthropic_api(settings):
     settings.ANTHROPIC_API_KEY = ""
 
 
+@pytest.fixture(autouse=True)
+def _no_ratelimit(settings):
+    """Keep rate limits off unless a test opts in.
+
+    The global write limiter runs on every POST and counts in the cache
+    (the database, outside the dev settings), so tests that use no
+    database would otherwise fail. Tests of the limits themselves use
+    ``@override_settings(RATELIMIT_ENABLE=True)``.
+    """
+    settings.RATELIMIT_ENABLE = False
+
+
 @pytest.fixture
 def user(db):
     """A regular @free.law user with profile."""

@@ -585,7 +585,7 @@ def _viewer(ip_and_port):
 
 class TestFeedbackRateLimit:
     @pytest.fixture(autouse=True)
-    def _clear_cache(self):
+    def _clear_cache(self, db):
         cache.clear()
         yield
         cache.clear()
@@ -669,7 +669,7 @@ class TestViewerIdent:
 
 class TestGlobalWriteRateLimit:
     @pytest.fixture(autouse=True)
-    def _clear_cache(self):
+    def _clear_cache(self, db):
         cache.clear()
         yield
         cache.clear()
