@@ -60,7 +60,7 @@ _GLOBAL_LIMIT_EXEMPT_URL_NAMES = frozenset(
 
 
 class GlobalWriteRateLimitMiddleware:
-    """Cap state-changing requests (POST, PUT, PATCH, DELETE) per viewer.
+    """Cap anonymous state-changing requests (POST, PUT, PATCH, DELETE).
 
     A blanket backstop behind the tighter per-view limits in
     ``wiki.lib.ratelimiter``, so scanners hammering any endpoint —
@@ -92,6 +92,10 @@ class GlobalWriteRateLimitMiddleware:
 
     @staticmethod
     def _exempt(request):
+        # The cap targets anonymous scanners; signed-in users are accounted
+        # for and still subject to the per-view limits.
+        if request.user.is_authenticated:
+            return True
         try:
             match = resolve(request.path_info)
         except Resolver404:
