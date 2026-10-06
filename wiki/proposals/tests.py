@@ -691,3 +691,9 @@ class TestGlobalWriteRateLimit:
         url = reverse("record_page_view")
         for _ in range(15):
             assert client.post(url).status_code != 429
+
+    @override_settings(RATELIMIT_ENABLE=True)
+    def test_authenticated_users_not_capped(self, client, user):
+        client.force_login(user)
+        for _ in range(15):
+            assert client.post("/no-such-endpoint/").status_code == 404
