@@ -49,6 +49,8 @@ class SEOHeadersMiddleware:
         return response
 
 
+_WRITE_METHODS = ("POST", "PUT", "PATCH", "DELETE")
+
 # Fire-and-forget endpoints that JS calls on page loads or while editing.
 # They have their own, higher limits, so a person reading or editing can't
 # trip the global write cap by simply using the site.
@@ -69,7 +71,7 @@ class GlobalWriteRateLimitMiddleware:
         self.get_response = get_response
 
     def __call__(self, request):
-        if self._exempt(request):
+        if request.method not in _WRITE_METHODS or self._exempt(request):
             return self.get_response(request)
 
         # Every rate is checked (and counted) so each window stays accurate.
@@ -79,7 +81,7 @@ class GlobalWriteRateLimitMiddleware:
                 group=f"global-writes-{rate.replace('/', '-')}",
                 key=get_ratelimit_ident,
                 rate=rate,
-                method=["POST", "PUT", "PATCH", "DELETE"],
+                method=_WRITE_METHODS,
                 increment=True,
             )
             for rate in GLOBAL_WRITE_RATES
