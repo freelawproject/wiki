@@ -13,6 +13,7 @@ from wiki.comments.tasks import notify_owner_of_comment
 from wiki.lib.markdown import render_markdown
 from wiki.lib.page_utils import get_page_from_path, record_page_move
 from wiki.lib.permissions import can_edit_page, can_view_page
+from wiki.lib.ratelimiter import ratelimit_feedback, ratelimit_feedback_daily
 from wiki.pages.diff_utils import unified_diff
 from wiki.pages.models import PageRevision
 from wiki.subscriptions.tasks import notify_subscribers
@@ -23,6 +24,8 @@ from .tasks import notify_owner_of_proposal, notify_proposer_of_decision
 
 
 @never_cache
+@ratelimit_feedback
+@ratelimit_feedback_daily
 def page_feedback(request, path):
     """Unified feedback page: comment or propose changes."""
     page = get_page_from_path(path)

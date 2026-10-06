@@ -2,7 +2,8 @@
 
 import pytest
 from django.core import mail
-from django.test import Client
+from django.core.cache import cache
+from django.test import Client, override_settings
 from django.urls import reverse
 
 from wiki.pages.models import Page, PageRevision
@@ -575,3 +576,49 @@ class TestFLPEditableFeedback:
             )
         )
         assert r.status_code == 200
+
+
+class TestFeedbackRateLimit:
+    @pytest.fixture(autouse=True)
+    def _clear_cache(self):
+        cache.clear()
+        yield
+        cache.clear()
+
+    @override_settings(RATELIMIT_ENABLE=True)
+    def test_anonymous_proposals_rate_limited(self, client, editable_page):
+        url = reverse(
+            "page_feedback", kwargs={"path": editable_page.content_path}
+        )
+        data = {"submit_proposal": "1", "proposed_title": ""}
+        for _ in range(10):
+            assert client.post(url, data).status_code == 200
+        assert client.post(url, data).status_code == 429
+
+    @override_settings(RATELIMIT_ENABLE=True)
+    def test_get_not_rate_limited(self, client, editable_page):
+        url = reverse(
+            "page_feedback", kwargs={"path": editable_page.content_path}
+        )
+        for _ in range(15):
+            assert client.get(url).status_code == 200
+
+
+class TestGlobalWriteRateLimit:
+    @pytest.fixture(autouse=True)
+    def _clear_cache(self):
+        cache.clear()
+        yield
+        cache.clear()
+
+    @override_settings(RATELIMIT_ENABLE=True)
+    def test_posts_to_any_url_capped(self, client):
+        # Middleware runs before routing, so even unrouted URLs count.
+        for _ in range(240):
+            assert client.post("/no-such-endpoint/").status_code == 404
+        assert client.post("/no-such-endpoint/").status_code == 429
+
+    @override_settings(RATELIMIT_ENABLE=True)
+    def test_gets_not_capped(self, client):
+        for _ in range(250):
+            assert client.get("/no-such-endpoint/").status_code == 404

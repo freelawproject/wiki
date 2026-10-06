@@ -38,3 +38,17 @@ ratelimit_email_subscribe = ratelimit(
 ratelimit_email_subscribe_daily = ratelimit(
     key="ip", rate="20/d", method=["POST"], block=True
 )
+# Anonymous visitors can comment and propose page changes through the
+# feedback form, which is the scanner/spam entry point. Keep it tight
+# per-IP with a daily backstop (django_ratelimit decorators stack).
+ratelimit_feedback = ratelimit(
+    key="user_or_ip", rate="10/m", method=["POST"], block=True
+)
+ratelimit_feedback_daily = ratelimit(
+    key="user_or_ip", rate="100/d", method=["POST"], block=True
+)
+
+# Site-wide ceiling on state-changing requests per IP, enforced by
+# ``GlobalWriteRateLimitMiddleware`` so that new views are covered by
+# default. Per-view limits above are tighter; this is the backstop.
+GLOBAL_WRITE_RATE = "240/m"

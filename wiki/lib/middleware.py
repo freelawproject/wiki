@@ -1,4 +1,9 @@
-"""SEO-related middleware."""
+"""SEO and abuse-protection middleware."""
+
+from django_ratelimit.core import is_ratelimited
+
+from wiki.lib.ratelimiter import GLOBAL_WRITE_RATE
+from wiki.lib.views import ratelimited
 
 # Paths that should always get noindex/nofollow headers regardless
 # of content visibility.
@@ -41,3 +46,27 @@ class SEOHeadersMiddleware:
             response["Link"] = f'<{canonical}>; rel="canonical"'
 
         return response
+
+
+class GlobalWriteRateLimitMiddleware:
+    """Cap state-changing requests (POST, PUT, PATCH, DELETE) per IP.
+
+    A blanket backstop behind the tighter per-view limits in
+    ``wiki.lib.ratelimiter``, so scanners hammering any endpoint —
+    including views that have no decorator — get a 429.
+    """
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        if is_ratelimited(
+            request,
+            group="global-writes",
+            key="ip",
+            rate=GLOBAL_WRITE_RATE,
+            method=["POST", "PUT", "PATCH", "DELETE"],
+            increment=True,
+        ):
+            return ratelimited(request)
+        return self.get_response(request)
