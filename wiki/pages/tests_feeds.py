@@ -107,6 +107,12 @@ class TestFeedContent:
         assert "Last-Modified" in r.headers
 
 
+class TestFeedRobots:
+    def test_feed_is_noindex(self, client, public_history_page):
+        r = client.get(_feed_url(public_history_page))
+        assert r.headers["X-Robots-Tag"] == "noindex"
+
+
 class TestFeedCaching:
     def test_anonymous_response_is_cdn_cacheable(
         self, client, public_history_page

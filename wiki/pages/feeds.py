@@ -20,6 +20,13 @@ FEED_ITEM_LIMIT = 30
 class PageHistoryFeed(Feed):
     feed_type = Atom1Feed
 
+    def __call__(self, request, *args, **kwargs):
+        response = super().__call__(request, *args, **kwargs)
+        # Keep feeds out of search results. Not disallowed in robots.txt:
+        # crawlers must be able to fetch the feed to see this header.
+        response["X-Robots-Tag"] = "noindex"
+        return response
+
     def get_object(self, request, path):
         page = page_at_path(path)
         # Probe-resistant: unviewable == missing (matches page_history).
