@@ -52,6 +52,23 @@ _TABS_RE = re.compile(
     re.DOTALL | re.IGNORECASE,
 )
 
+# A <details>, </details> or single-line <summary>…</summary> line in markdown
+# source. Alone on its line, it is padded with blank lines so markdown2 wraps
+# it in its own <p> (see _isolate_details_lines).
+_DETAILS_LINE_RE = re.compile(
+    r"^ {0,3}(?:</?details(?:[ \t][^>\n]*)?>|<summary>[^\n]*</summary>)"
+    r"[ \t]*$",
+    re.IGNORECASE,
+)
+
+# The same tags once markdown2 has wrapped them in a paragraph. <details>
+# can't live inside <p>, so the wrapper must come off before sanitizing.
+# No nested quantifiers: `[^\n]*?` is bounded by the single-line padding.
+_DETAILS_PARAGRAPH_RE = re.compile(
+    r"<p>(</?details(?:\s[^>\n]*)?>|<summary>[^\n]*?</summary>)</p>",
+    re.IGNORECASE,
+)
+
 # Matches the {% tab Name %} paragraphs emitted by _convert_tab_headings
 # once markdown rendering wraps them in <p> tags. Name may carry inline
 # HTML (a heading like `# *macOS*`) — tags are stripped on extraction.
@@ -362,6 +379,8 @@ ALLOWED_TAGS = {
     "dt",
     "dd",
     "kbd",
+    "details",
+    "summary",
 }
 
 ALLOWED_ATTRIBUTES = {
@@ -379,6 +398,7 @@ ALLOWED_ATTRIBUTES = {
     "h5": {"id"},
     "h6": {"id"},
     "code": {"class"},
+    "details": {"open"},
 }
 
 ALLOWED_URL_SCHEMES = {"http", "https", "mailto"}
@@ -984,6 +1004,34 @@ def _convert_tab_headings(content):
     return "\n".join(out)
 
 
+def _isolate_details_lines(content):
+    """Pad standalone <details>/<summary> lines with blank lines.
+
+    Runs on markdown source, before markdown2, so each tag becomes its own
+    ``<p>`` regardless of whether the author left blank lines around it.
+    Markdown between the tags renders normally. Lines inside code fences
+    are left alone.
+    """
+    if "<" not in content:
+        return content
+    out = []
+    for _i, line, in_fence in fence_scan(content.split("\n")):
+        if not in_fence and _DETAILS_LINE_RE.match(line):
+            out.extend(["", line.strip(), ""])
+            continue
+        out.append(line)
+    return "\n".join(out)
+
+
+def _unwrap_details_paragraphs(html):
+    """Strip the ``<p>`` markdown2 puts around <details>/<summary> lines.
+
+    Must run before sanitizing: the HTML parser closes a ``<p>`` when it
+    meets ``<details>``, which would leave empty paragraphs behind.
+    """
+    return _DETAILS_PARAGRAPH_RE.sub(r"\1", html)
+
+
 def _convert_tabs(html):
     """Convert {% tabs %}…{% endtabs %} groups to content-tab containers.
 
@@ -1030,6 +1078,7 @@ def render_markdown(content, viewer=None):
     """
     content = resolve_wiki_links(content, viewer=viewer)
     content = _convert_tab_headings(content)
+    content = _isolate_details_lines(content)
     html = markdown2.markdown(
         content,
         extras={
@@ -1057,7 +1106,7 @@ def render_markdown(content, viewer=None):
         link_patterns=[(_AUTOLINK_RE, r"\1")],
     )
     toc = getattr(html, "toc_html", "")
-    sanitized = _sanitize(str(html))
+    sanitized = _sanitize(_unwrap_details_paragraphs(str(html)))
     processed = _add_nofollow_to_non_public_links(sanitized)
     processed = _convert_alerts(processed)
     processed = _convert_button_links(processed)

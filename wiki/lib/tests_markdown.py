@@ -1311,3 +1311,60 @@ class TestLeadParagraph:
         md = '<p class="lead">Text with <strong>bold</strong> and <em>italic</em>.</p>'
         result = render_markdown(md)
         assert 'class="lead"' in result
+
+
+class TestDetailsElement:
+    def test_basic_details(self):
+        html = render_markdown(
+            "<details>\n<summary>More</summary>\n\nBody **bold**\n\n</details>"
+        )
+        assert "<details>" in html
+        assert "<summary>More</summary>" in html
+        assert "<strong>bold</strong>" in html
+        assert "</details>" in html
+        assert "<p></p>" not in html
+        assert "<p><details" not in html
+
+    def test_github_nested_example_with_heading_summaries(self):
+        md = (
+            "<details closed>\n"
+            "<summary><h2>Screenshots</h2></summary>\n"
+            "<details open>\n"
+            "<summary><h4>Desktop</h4></summary>\n"
+            "\n![shot](https://example.com/a.png)\n\n"
+            "</details>\n"
+            "</details>\n"
+        )
+        html = render_markdown(md)
+        assert html.count("<details") == 2
+        assert html.count("</details>") == 2
+        assert "<summary><h2>Screenshots</h2></summary>" in html
+        assert "<details open" in html
+        assert '<img src="https://example.com/a.png"' in html
+        assert "<p></p>" not in html
+
+    def test_summary_headings_stay_out_of_toc(self):
+        html = render_markdown(
+            "<details>\n<summary><h2>Hidden</h2></summary>\n\nx\n\n</details>"
+        )
+        assert "Hidden" not in html.toc_html
+
+    def test_details_in_code_fence_stays_literal(self):
+        html = render_markdown("```html\n<details>\n</details>\n```")
+        assert "&lt;details&gt;" in html
+        assert "<details>" not in html
+
+    def test_dangerous_attributes_stripped(self):
+        html = render_markdown(
+            "<details ontoggle=alert(1) open>\n"
+            "<summary onclick=alert(1)>x</summary>\n\nb\n\n</details>"
+        )
+        assert "ontoggle" not in html
+        assert "onclick" not in html
+        assert "<details open" in html
+
+    def test_strip_markdown_keeps_summary_text(self):
+        text = strip_markdown(
+            "<details>\n<summary>Title</summary>\n\nBody\n\n</details>"
+        )
+        assert text == "Title Body"
