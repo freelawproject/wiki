@@ -52,22 +52,26 @@ _TABS_RE = re.compile(
     re.DOTALL | re.IGNORECASE,
 )
 
-# A <details>, </details> or single-line <summary>…</summary> line in markdown
-# source. Alone on its line, it is padded with blank lines so markdown2 wraps
-# it in its own <p> (see _isolate_details_lines).
-_DETAILS_LINE_RE = re.compile(
-    r"^ {0,3}(?:</?details(?:[ \t][^>\n]*)?>|<summary>[^\n]*</summary>)"
-    r"[ \t]*$",
-    re.IGNORECASE,
+# One <details>/</details> tag (any attributes; nh3 strips all but `open`)
+# and a single-line <summary>…</summary>. A tag line is either of them, or
+# a <details> tag followed by a <summary> on the same line, as GitHub allows.
+_DETAILS_TAG = r"</?details(?:\s[^>\n]*)?>"
+_SUMMARY_ELEMENT = r"<summary(?:\s[^>\n]*)?>[^\n]*</summary>"
+_DETAILS_TAGS = (
+    rf"(?:{_DETAILS_TAG}(?:{_SUMMARY_ELEMENT})?|{_SUMMARY_ELEMENT})"
 )
 
-# The same tags once markdown2 has wrapped them in a paragraph. <details>
-# can't live inside <p>, so the wrapper must come off before sanitizing.
-# No nested quantifiers: `[^\n]*?` is bounded by the single-line padding.
-_DETAILS_PARAGRAPH_RE = re.compile(
-    r"<p>(</?details(?:\s[^>\n]*)?>|<summary>[^\n]*?</summary>)</p>",
-    re.IGNORECASE,
+# A line of markdown source holding only those tags. It is padded with blank
+# lines so markdown2 wraps it in its own <p> (see _isolate_details_lines).
+_DETAILS_LINE_RE = re.compile(
+    rf"[ ]{{0,3}}{_DETAILS_TAGS}[ \t]*", re.IGNORECASE
 )
+
+# The same line once markdown2 has wrapped it in a paragraph. <details> can't
+# live inside <p>, so the wrapper must come off before sanitizing. Always used
+# with fullmatch() on a single line of HTML: one start position per line, so
+# a long line of repeated tags can't trigger quadratic scanning.
+_DETAILS_PARAGRAPH_RE = re.compile(rf"<p>({_DETAILS_TAGS})</p>", re.IGNORECASE)
 
 # Matches the {% tab Name %} paragraphs emitted by _convert_tab_headings
 # once markdown rendering wraps them in <p> tags. Name may carry inline
@@ -1016,8 +1020,8 @@ def _isolate_details_lines(content):
         return content
     out = []
     for _i, line, in_fence in fence_scan(content.split("\n")):
-        if not in_fence and _DETAILS_LINE_RE.match(line):
-            out.extend(["", line.strip(), ""])
+        if not in_fence and _DETAILS_LINE_RE.fullmatch(line):
+            out.extend(["", line.rstrip(), ""])
             continue
         out.append(line)
     return "\n".join(out)
@@ -1029,7 +1033,12 @@ def _unwrap_details_paragraphs(html):
     Must run before sanitizing: the HTML parser closes a ``<p>`` when it
     meets ``<details>``, which would leave empty paragraphs behind.
     """
-    return _DETAILS_PARAGRAPH_RE.sub(r"\1", html)
+    lines = html.split("\n")
+    for i, line in enumerate(lines):
+        match = _DETAILS_PARAGRAPH_RE.fullmatch(line)
+        if match:
+            lines[i] = match.group(1)
+    return "\n".join(lines)
 
 
 def _convert_tabs(html):
@@ -1076,6 +1085,9 @@ def render_markdown(content, viewer=None):
     title and URL aren't disclosed. Pass the request user at every
     user-facing call site; leave it None only for system/no-viewer contexts.
     """
+    # Browsers submit textarea content with CRLF; the line-based source
+    # pre-passes below expect LF.
+    content = content.replace("\r\n", "\n").replace("\r", "\n")
     content = resolve_wiki_links(content, viewer=viewer)
     content = _convert_tab_headings(content)
     content = _isolate_details_lines(content)

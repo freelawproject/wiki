@@ -15,6 +15,8 @@ from wiki.lib.markdown import (
     _convert_button_links,
     _convert_tab_headings,
     _convert_tabs,
+    _isolate_details_lines,
+    _unwrap_details_paragraphs,
     extract_all_wiki_slugs,
     extract_slugs_from_internal_urls,
     internal_urls_to_wiki_links,
@@ -1368,3 +1370,45 @@ class TestDetailsElement:
             "<details>\n<summary>Title</summary>\n\nBody\n\n</details>"
         )
         assert text == "Title Body"
+
+    def test_crlf_line_endings(self):
+        md = "<details>\r\n<summary>More</summary>\r\n\r\nBody\r\n\r\n</details>\r\n"
+        html = render_markdown(md)
+        assert "<details>" in html
+        assert "<summary>More</summary>" in html
+        assert "<p></p>" not in html
+
+    def test_one_line_details_and_summary(self):
+        html = render_markdown(
+            "<details><summary>Click</summary>\n\nBody\n\n</details>"
+        )
+        assert "<details><summary>Click</summary>" in html
+        assert "<p></p>" not in html
+
+    def test_summary_with_attributes(self):
+        html = render_markdown(
+            '<details>\n<summary class="x" onclick="alert(1)">Hi</summary>\n\n'
+            "Body\n\n</details>"
+        )
+        assert "<summary>Hi</summary>" in html
+        assert "onclick" not in html
+        assert "<p></p>" not in html
+
+    def test_details_inside_list_item_keeps_list_intact(self):
+        md = (
+            "1. Run it\n"
+            "   <details>\n"
+            "   <summary>Logs</summary>\n\n"
+            "   output\n\n"
+            "   </details>\n"
+            "2. Next step\n"
+        )
+        html = render_markdown(md)
+        assert html.count("<ol") == 1
+        assert html.index("<details>") < html.index("Next step")
+
+    def test_unwrap_is_linear_on_long_unclosed_summary_line(self):
+        start = time.monotonic()
+        _unwrap_details_paragraphs("<p><summary>" * 200_000)
+        _isolate_details_lines("<summary>" * 200_000)
+        assert time.monotonic() - start < 1
