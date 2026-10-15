@@ -322,6 +322,20 @@
     @apply block;
   }
 
+  /* === Collapsible sections (<details>/<summary>) === */
+  .wiki-content details {
+    @apply my-3 px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700;
+  }
+  .wiki-content summary {
+    @apply cursor-pointer font-medium;
+  }
+  .wiki-content summary > :is(h1, h2, h3, h4, h5, h6) {
+    @apply inline m-0;
+  }
+  .wiki-content details[open] > summary {
+    @apply mb-2;
+  }
+
   /* === Tabbed content groups ({% tabs %} … {% endtabs %}) === */
   .content-tabs {
     @apply my-3 overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700;

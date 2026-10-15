@@ -362,6 +362,31 @@ fences. A few details:
   before the first heading (or no headings at all) is left
   unconverted so you can spot the mistake.
 
+### Collapsible sections
+
+To hide long or optional content (screenshots, logs, FAQs) behind a
+clickable heading, use `<details>` and `<summary>`. Add the `open`
+attribute to start expanded.
+
+````markdown
+<details>
+<summary>Screenshots</summary>
+
+![Dashboard](https://example.com/dashboard.png)
+
+Any **markdown** works in here.
+
+</details>
+````
+
+- **Put each tag on its own line**, with a blank line after
+  `</summary>` and before `</details>`.
+- **Summaries are plain text or HTML.** Markdown inside the
+  `<summary>` line is not processed, but a heading works:
+  `<summary><h2>Screenshots</h2></summary>`. Headings in a summary
+  don't appear in the table of contents.
+- **Sections can nest** — put another `<details>` block inside.
+
 ### Tables
 
 ```markdown
