@@ -365,8 +365,8 @@ fences. A few details:
 ### Collapsible sections
 
 To hide long or optional content (screenshots, logs, FAQs) behind a
-clickable heading, use `<details>` and `<summary>`, the same syntax
-GitHub supports. Add the `open` attribute to start expanded.
+clickable heading, use `<details>` and `<summary>`. Add the `open`
+attribute to start expanded.
 
 ````markdown
 <details>
