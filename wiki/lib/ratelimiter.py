@@ -64,9 +64,22 @@ def get_user_or_ident(group: str, request: HttpRequest) -> str:
     return f"ip:{get_ratelimit_ident(group, request)}"
 
 
+def get_bearer_or_ident(group: str, request: HttpRequest) -> str:
+    """Key by bearer token when one is sent, otherwise by viewer address.
+
+    API calls arrive through the MCP server, so its users share an address.
+    """
+    token = request.META.get("HTTP_AUTHORIZATION", "")
+    if token:
+        return f"token:{token}"
+    return f"ip:{get_ratelimit_ident(group, request)}"
+
+
 ratelimit_login = ratelimit(
     key=get_ratelimit_ident, rate="5/m", method=["POST"], block=True
 )
+# The JSON API; resolving a bearer token costs two calls to CourtListener.
+ratelimit_api = ratelimit(key=get_bearer_or_ident, rate="60/m", block=True)
 ratelimit_upload = ratelimit(
     key=get_user_or_ident, rate="20/m", method=["POST"], block=True
 )
