@@ -32,7 +32,7 @@ def who(token=None):
 def identify(monkeypatch):
     """Stand in for CourtListener: a map of bearer tokens to emails."""
     tokens = {}
-    monkeypatch.setattr(auth, "courtlistener_email", tokens.get)
+    monkeypatch.setattr(auth, "verified_email_for", tokens.get)
     return tokens
 
 
@@ -96,7 +96,7 @@ class TestBearerAuth:
         ({"active": False}, None, None),
     ],
 )
-def test_courtlistener_email(
+def test_verified_email_for(
     settings, monkeypatch, introspection, claims, email
 ):
     settings.COURTLISTENER_URL = "https://cl.test"
@@ -117,4 +117,4 @@ def test_courtlistener_email(
         "Client",
         lambda **kw: real(transport=httpx.MockTransport(handler), **kw),
     )
-    assert auth.courtlistener_email("tok") == email
+    assert auth.verified_email_for("tok") == email

@@ -24,7 +24,7 @@ from wiki.lib.users import provision_user
 logger = logging.getLogger(__name__)
 
 
-def courtlistener_email(token):
+def verified_email_for(token):
     """The verified email behind a CourtListener token carrying the ``wiki``
     scope, or None for a token that is invalid or lacks it."""
     if not (
@@ -73,7 +73,7 @@ def bearer_auth(view):
             " "
         )
         if scheme.lower() == "bearer":
-            email = courtlistener_email(token.strip())
+            email = verified_email_for(token.strip())
             if email is None:
                 return JsonResponse(
                     {"error": "invalid_token"},

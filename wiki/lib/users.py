@@ -153,7 +153,8 @@ def provision_user(email):
             profile.save(update_fields=["gravatar_url"])
         if not profile.handle:
             assign_handle(profile)
-        # First user to log in becomes system owner and admin.
+        # The first user provisioned, by sign-in or by an API request,
+        # becomes system owner and admin.
         _, created = SystemConfig.objects.get_or_create(
             pk=1, defaults={"owner": user}
         )
