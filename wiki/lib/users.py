@@ -9,9 +9,10 @@ suffix). See ``assign_handle``.
 
 import re
 
+from django.contrib.auth.models import User
 from django.db import IntegrityError, transaction
 
-from wiki.users.models import AllowedDomain, UserProfile
+from wiki.users.models import AllowedDomain, SystemConfig, UserProfile
 
 HANDLE_MAX = 64
 
@@ -133,6 +134,34 @@ def assign_handle(profile):
         except IntegrityError:
             # Lost the race for this handle; try the next candidate.
             continue
+
+
+def provision_user(email):
+    """Return the account for an allowed ``email``, minting it as a first
+    sign-in does (profile, handle, first user becomes system owner).
+    None if the account is archived.
+    """
+    with transaction.atomic():
+        user, _ = User.objects.get_or_create(
+            username=email, defaults={"email": email}
+        )
+        if not user.is_active:
+            return None
+        profile, created = UserProfile.objects.get_or_create(user=user)
+        if created:
+            profile.gravatar_url = UserProfile.gravatar_url_for_email(email)
+            profile.save(update_fields=["gravatar_url"])
+        if not profile.handle:
+            assign_handle(profile)
+        # First user to log in becomes system owner and admin.
+        _, created = SystemConfig.objects.get_or_create(
+            pk=1, defaults={"owner": user}
+        )
+        if created:
+            user.is_staff = True
+            user.is_superuser = True
+            user.save(update_fields=["is_staff", "is_superuser"])
+    return user
 
 
 def user_by_handle(handle):
