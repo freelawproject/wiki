@@ -7,5 +7,6 @@ from .project.testing import *
 from .third_party.anthropic import *
 from .third_party.aws import *
 from .third_party.cloudfront import *
+from .third_party.courtlistener import *
 from .third_party.sentry import *
 from .third_party.waffle import *
