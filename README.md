@@ -533,6 +533,21 @@ sums tallies into `Page.view_count` and deletes the processed rows. This
 avoids write contention on the Page table during high-traffic reads.
 
 
+### JSON API
+
+Three read-only endpoints under `/api/v1/` serve machine clients such as the
+[CourtListener MCP server](https://github.com/freelawproject/courtlistener-api-client):
+`pages/` lists the pages the caller can read, `search/?q=` searches them, and
+`pages/<path>` returns one page's Markdown. Lists and searches come a page
+at a time (`PAGE_LIST_RESULTS_PER_PAGE` and `SEARCH_RESULTS_PER_PAGE`): pass
+`?page=` and follow `next_page` until it is null. Anonymous callers see
+public pages.
+A CourtListener OAuth access token sent as `Authorization: Bearer` is
+introspected at CourtListener with the wiki's own confidential client (set
+`COURTLISTENER_URL`, `COURTLISTENER_CLIENT_ID` and `COURTLISTENER_CLIENT_SECRET`)
+and its verified email is let in exactly as a magic-link sign-in would be, so
+the caller sees what that account can see. See `wiki/api/`.
+
 ## Running Tests
 
 Tests run inside the Docker container against a disposable test database:
