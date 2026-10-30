@@ -109,22 +109,19 @@ def _apply_filters(qs, parsed):
     return qs
 
 
+SORT_FIELDS = {
+    "edited_desc": "-updated_at",
+    "edited_asc": "updated_at",
+    "created_desc": "-created_at",
+    "created_asc": "created_at",
+    "views": "-view_count",
+    "title": "title",
+}
+
+
 def _apply_sort(qs, sort):
-    """Apply sort ordering to the queryset."""
-    if sort == "edited_desc":
-        return qs.order_by("-updated_at")
-    if sort == "edited_asc":
-        return qs.order_by("updated_at")
-    if sort == "created_desc":
-        return qs.order_by("-created_at")
-    if sort == "created_asc":
-        return qs.order_by("created_at")
-    if sort == "views":
-        return qs.order_by("-view_count")
-    if sort == "title":
-        return qs.order_by("title")
-    # Default: relevance
-    return qs.order_by("-rank")
+    """Order by the chosen sort, ties broken by pk so pages are stable."""
+    return qs.order_by(SORT_FIELDS.get(sort, "-rank"), "pk")
 
 
 def search_pages(parsed, user=None, sort="relevance"):

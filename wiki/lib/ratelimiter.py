@@ -13,7 +13,7 @@ header instead, the same approach CourtListener uses.
 import ipaddress
 
 from django.http import HttpRequest
-from django_ratelimit.core import get_header
+from django_ratelimit.core import get_header, is_ratelimited
 from django_ratelimit.decorators import ratelimit
 
 
@@ -69,10 +69,26 @@ def get_bearer_or_ident(group: str, request: HttpRequest) -> str:
 
     API calls arrive through the MCP server, so its users share an address.
     """
-    token = request.META.get("HTTP_AUTHORIZATION", "")
-    if token:
-        return f"token:{token}"
+    scheme, _, token = request.headers.get("Authorization", "").partition(" ")
+    if scheme.lower() == "bearer" and token.strip():
+        return f"token:{token.strip()}"
     return f"ip:{get_ratelimit_ident(group, request)}"
+
+
+def ratelimit_token_check(request: HttpRequest) -> bool:
+    """Count a bearer token the wiki has not seen against the viewer's
+    address, and say whether the address has sent too many.
+
+    Each such token costs two calls to CourtListener, and a forged one is
+    new every time, so the token-keyed API limit alone would not cap them.
+    """
+    return is_ratelimited(
+        request,
+        group="token-check",
+        key=get_ratelimit_ident,
+        rate="30/m",
+        increment=True,
+    )
 
 
 ratelimit_login = ratelimit(

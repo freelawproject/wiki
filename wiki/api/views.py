@@ -48,7 +48,7 @@ def page_list(request):
     pages = (
         Page.objects.filter(viewable_pages_q(request.user))
         .select_related("directory")
-        .order_by("directory__path", "title")
+        .order_by("directory__path", "title", "pk")
         .distinct()
     )
     return _paginated(

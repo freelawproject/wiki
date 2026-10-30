@@ -28,7 +28,11 @@ def internal_page(owner_user):
 def identify(monkeypatch):
     """Stand in for CourtListener: a map of bearer tokens to emails."""
     tokens = {}
-    monkeypatch.setattr(auth, "cached_verified_email_for", tokens.get)
+    monkeypatch.setattr(
+        auth,
+        "cached_verified_email_for",
+        lambda token, request: tokens.get(token),
+    )
     return tokens
 
 

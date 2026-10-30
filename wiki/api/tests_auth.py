@@ -7,10 +7,11 @@ import pytest
 from django.contrib.auth.models import AnonymousUser, User
 from django.core.cache import cache
 from django.http import JsonResponse
-from django.test import RequestFactory
+from django.test import RequestFactory, override_settings
 
 from wiki.api import auth
 from wiki.api.auth import bearer_auth
+from wiki.lib.ratelimiter import get_bearer_or_ident
 
 
 @bearer_auth
@@ -18,9 +19,10 @@ def whoami(request):
     return JsonResponse({"user": request.user.get_username()})
 
 
-def call(token=None):
-    headers = {"HTTP_AUTHORIZATION": f"Bearer {token}"} if token else {}
-    request = RequestFactory().get("/", **headers)
+def call(token=None, **meta):
+    if token:
+        meta["HTTP_AUTHORIZATION"] = f"Bearer {token}"
+    request = RequestFactory().get("/", **meta)
     request.user = AnonymousUser()
     return whoami(request)
 
@@ -38,7 +40,11 @@ def _fresh_token_cache(db):
 def identify(monkeypatch):
     """Stand in for CourtListener: a map of bearer tokens to emails."""
     tokens = {}
-    monkeypatch.setattr(auth, "cached_verified_email_for", tokens.get)
+    monkeypatch.setattr(
+        auth,
+        "cached_verified_email_for",
+        lambda token, request: tokens.get(token),
+    )
     return tokens
 
 
@@ -184,8 +190,40 @@ def test_courtlistener_is_asked_once_per_token(settings, monkeypatch):
         "Client",
         lambda **kw: real(transport=httpx.MockTransport(handler), **kw),
     )
-    assert auth.cached_verified_email_for("tok") == "a@free.law"
-    assert auth.cached_verified_email_for("tok") == "a@free.law"
-    assert auth.cached_verified_email_for("bad") is None
-    assert auth.cached_verified_email_for("bad") is None
+    request = RequestFactory().get("/")
+    assert auth.cached_verified_email_for("tok", request) == "a@free.law"
+    assert auth.cached_verified_email_for("tok", request) == "a@free.law"
+    assert auth.cached_verified_email_for("bad", request) is None
+    assert auth.cached_verified_email_for("bad", request) is None
     assert calls == ["/o/introspect/", "/o/userinfo/", "/o/introspect/"]
+
+
+class TestTokenLimits:
+    def test_limiter_keys_on_the_token_bearer_auth_reads(self):
+        keys = {
+            get_bearer_or_ident("", RequestFactory().get("/", **meta))
+            for meta in (
+                {"HTTP_AUTHORIZATION": "Bearer t"},
+                {"HTTP_AUTHORIZATION": "bearer t"},
+                {"HTTP_AUTHORIZATION": "BEARER  t "},
+            )
+        }
+        assert keys == {"token:t"}
+        basic = RequestFactory().get("/", HTTP_AUTHORIZATION="Basic t")
+        assert get_bearer_or_ident("", basic).startswith("ip:")
+
+    @override_settings(RATELIMIT_ENABLE=True)
+    def test_unseen_tokens_are_limited_per_address(self, db, monkeypatch):
+        monkeypatch.setattr(
+            auth,
+            "verified_email_for",
+            lambda token: ("new@free.law" if token == "t" else None, 60),
+        )
+        for n in range(30):
+            assert call(f"forged-{n}").status_code == 401
+        assert call("forged-30").status_code == 429
+        # A token already checked costs nothing and still works.
+        assert call("t").status_code == 429
+        other = {"HTTP_CLOUDFRONT_VIEWER_ADDRESS": "203.0.113.9:1234"}
+        assert call("t", **other).status_code == 200
+        assert call("t").status_code == 200
