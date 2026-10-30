@@ -130,8 +130,8 @@ def _apply_sort(qs, sort):
 def search_pages(parsed, user=None, sort="relevance"):
     """Search pages with SQL-level permission filtering.
 
-    Returns (queryset, total_count). The queryset is annotated with
-    rank and headline (when a text query is present).
+    Returns a queryset annotated with rank and headline (when a text
+    query is present).
     """
     query = _build_search_query(parsed)
 
@@ -157,7 +157,4 @@ def search_pages(parsed, user=None, sort="relevance"):
 
     qs = _apply_filters(qs, parsed)
     qs = _apply_sort(qs, sort)
-    qs = qs.distinct()
-
-    total_count = qs.count()
-    return qs, total_count
+    return qs.distinct()

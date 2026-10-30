@@ -68,6 +68,48 @@ class TestPageList:
         assert paths(client, "t") == [page.content_path, "vendor-contract"]
 
 
+def make_pages(owner, titles):
+    for title in titles:
+        Page.objects.create(
+            title=title,
+            slug=title.lower(),
+            content="Chapter text.",
+            owner=owner,
+            created_by=owner,
+            updated_by=owner,
+        )
+
+
+@pytest.mark.parametrize(
+    "url_name, query, key, setting",
+    [
+        ("api_page_list", {}, "pages", "PAGE_LIST_RESULTS_PER_PAGE"),
+        ("api_search", {"q": "chapter"}, "results", "SEARCH_RESULTS_PER_PAGE"),
+    ],
+)
+def test_pagination(
+    client, owner_user, settings, url_name, query, key, setting
+):
+    setattr(settings, setting, 2)
+    make_pages(owner_user, ["Alpha", "Beta", "Gamma"])
+    first = client.get(reverse(url_name), query).json()
+    assert (first["total"], first["page"], first["next_page"]) == (3, 1, 2)
+    assert len(first[key]) == 2
+    last = client.get(reverse(url_name), {**query, "page": 2}).json()
+    assert (last["page"], last["next_page"]) == (2, None)
+    assert len(last[key]) == 1
+    assert {p["path"] for p in first[key] + last[key]} == {
+        "alpha",
+        "beta",
+        "gamma",
+    }
+    # A page number that isn't one at all still answers with the first page.
+    assert (
+        client.get(reverse(url_name), {**query, "page": "x"}).json()["page"]
+        == 1
+    )
+
+
 class TestSearchAndDetail:
     def test_search(self, client, page, internal_page, identify):
         identify["t"] = "new@free.law"
