@@ -141,22 +141,27 @@ def provision_user(email):
     sign-in does (profile, handle, first user becomes system owner).
     None if the account is archived.
     """
-    user, _ = User.objects.get_or_create(
-        username=email, defaults={"email": email}
-    )
-    if not user.is_active:
-        return None
-    profile, created = UserProfile.objects.get_or_create(user=user)
-    if created:
-        profile.gravatar_url = UserProfile.gravatar_url_for_email(email)
-        profile.save(update_fields=["gravatar_url"])
-    if not profile.handle:
-        assign_handle(profile)
-    if not SystemConfig.objects.exists():
-        SystemConfig.objects.create(owner=user)
-        user.is_staff = True
-        user.is_superuser = True
-        user.save(update_fields=["is_staff", "is_superuser"])
+    with transaction.atomic():
+        user, _ = User.objects.get_or_create(
+            username=email, defaults={"email": email}
+        )
+        if not user.is_active:
+            return None
+        profile, created = UserProfile.objects.get_or_create(user=user)
+        if created:
+            profile.gravatar_url = UserProfile.gravatar_url_for_email(email)
+            profile.save(update_fields=["gravatar_url"])
+        if not profile.handle:
+            assign_handle(profile)
+        # The first user provisioned, by sign-in or by an API request,
+        # becomes system owner and admin.
+        _, created = SystemConfig.objects.get_or_create(
+            pk=1, defaults={"owner": user}
+        )
+        if created:
+            user.is_staff = True
+            user.is_superuser = True
+            user.save(update_fields=["is_staff", "is_superuser"])
     return user
 
 

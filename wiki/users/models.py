@@ -9,8 +9,8 @@ from django.utils import timezone
 class UserProfile(models.Model):
     """Extended profile for wiki users.
 
-    Auto-created on first login. Stores display name, Gravatar URL,
-    and magic link auth tokens.
+    Auto-created when the user is provisioned. Stores display name,
+    Gravatar URL, and magic link auth tokens.
     """
 
     user = models.OneToOneField(
@@ -72,7 +72,8 @@ class UserProfile(models.Model):
 class SystemConfig(models.Model):
     """Singleton configuration. pk=1 always.
 
-    Tracks the system owner (first user to log in).
+    Tracks the system owner (the first user provisioned, by sign-in or
+    by an API request).
     """
 
     owner = models.ForeignKey(

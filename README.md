@@ -43,8 +43,8 @@ any allowed email (the `free.law` domain is allowed out of the box). In
 development, the magic link is printed to the Django console — look for the
 `token=` URL in the container logs.
 
-The first user to sign in automatically becomes the **system owner** with
-unrestricted access to all content.
+The first user provisioned (by sign-in or by an API request) becomes the
+**system owner** with unrestricted access to all content.
 
 
 ## Architecture
@@ -288,7 +288,8 @@ This starts Gunicorn with Uvicorn workers (ASGI). Configuration:
 - **Max requests**: `MAX_REQUESTS` env var (default: 2500, with 100 jitter)
 - **Bind**: `0.0.0.0:8000`
 
-The first user to log in becomes the system owner.
+The first user provisioned (by sign-in or by an API request) becomes the
+system owner, so sign in yourself before exposing the API.
 
 
 ### Step 6: Reverse Proxy
@@ -494,8 +495,8 @@ Permissions can be granted at the page level (`PagePermission`) or directory
 level (`DirectoryPermission`). Directory permissions cascade — granting Edit
 on `/engineering/` gives Edit access to all pages and subdirectories within it.
 
-The **system owner** (first user to sign in) has unrestricted access to
-everything.
+The **system owner** (the first user provisioned, by sign-in or API
+request) has unrestricted access to everything.
 
 ### Page Versioning
 
@@ -666,7 +667,7 @@ Quick reference for going to production:
 - [ ] Reverse proxy configured with HTTPS
 - [ ] Daemon service running (`run_daemon` for view counts, search vectors, cleanup)
 - [ ] Sentry DSN configured (optional)
-- [ ] First user logged in to become system owner
+- [ ] First user provisioned (sign in yourself) to become system owner
 
 
 ## License
