@@ -40,6 +40,7 @@ urlpatterns = [
     path("u/admins/", include("wiki.users.urls_admin")),
     path("u/review/", include("wiki.users.urls_review")),
     path("search/", include("wiki.pages.urls_search")),
+    path("api/v1/", include("wiki.api.urls")),
     path("api/", include("wiki.pages.urls_api")),
     path("files/", include("wiki.pages.urls_files")),
     path("unsubscribe/", include("wiki.subscriptions.urls")),

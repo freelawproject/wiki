@@ -109,29 +109,26 @@ def _apply_filters(qs, parsed):
     return qs
 
 
+SORT_FIELDS = {
+    "edited_desc": "-updated_at",
+    "edited_asc": "updated_at",
+    "created_desc": "-created_at",
+    "created_asc": "created_at",
+    "views": "-view_count",
+    "title": "title",
+}
+
+
 def _apply_sort(qs, sort):
-    """Apply sort ordering to the queryset."""
-    if sort == "edited_desc":
-        return qs.order_by("-updated_at")
-    if sort == "edited_asc":
-        return qs.order_by("updated_at")
-    if sort == "created_desc":
-        return qs.order_by("-created_at")
-    if sort == "created_asc":
-        return qs.order_by("created_at")
-    if sort == "views":
-        return qs.order_by("-view_count")
-    if sort == "title":
-        return qs.order_by("title")
-    # Default: relevance
-    return qs.order_by("-rank")
+    """Order by the chosen sort, ties broken by pk so pages are stable."""
+    return qs.order_by(SORT_FIELDS.get(sort, "-rank"), "pk")
 
 
 def search_pages(parsed, user=None, sort="relevance"):
     """Search pages with SQL-level permission filtering.
 
-    Returns (queryset, total_count). The queryset is annotated with
-    rank and headline (when a text query is present).
+    Returns a queryset annotated with rank and headline (when a text
+    query is present).
     """
     query = _build_search_query(parsed)
 
@@ -157,7 +154,4 @@ def search_pages(parsed, user=None, sort="relevance"):
 
     qs = _apply_filters(qs, parsed)
     qs = _apply_sort(qs, sort)
-    qs = qs.distinct()
-
-    total_count = qs.count()
-    return qs, total_count
+    return qs.distinct()

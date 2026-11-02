@@ -22,6 +22,7 @@ from django.http import JsonResponse
 from django.utils.cache import add_never_cache_headers
 
 from wiki.lib.access import is_email_allowed
+from wiki.lib.ratelimiter import ratelimit_token_check
 from wiki.lib.users import provision_user
 
 logger = logging.getLogger(__name__)
@@ -33,12 +34,18 @@ TOKEN_CACHE_SECONDS = 300
 REJECTION_CACHE_SECONDS = 30
 
 
-def cached_verified_email_for(token):
+class TooManyTokenChecks(Exception):
+    """The viewer's address has sent too many tokens the wiki has not seen."""
+
+
+def cached_verified_email_for(token, request):
     """``verified_email_for``, remembered per token for a few minutes."""
     key = "cl-token:" + hashlib.sha256(token.encode()).hexdigest()
     cached = cache.get(key)
     if cached is not None:
         return cached or None
+    if ratelimit_token_check(request):
+        raise TooManyTokenChecks
     email, ttl = verified_email_for(token)
     cache.set(key, email or "", ttl)
     return email
@@ -90,8 +97,9 @@ def verified_email_for(token):
 def bearer_auth(view):
     """Make ``request.user`` the account behind the request's bearer token.
 
-    A bad token is a 401; CourtListener being unreachable is a 503. Without
-    a token the view sees the request's own (session or anonymous) user.
+    A bad token is a 401; CourtListener being unreachable is a 503; too many
+    unseen tokens from one address is a 429. Without a token the view sees
+    the request's own (session or anonymous) user.
     Responses vary by token, so they are marked uncacheable.
     """
 
@@ -102,7 +110,9 @@ def bearer_auth(view):
         )
         if scheme.lower() == "bearer":
             try:
-                email = cached_verified_email_for(token.strip())
+                email = cached_verified_email_for(token.strip(), request)
+            except TooManyTokenChecks:
+                return JsonResponse({"error": "ratelimited"}, status=429)
             except httpx.HTTPError:
                 logger.exception("CourtListener could not check a token")
                 return JsonResponse(
