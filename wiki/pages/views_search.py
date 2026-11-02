@@ -213,7 +213,9 @@ def search_view(request):
     if url_before and not parsed.before_date:
         parsed.before_date = url_before
 
-    qs, total_count = search_pages(parsed, user=request.user, sort=sort)
+    qs = search_pages(parsed, user=request.user, sort=sort)
+    paginator = Paginator(qs, settings.SEARCH_RESULTS_PER_PAGE)
+    total_count = paginator.count
 
     # A no-result search is a signal we're missing content; tally it
     # anonymously so we can see what people look for but can't find. Record
@@ -226,7 +228,6 @@ def search_view(request):
     resolved_visibility = resolve_all_directory_settings("visibility")
     facets = _compute_facets(qs, resolved_visibility)
 
-    paginator = Paginator(qs, settings.SEARCH_RESULTS_PER_PAGE)
     try:
         page_num = int(page_num)
     except (ValueError, TypeError):
