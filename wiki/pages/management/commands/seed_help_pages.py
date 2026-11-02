@@ -163,6 +163,11 @@ one up.
 
 - #seo-guide — SEO descriptions, sitemap.xml and llms.txt controls,
   Article JSON-LD, canonical URLs, robots.txt, and raw markdown for LLMs
+
+**Integrations**
+
+- #api-guide — Reading pages and search results from a program, and
+  signing in to the API with a CourtListener account
 """,
     },
     {
@@ -1825,6 +1830,70 @@ If the variable is set to an empty string, all domains are allowed
   need in the API response
 - **Test the URL** — open it in a browser first to verify the
   JSON structure, then write your placeholders to match
+""",
+    },
+    {
+        "title": "JSON API Guide",
+        "slug": "api-guide",
+        "content": """\
+## Reading the wiki from a program
+
+The wiki has a small read-only JSON API for machine clients such as
+the CourtListener MCP server, so an assistant can look things up here
+on your behalf. It serves the same pages you could open in a browser
+and nothing more: there is no way to write through it.
+
+### Endpoints
+
+All three live under `/api/v1/` and answer GET only.
+
+| Endpoint | Returns |
+|---|---|
+| `pages/` | Every page the caller can read: path, title, description, and when it was last updated |
+| `search/?q=` | The pages matching a search, each with a snippet; the query syntax is the one in #search-guide |
+| `pages/<path>` | One page, including its Markdown `content` |
+
+A page's path is the part of its URL after `/c/`, so the page at
+`/c/help/markdown-syntax` is `pages/help/markdown-syntax`.
+
+### Paging through results
+
+Lists and searches come a page at a time. Each response carries
+`total`, `page`, `next_page`, and the items under `pages` or
+`results`. Pass `?page=` to fetch a later page and follow `next_page`
+until it is null.
+
+### Who sees what
+
+Without credentials the API sees what a signed-out visitor sees:
+public pages only.
+
+To read as yourself, send a CourtListener access token that carries
+the `wiki` scope as `Authorization: Bearer <token>`. The wiki asks
+CourtListener whose token it is and lets that verified email in
+exactly as a magic-link sign-in would: an address on the sign-in
+allowlist sees everything its account can see (the account is created
+on first use if needed), and any other address is treated as signed
+out.
+
+The CourtListener MCP server does this for you once you connect it
+with your CourtListener account, so you never handle the token
+yourself.
+
+### Limits and errors
+
+- Calls are limited to 60 a minute per token, or per address when
+  there is no token. Over the limit you get a 429.
+- Each token the wiki has not seen before costs CourtListener a round
+  trip, so an address may introduce at most 30 new tokens a minute.
+- A token CourtListener rejects (expired, revoked, or without the
+  `wiki` scope) gets a 401 with `{"error": "invalid_token"}`.
+- A page you cannot read, or that does not exist, is a 404 with
+  `{"error": "not_found"}`. The API never confirms that a hidden page
+  exists.
+- If CourtListener cannot be reached to check a token, the answer is
+  a 503 with `{"error": "courtlistener_unavailable"}`; try again
+  shortly.
 """,
     },
 ]
