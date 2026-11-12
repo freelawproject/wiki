@@ -1,6 +1,10 @@
 """Read-only JSON API for machine clients such as the CourtListener MCP
 server. Anyone sees public pages; a CourtListener bearer token sees what
-that account's email can see (see ``auth``)."""
+that account's email can see (see ``auth``).
+
+A page's ``content`` is resolved Markdown by default (see
+``resolve_markdown``), for a reader outside the wiki; ``?raw=true`` returns
+the stored source instead, wiki syntax and all."""
 
 from django.conf import settings
 from django.core.paginator import Paginator
@@ -9,6 +13,8 @@ from django.utils.html import strip_tags
 from django.views.decorators.http import require_GET
 
 from wiki.api.auth import bearer_auth
+from wiki.lib.data_source import page_content_with_data
+from wiki.lib.markdown import resolve_markdown
 from wiki.lib.page_utils import page_at_path
 from wiki.lib.permissions import can_view_page, viewable_pages_q
 from wiki.lib.ratelimiter import ratelimit_api
@@ -77,4 +83,10 @@ def page_detail(request, path):
     page = page_at_path(path.strip("/"))
     if page is None or not can_view_page(request.user, page):
         return JsonResponse({"error": "not_found"}, status=404)
-    return JsonResponse({**_summary(page), "content": page.content})
+    if request.GET.get("raw", "").lower() in ("1", "true"):
+        content = page.content
+    else:
+        content = resolve_markdown(
+            page_content_with_data(page), viewer=request.user
+        )
+    return JsonResponse({**_summary(page), "content": content})

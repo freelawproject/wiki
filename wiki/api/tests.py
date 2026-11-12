@@ -5,6 +5,7 @@ from django.contrib.auth.models import User
 from django.urls import reverse
 
 from wiki.api import auth
+from wiki.lib import data_source
 from wiki.pages.models import Page, PagePermission
 from wiki.users.models import AllowedEmail
 
@@ -129,6 +130,40 @@ class TestSearchAndDetail:
         assert "<mark>" not in result["snippet"]
         anonymous = client.get(reverse("api_search"), {"q": "secret"})
         assert anonymous.json()["total"] == 0
+
+    def test_detail_resolves_wiki_syntax_unless_raw(
+        self, client, settings, monkeypatch, page, internal_page
+    ):
+        settings.BASE_URL = "https://wiki.free.law"
+        monkeypatch.setattr(
+            data_source, "fetch_page_data", lambda url, ttl: {"n": 1200}
+        )
+        source = (
+            "There are [[ n ]] items. See #getting-started and #staff-only.\n\n"
+            "[Sign up](/c/getting-started){button} ![logo](/files/3/logo.png)"
+        )
+        resolved = (
+            "There are 1,200 items. See [Getting Started]"
+            "(https://wiki.free.law/c/getting-started) and #staff-only.\n\n"
+            "[Sign up](https://wiki.free.law/c/getting-started) "
+            "![logo](https://wiki.free.law/files/3/logo.png)"
+        )
+        source_page = Page.objects.create(
+            title="Stats",
+            slug="stats",
+            content=source,
+            data_source_url="https://api.example.com/stats",
+            owner=page.owner,
+            created_by=page.owner,
+            updated_by=page.owner,
+            visibility=Page.Visibility.PUBLIC,
+        )
+        url = reverse(
+            "api_page_detail", kwargs={"path": source_page.content_path}
+        )
+        stored = Page.objects.get(pk=source_page.pk).content
+        assert client.get(url).json()["content"] == resolved
+        assert client.get(url, {"raw": "true"}).json()["content"] == stored
 
     def test_detail_hides_what_cannot_be_viewed(
         self, client, page, internal_page
