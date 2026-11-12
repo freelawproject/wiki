@@ -538,10 +538,13 @@ avoids write contention on the Page table during high-traffic reads.
 Three read-only endpoints under `/api/v1/` serve machine clients such as the
 [CourtListener MCP server](https://github.com/freelawproject/courtlistener-api-client):
 `pages/` lists the pages the caller can read, `search/?q=` searches them, and
-`pages/<path>` returns one page's Markdown. Lists and searches come a page
-at a time (`PAGE_LIST_RESULTS_PER_PAGE` and `SEARCH_RESULTS_PER_PAGE`): pass
-`?page=` and follow `next_page` until it is null. Anonymous callers see
-public pages.
+`pages/<path>` returns one page's Markdown: resolved for a reader outside the
+wiki by default (data placeholders filled, wiki links and `/c/` or `/files/`
+URLs made absolute, `{button}` suffixes dropped; see `resolve_markdown` in
+`wiki/lib/markdown.py`), or the stored source with `?raw=true`. Lists and
+searches come a page at a time (`PAGE_LIST_RESULTS_PER_PAGE` and
+`SEARCH_RESULTS_PER_PAGE`): pass `?page=` and follow `next_page` until it is
+null. Anonymous callers see public pages.
 A CourtListener OAuth access token sent as `Authorization: Bearer` is
 introspected at CourtListener with the wiki's own confidential client (set
 `COURTLISTENER_URL`, `COURTLISTENER_CLIENT_ID` and `COURTLISTENER_CLIENT_SECRET`)
