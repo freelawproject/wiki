@@ -545,8 +545,10 @@ public pages.
 A CourtListener OAuth access token sent as `Authorization: Bearer` is
 introspected at CourtListener with the wiki's own confidential client (set
 `COURTLISTENER_URL`, `COURTLISTENER_CLIENT_ID` and `COURTLISTENER_CLIENT_SECRET`)
-and its verified email is let in exactly as a magic-link sign-in would be, so
-the caller sees what that account can see. See `wiki/api/`.
+and, if it carries the `wiki` scope, its verified email is let in exactly as
+a magic-link sign-in would be, so the caller sees what that account can see.
+A live token without the `wiki` scope is treated as anonymous; only a token
+CourtListener rejects is a 401. See `wiki/api/`.
 
 ## Running Tests
 

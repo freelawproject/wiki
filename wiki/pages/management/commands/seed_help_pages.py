@@ -1876,6 +1876,11 @@ allowlist sees everything its account can see (the account is created
 on first use if needed), and any other address is treated as signed
 out.
 
+A valid token without the `wiki` scope also reads as signed out: it
+sees public pages only. If you can see internal pages on the wiki
+but the API shows you only public ones, reconnect so your token
+carries the `wiki` scope.
+
 The CourtListener MCP server does this for you once you connect it
 with your CourtListener account, so you never handle the token
 yourself.
@@ -1886,8 +1891,8 @@ yourself.
   there is no token. Over the limit you get a 429.
 - Each token the wiki has not seen before costs CourtListener a round
   trip, so an address may introduce at most 30 new tokens a minute.
-- A token CourtListener rejects (expired, revoked, or without the
-  `wiki` scope) gets a 401 with `{"error": "invalid_token"}`.
+- A token CourtListener rejects (expired or revoked) gets a 401 with
+  `{"error": "invalid_token"}`.
 - A page you cannot read, or that does not exist, is a 404 with
   `{"error": "not_found"}`. The API never confirms that a hidden page
   exists.
