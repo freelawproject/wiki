@@ -132,9 +132,8 @@ class TestSearchAndDetail:
         assert anonymous.json()["total"] == 0
 
     def test_detail_resolves_wiki_syntax_unless_raw(
-        self, client, settings, monkeypatch, page, internal_page
+        self, client, monkeypatch, page, internal_page
     ):
-        settings.BASE_URL = "https://wiki.free.law"
         monkeypatch.setattr(
             data_source, "fetch_page_data", lambda url, ttl: {"n": 1200}
         )
@@ -144,9 +143,8 @@ class TestSearchAndDetail:
         )
         resolved = (
             "There are 1,200 items. See [Getting Started]"
-            "(https://wiki.free.law/c/getting-started) and #staff-only.\n\n"
-            "[Sign up](https://wiki.free.law/c/getting-started) "
-            "![logo](https://wiki.free.law/files/3/logo.png)"
+            "(/c/getting-started) and #staff-only.\n\n"
+            "[Sign up](/c/getting-started){button} ![logo](/files/3/logo.png)"
         )
         source_page = Page.objects.create(
             title="Stats",

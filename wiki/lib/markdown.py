@@ -165,24 +165,6 @@ _WIKI_LINK_PATH_RE = re.compile(rf"{_SLUG_CHARS}(?:/{_SLUG_CHARS})*")
 _SLUG_RE = re.compile(_SLUG_CHARS)
 
 
-# A root-relative URL (``/c/…``, ``/files/…``; not a protocol-relative
-# ``//host``) where Markdown or HTML expects a link target: an inline link
-# or image ``](/…``, a reference definition ``[ref]: /…``, or a ``src`` or
-# ``href`` attribute. Used by ``resolve_markdown`` to make them absolute.
-_SITE_RELATIVE_URL_RE = re.compile(
-    r"(?P<prefix>\]\([ \t]*<?"
-    r"|^[ \t]{0,3}\[[^\]\n]+\]:[ \t]*<?"
-    r"""|\b(?:src|href)=["']?)/(?!/)""",
-    re.MULTILINE,
-)
-
-# A {button} suffix on a Markdown link, in source (the HTML-side
-# counterpart is _BUTTON_LINK_RE).
-_BUTTON_SUFFIX_RE = re.compile(
-    r"(?<=\))[ \t]*\{button(?:-(?:outline|danger))?\}"
-)
-
-
 def _code_region_ranges(content):
     """Return (start, end) spans for fenced code blocks and inline backticks."""
     return [(m.start(), m.end()) for m in _CODE_REGIONS_RE.finditer(content)]
@@ -190,22 +172,6 @@ def _code_region_ranges(content):
 
 def _in_code_region(pos, ranges):
     return any(start <= pos < end for start, end in ranges)
-
-
-def _sub_outside_code(pattern, repl, content):
-    """``pattern.sub(repl, content)``, leaving matches in code regions alone.
-
-    ``repl`` is a replacement string (with group references) or a callable,
-    as for ``re.sub``.
-    """
-    code_ranges = _code_region_ranges(content)
-
-    def replace(match):
-        if _in_code_region(match.start(), code_ranges):
-            return match.group(0)
-        return repl(match) if callable(repl) else match.expand(repl)
-
-    return pattern.sub(replace, content)
 
 
 def _content_path_from_url_path(url_path):
@@ -716,30 +682,6 @@ def resolve_wiki_links(content, viewer=None, mark_missing=True):
         )
 
     return WIKI_LINK_RE.sub(replace_link, content)
-
-
-def resolve_markdown(content, viewer=None):
-    """Markdown that a reader outside the wiki can follow, such as a model
-    reading a page through the JSON API.
-
-    Wiki links are resolved for ``viewer`` (as in ``resolve_wiki_links``),
-    root-relative URLs (``/c/…``, ``/files/…``) are made absolute on
-    ``BASE_URL``, and ``{button}`` suffixes are dropped, keeping their links.
-    A wiki link to a page that doesn't exist, or that ``viewer`` can't see,
-    is left as written, so the result never reveals a hidden page's title.
-    Code regions are left alone. The result is still Markdown, not HTML.
-
-    Data placeholders aren't filled here: pass in
-    ``page_content_with_data(page)`` for that.
-    """
-    content = resolve_wiki_links(content, viewer=viewer, mark_missing=False)
-    base_url = settings.BASE_URL.rstrip("/")
-    content = _sub_outside_code(
-        _SITE_RELATIVE_URL_RE,
-        lambda match: f"{match.group('prefix')}{base_url}/",
-        content,
-    )
-    return _sub_outside_code(_BUTTON_SUFFIX_RE, "", content)
 
 
 def extract_all_wiki_references(content):

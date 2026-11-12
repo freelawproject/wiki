@@ -1858,12 +1858,11 @@ A page's path is the part of its URL after `/c/`, so the page at
 
 ### Page content
 
-A page's `content` is Markdown that reads on its own outside the
-wiki. Data placeholders are filled in, wiki links become links with
-full URLs (a link to a page you can't see stays as written), links
-and images to `/c/` and `/files/` get the wiki's address, and
-`{button}` suffixes are dropped. Add `?raw=true` to get the page's
-stored source instead, exactly as the editor shows it.
+A page's `content` is the Markdown as readers see it: data
+placeholders are filled in and wiki links become ordinary `/c/...`
+links (a link to a page you can't see stays as written). Add
+`?raw=true` to get the page's stored source instead, exactly as the
+editor shows it.
 
 ### Paging through results
 
