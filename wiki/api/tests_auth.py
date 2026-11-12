@@ -197,6 +197,33 @@ def test_anonymous_tokens_are_remembered_until_they_expire(
     assert 40 <= ttl <= 42
 
 
+def test_cache_lifetime_is_measured_after_userinfo(settings, monkeypatch):
+    """Time spent waiting on CourtListener comes off the token's lifetime."""
+    settings.COURTLISTENER_CLIENT_ID = "wiki"
+    settings.COURTLISTENER_CLIENT_SECRET = "secret"
+    clock = [1_000_000]
+    monkeypatch.setattr(auth.time, "time", lambda: clock[0])
+
+    def handler(request):
+        if request.url.path == "/o/introspect/":
+            return httpx.Response(
+                200,
+                json={"active": True, "scope": "wiki", "exp": clock[0] + 10},
+            )
+        clock[0] += 4  # userinfo is slow
+        return httpx.Response(
+            200, json={"email": "a@free.law", "email_verified": True}
+        )
+
+    real = httpx.Client
+    monkeypatch.setattr(
+        httpx,
+        "Client",
+        lambda **kw: real(transport=httpx.MockTransport(handler), **kw),
+    )
+    assert auth.verified_email_for("tok") == ("a@free.law", 6)
+
+
 def test_courtlistener_is_asked_once_per_token(settings, monkeypatch):
     settings.COURTLISTENER_CLIENT_ID = "wiki"
     settings.COURTLISTENER_CLIENT_SECRET = "secret"

@@ -88,23 +88,30 @@ def verified_email_for(token):
         info = introspection.json()
         if not info.get("active"):
             return None, REJECTION_CACHE_SECONDS
-        # Never remember a token past its own expiry.
-        remaining = int(info.get("exp", 0)) - int(time.time())
-        ttl = max(min(TOKEN_CACHE_SECONDS, remaining), 1)
         # Without the scope the user never let the wiki know who they are.
         if "wiki" not in info.get("scope", "").split():
-            return "", ttl
+            return "", _calculate_ttl(info)
         userinfo = cl.get(
             "/o/userinfo/", headers={"Authorization": f"Bearer {token}"}
         )
         # Refused for the token's sake (e.g. no openid scope), not ours.
         if userinfo.status_code in (401, 403):
-            return "", ttl
+            return "", _calculate_ttl(info)
         userinfo.raise_for_status()
     claims = userinfo.json()
     if not (claims.get("email") and claims.get("email_verified")):
-        return "", ttl
-    return claims["email"].lower(), ttl
+        return "", _calculate_ttl(info)
+    return claims["email"].lower(), _calculate_ttl(info)
+
+
+def _calculate_ttl(info):
+    """How long an answer about the introspected token may be remembered:
+    ``TOKEN_CACHE_SECONDS`` at most, and never past the token's expiry.
+
+    Measured when called, so call it once CourtListener has answered: time
+    spent waiting on it must not stretch the answer past the expiry."""
+    remaining = int(info.get("exp", 0)) - int(time.time())
+    return max(min(TOKEN_CACHE_SECONDS, remaining), 1)
 
 
 def bearer_auth(view):
