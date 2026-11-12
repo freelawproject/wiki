@@ -4,6 +4,7 @@ import time
 from unittest.mock import patch
 
 import pytest
+from django.contrib.auth.models import AnonymousUser
 from django.urls import reverse
 
 from wiki.lib.markdown import (
@@ -21,6 +22,7 @@ from wiki.lib.markdown import (
     extract_slugs_from_internal_urls,
     internal_urls_to_wiki_links,
     render_markdown,
+    resolve_markdown,
     resolve_wiki_links,
     strip_markdown,
 )
@@ -655,6 +657,87 @@ class TestWikiLinkFragments:
         slugs = extract_slugs_from_internal_urls(f"See {url}#anchor here")
         assert "my-page" in slugs
         assert "my-page#anchor" not in slugs
+
+
+@pytest.mark.django_db
+class TestResolveMarkdown:
+    """resolve_markdown turns wiki source into Markdown an outside reader
+    can follow."""
+
+    BASE = "https://wiki.free.law"
+
+    @pytest.fixture(autouse=True)
+    def _base_url(self, settings):
+        settings.BASE_URL = self.BASE
+
+    def test_wiki_links_become_absolute_links(self, page, page_in_directory):
+        md = (
+            f"See #{page.slug}, "
+            f"[the standards](#{page_in_directory.content_path}#tabs) and "
+            f"[ref][r].\n\n[r]: #{page.slug}"
+        )
+        assert resolve_markdown(md, viewer=AnonymousUser()) == (
+            f"See [{page.title}]({self.BASE}{page.get_absolute_url()}), "
+            f"[the standards]({self.BASE}"
+            f"{page_in_directory.get_absolute_url()}#tabs) and "
+            f"[ref][r].\n\n[r]: {self.BASE}{page.get_absolute_url()}"
+        )
+
+    def test_missing_and_hidden_pages_stay_as_written(self, user):
+        hidden = Page.objects.create(
+            title="Payroll Secrets",
+            slug="payroll",
+            content="x",
+            owner=user,
+            created_by=user,
+            updated_by=user,
+            visibility=Page.Visibility.PRIVATE,
+        )
+        md = f"See #nonexistent and #{hidden.slug}."
+        result = resolve_markdown(md, viewer=AnonymousUser())
+        assert result == md
+        assert hidden.title not in result
+        # The page's owner gets the link.
+        assert hidden.title in resolve_markdown(md, viewer=user)
+
+    def test_site_relative_urls_become_absolute(self):
+        md = (
+            "![diagram](/files/698/image.png) [doc]( </c/hr/handbook> )\n"
+            '<img src="/files/7/a.png"> <a href=/c/x>x</a>\n\n'
+            "[ref]: /c/hr/leave"
+        )
+        assert resolve_markdown(md) == (
+            f"![diagram]({self.BASE}/files/698/image.png) "
+            f"[doc]( <{self.BASE}/c/hr/handbook> )\n"
+            f'<img src="{self.BASE}/files/7/a.png"> '
+            f"<a href={self.BASE}/c/x>x</a>\n\n"
+            f"[ref]: {self.BASE}/c/hr/leave"
+        )
+
+    def test_other_urls_untouched(self):
+        md = (
+            "[a](https://example.com/c/x) [b](//cdn.example.com/x.png) "
+            "[c](#top) a/c/path and /c/bare-in-prose"
+        )
+        assert resolve_markdown(md) == md
+
+    def test_button_suffixes_dropped(self):
+        md = (
+            "[Go](https://example.com){button} "
+            "[Back](https://example.com/b) {button-outline} "
+            "[Stop](https://example.com/s){button-danger}"
+        )
+        assert resolve_markdown(md) == (
+            "[Go](https://example.com) [Back](https://example.com/b) "
+            "[Stop](https://example.com/s)"
+        )
+
+    def test_code_regions_untouched(self, page):
+        md = (
+            f"Write `#{page.slug}` or `[x](/c/a){{button}}`:\n\n"
+            f"```\n![i](/files/1/a.png)\n#{page.slug}\n```\n"
+        )
+        assert resolve_markdown(md) == md
 
 
 @pytest.mark.django_db
