@@ -1,6 +1,7 @@
 """Tests for CourtListener bearer auth."""
 
 import json
+import time
 
 import httpx
 import pytest
@@ -58,6 +59,12 @@ class TestBearerAuth:
         r = call("x")
         assert r.status_code == 401
         assert r["WWW-Authenticate"] == "Bearer"
+
+    def test_live_token_naming_no_one_is_anonymous(self, db, identify):
+        identify["t"] = ""
+        r = call("t")
+        assert r.status_code == 200
+        assert json.loads(r.content) == {"user": ""}
 
     def test_allowlisted_email_mints_an_account(self, owner_user, identify):
         identify["t"] = "new@free.law"
@@ -125,17 +132,18 @@ class TestBearerAuth:
                 "exp": 4_000_000_000,
             },
             {"email": "a@free.law", "email_verified": False},
-            None,
+            "",
         ),
+        # Without the wiki scope the email is never asked for.
         (
-            {"active": True, "scope": "openid email", "exp": 4_000_000_000},
-            {"email": "a@free.law", "email_verified": True},
+            {"active": True, "scope": "openid api", "exp": 4_000_000_000},
             None,
+            "",
         ),
         (
             {"active": True, "scope": "wiki", "exp": 4_000_000_000},
             403,
-            None,
+            "",
         ),
         ({"active": False}, None, None),
     ],
@@ -166,6 +174,29 @@ def test_verified_email_for(
     assert auth.verified_email_for("tok")[0] == email
 
 
+def test_anonymous_tokens_are_remembered_until_they_expire(
+    settings, monkeypatch
+):
+    settings.COURTLISTENER_CLIENT_ID = "wiki"
+    settings.COURTLISTENER_CLIENT_SECRET = "secret"
+
+    def handler(request):
+        exp = int(time.time()) + 42
+        return httpx.Response(
+            200, json={"active": True, "scope": "api", "exp": exp}
+        )
+
+    real = httpx.Client
+    monkeypatch.setattr(
+        httpx,
+        "Client",
+        lambda **kw: real(transport=httpx.MockTransport(handler), **kw),
+    )
+    email, ttl = auth.verified_email_for("tok")
+    assert email == ""
+    assert 40 <= ttl <= 42
+
+
 def test_courtlistener_is_asked_once_per_token(settings, monkeypatch):
     settings.COURTLISTENER_CLIENT_ID = "wiki"
     settings.COURTLISTENER_CLIENT_SECRET = "secret"
@@ -176,6 +207,15 @@ def test_courtlistener_is_asked_once_per_token(settings, monkeypatch):
         if request.url.path == "/o/introspect/":
             if b"token=bad" in request.content:
                 return httpx.Response(200, json={"active": False})
+            if b"token=api" in request.content:
+                return httpx.Response(
+                    200,
+                    json={
+                        "active": True,
+                        "scope": "api",
+                        "exp": 4_000_000_000,
+                    },
+                )
             return httpx.Response(
                 200,
                 json={"active": True, "scope": "wiki", "exp": 4_000_000_000},
@@ -195,7 +235,14 @@ def test_courtlistener_is_asked_once_per_token(settings, monkeypatch):
     assert auth.cached_verified_email_for("tok", request) == "a@free.law"
     assert auth.cached_verified_email_for("bad", request) is None
     assert auth.cached_verified_email_for("bad", request) is None
-    assert calls == ["/o/introspect/", "/o/userinfo/", "/o/introspect/"]
+    assert auth.cached_verified_email_for("api", request) == ""
+    assert auth.cached_verified_email_for("api", request) == ""
+    assert calls == [
+        "/o/introspect/",
+        "/o/userinfo/",
+        "/o/introspect/",
+        "/o/introspect/",
+    ]
 
 
 class TestTokenLimits:
