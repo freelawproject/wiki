@@ -27,7 +27,7 @@ from wiki.comments.models import PageComment
 from wiki.directories.models import Directory, DirectoryPermission
 from wiki.lib.access import is_internal_user
 from wiki.lib.cache_headers import cache_for_anonymous
-from wiki.lib.data_source import fetch_page_data, substitute_data_variables
+from wiki.lib.data_source import page_content_with_data
 from wiki.lib.edit_lock import (
     acquire_lock_for_page,
     get_active_lock_for_page,
@@ -452,11 +452,9 @@ def _render_page_detail(request, page):
     if not can_view_page(request.user, page):
         raise Http404
 
-    content = page.content
-    if page.data_source_url:
-        data = fetch_page_data(page.data_source_url, page.data_source_ttl)
-        content = substitute_data_variables(content, data)
-    rendered_content = render_markdown(content, viewer=request.user)
+    rendered_content = render_markdown(
+        page_content_with_data(page), viewer=request.user
+    )
     toc = getattr(rendered_content, "toc_html", "")
 
     breadcrumbs = _build_page_breadcrumbs(request, page)
