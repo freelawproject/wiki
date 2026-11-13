@@ -4,6 +4,7 @@ import time
 from unittest.mock import patch
 
 import pytest
+from django.contrib.auth.models import AnonymousUser
 from django.urls import reverse
 
 from wiki.lib.markdown import (
@@ -655,6 +656,35 @@ class TestWikiLinkFragments:
         slugs = extract_slugs_from_internal_urls(f"See {url}#anchor here")
         assert "my-page" in slugs
         assert "my-page#anchor" not in slugs
+
+
+@pytest.mark.django_db
+class TestResolveWikiLinksWithoutMarkingMissing:
+    """With ``mark_missing=False`` an unresolved link stays as written, for
+    readers that don't render HTML, such as the JSON API."""
+
+    def test_missing_and_hidden_pages_stay_as_written(self, user, page):
+        hidden = Page.objects.create(
+            title="Payroll Secrets",
+            slug="payroll",
+            content="x",
+            owner=user,
+            created_by=user,
+            updated_by=user,
+            visibility=Page.Visibility.PRIVATE,
+        )
+        md = f"See #{page.slug}, #nonexistent and #{hidden.slug}."
+        result = resolve_wiki_links(
+            md, viewer=AnonymousUser(), mark_missing=False
+        )
+        assert result == (
+            f"See [{page.title}]({page.get_absolute_url()}), "
+            f"#nonexistent and #{hidden.slug}."
+        )
+        # The page's owner gets the link.
+        assert hidden.title in resolve_wiki_links(
+            md, viewer=user, mark_missing=False
+        )
 
 
 @pytest.mark.django_db

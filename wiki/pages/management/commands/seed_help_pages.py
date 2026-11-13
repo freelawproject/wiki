@@ -1856,6 +1856,14 @@ All three live under `/api/v1/` and answer GET only.
 A page's path is the part of its URL after `/c/`, so the page at
 `/c/help/markdown-syntax` is `pages/help/markdown-syntax`.
 
+### Page content
+
+A page's `content` is the Markdown as readers see it: data
+placeholders are filled in and wiki links become ordinary `/c/...`
+links (a link to a page you can't see stays as written). Add
+`?raw=true` to get the page's stored source instead, exactly as the
+editor shows it.
+
 ### Paging through results
 
 Lists and searches come a page at a time. Each response carries

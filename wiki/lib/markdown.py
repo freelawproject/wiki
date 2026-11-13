@@ -599,7 +599,7 @@ def _append_fragment(url, fragment):
     return f"{url}#{fragment}" if fragment else url
 
 
-def resolve_wiki_links(content, viewer=None):
+def resolve_wiki_links(content, viewer=None, mark_missing=True):
     """Replace #slug and #dir/slug references with proper markdown links.
 
     Handles three syntaxes:
@@ -610,8 +610,9 @@ def resolve_wiki_links(content, viewer=None):
     Qualified (#dir/slug) forms resolve unambiguously via directory path.
     Bare (#slug) forms resolve via the oldest matching page (legacy
     shorthand). Known refs become links; unknown standalone refs render
-    as red text; unknown md/ref refs are left as-is (may be heading
-    anchors).
+    as red text (left as written when ``mark_missing`` is False, for
+    readers that don't render HTML); unknown md/ref refs are left as-is
+    (may be heading anchors).
     """
     code_ranges = _code_region_ranges(content)
     # Bail fast if there are no wiki-link-shaped tokens at all
@@ -673,6 +674,8 @@ def resolve_wiki_links(content, viewer=None):
         if page is not None:
             url = _append_fragment(page.get_absolute_url(), fragment)
             return f"[{page.title}]({url})"
+        if not mark_missing:
+            return match.group(0)
         return (
             f'<span class="text-red-500 dark:text-red-400" '
             f'title="Page not found">{match.group(0)}</span>'
