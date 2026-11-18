@@ -300,6 +300,139 @@ class TestEdit:
         )
 
 
+class TestDataSource:
+    URL = "https://www.courtlistener.com/api/rest/v4/wiki-data/"
+
+    @pytest.fixture(autouse=True)
+    def _allowlist(self, settings):
+        settings.DATA_SOURCE_ALLOWED_DOMAINS = ["www.courtlistener.com"]
+
+    def test_an_editor_sees_the_data_source(self, client, page, writer):
+        Page.objects.filter(pk=page.pk).update(
+            data_source_url=self.URL, data_source_ttl=600
+        )
+        mine = client.get(
+            detail_url(page), headers={"Authorization": "Bearer w"}
+        ).json()
+        assert (mine["data_source_url"], mine["data_source_ttl"]) == (
+            self.URL,
+            600,
+        )
+        anonymous = client.get(detail_url(page)).json()
+        assert "data_source_url" not in anonymous
+
+    def test_an_edit_sets_and_removes_the_data_source(
+        self, client, page, writer
+    ):
+        r = patch(
+            client,
+            page,
+            {
+                "base_revision": 1,
+                "change_message": "Add data",
+                "data_source_url": self.URL,
+                "data_source_ttl": 900,
+            },
+        )
+        assert r.status_code == 200, r.json()
+        page.refresh_from_db()
+        assert (page.data_source_url, page.data_source_ttl) == (self.URL, 900)
+        assert page.content == "## Welcome\n\nHello world."
+
+        r = patch(
+            client,
+            page,
+            {"base_revision": 2, "change_message": "x", "data_source_url": ""},
+        )
+        assert r.status_code == 200, r.json()
+        page.refresh_from_db()
+        assert (page.data_source_url, page.data_source_ttl) == ("", 900)
+
+    def test_null_removes_the_data_source(self, client, page, writer):
+        Page.objects.filter(pk=page.pk).update(data_source_url=self.URL)
+        r = patch(
+            client,
+            page,
+            {
+                "base_revision": 1,
+                "change_message": "x",
+                "data_source_url": None,
+            },
+        )
+        assert r.status_code == 200, r.json()
+        page.refresh_from_db()
+        assert page.data_source_url == ""
+
+    def test_the_same_data_source_is_no_change(self, client, page, writer):
+        Page.objects.filter(pk=page.pk).update(data_source_url=self.URL)
+        r = patch(
+            client,
+            page,
+            {
+                "base_revision": 1,
+                "change_message": "x",
+                "data_source_url": self.URL,
+            },
+        )
+        assert (r.status_code, r.json()["error"]) == (400, "invalid_request")
+
+    def test_a_create_sets_the_data_source(
+        self, client, sub_directory, writer
+    ):
+        r = create(
+            client,
+            {
+                "directory": "engineering",
+                "title": "Stats",
+                "content": "We have [[ total ]] cases.",
+                "change_message": "x",
+                "data_source_url": self.URL,
+            },
+        )
+        assert r.status_code == 201, r.json()
+        assert (r.json()["data_source_url"], r.json()["data_source_ttl"]) == (
+            self.URL,
+            300,
+        )
+
+    def test_a_create_with_a_disallowed_source_is_refused(
+        self, client, sub_directory, writer
+    ):
+        r = create(
+            client,
+            {
+                "directory": "engineering",
+                "title": "Stats",
+                "content": "",
+                "change_message": "x",
+                "data_source_url": "https://evil.example/x.json",
+            },
+        )
+        assert (r.status_code, r.json()["error"]) == (400, "invalid_request")
+        assert not Page.objects.filter(slug="stats").exists()
+
+    @pytest.mark.parametrize(
+        "fields, detail",
+        [
+            ({"data_source_url": "https://evil.example/x.json"}, "domain"),
+            ({"data_source_url": "not a url"}, "valid URL"),
+            ({"data_source_url": 5}, "must be a string"),
+            ({"data_source_ttl": 0}, "at least 1"),
+            ({"data_source_ttl": "300"}, "whole number"),
+            ({"data_source_ttl": True}, "whole number"),
+        ],
+    )
+    def test_bad_data_sources_are_refused(
+        self, client, page, writer, fields, detail
+    ):
+        body = {"base_revision": 1, "change_message": "x", **fields}
+        r = patch(client, page, body)
+        assert (r.status_code, r.json()["error"]) == (400, "invalid_request")
+        assert detail in r.json()["detail"]
+        page.refresh_from_db()
+        assert page.data_source_url == ""
+
+
 class TestCreate:
     def test_creates_a_page_that_inherits_its_directory(
         self, client, sub_directory, writer, user
