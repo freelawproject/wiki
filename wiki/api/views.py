@@ -29,12 +29,13 @@ from django.views.decorators.http import require_GET, require_http_methods
 from wiki.api.auth import WIKI_SCOPES, bearer_auth, bearer_challenge
 from wiki.directories.models import Directory
 from wiki.lib.data_source import (
+    content_with_data,
     page_content_with_data,
     validate_data_source_ttl,
     validate_data_source_url,
 )
 from wiki.lib.edit_lock import get_active_lock_for_page
-from wiki.lib.markdown import resolve_wiki_links
+from wiki.lib.markdown import render_markdown, resolve_wiki_links
 from wiki.lib.page_saves import (
     EditConflict,
     current_revision_number,
@@ -121,6 +122,37 @@ def page_list(request):
     return _paginated(
         request, pages, settings.PAGE_LIST_RESULTS_PER_PAGE, "pages", _summary
     )
+
+
+@csrf_exempt
+@ratelimit_api
+@require_http_methods(["POST"])
+@bearer_auth
+def preview(request):
+    """Render page source to HTML as the page view would, without saving
+    anything: the API's counterpart of the editor's Preview tab.
+
+    The JSON body has the Markdown ``content`` and, optionally, the
+    ``data_source_url`` and ``data_source_ttl`` to fill its placeholders
+    from. Like the editor's preview it's open to anyone, and renders as
+    the caller, so wiki links to pages the caller can't see stay
+    unresolved.
+    """
+    try:
+        body = _json_body(request)
+        content = _text(body, "content", required=True, blank=True)
+        data_source = _data_source(body)
+    except BadRequest as e:
+        return _error(400, "invalid_request", str(e))
+    html = render_markdown(
+        content_with_data(
+            content,
+            data_source.get("data_source_url"),
+            data_source.get("data_source_ttl", 300),
+        ),
+        viewer=request.user,
+    )
+    return JsonResponse({"html": str(html)})
 
 
 @ratelimit_api
