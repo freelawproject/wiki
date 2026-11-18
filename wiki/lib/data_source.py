@@ -199,17 +199,24 @@ def substitute_data_variables(content, data):
     return content
 
 
-def page_content_with_data(page):
-    """``page.content`` with its ``[[ key ]]`` placeholders filled from the
-    page's data source, as readers see it.
+def content_with_data(content, url, ttl=300):
+    """*content* with its ``[[ key ]]`` placeholders filled from the data
+    source at *url*.
 
-    Without a data source the content comes back as stored. If the source
+    Without a data source the content comes back as given. If the source
     can't be fetched, or a key isn't in it, the placeholder stays as-is.
     """
-    if not page.data_source_url:
-        return page.content
-    data = fetch_page_data(page.data_source_url, page.data_source_ttl)
-    return substitute_data_variables(page.content, data)
+    if not url:
+        return content
+    return substitute_data_variables(content, fetch_page_data(url, ttl))
+
+
+def page_content_with_data(page):
+    """``page.content`` with its placeholders filled from the page's data
+    source, as readers see it."""
+    return content_with_data(
+        page.content, page.data_source_url, page.data_source_ttl
+    )
 
 
 def clear_cache():
