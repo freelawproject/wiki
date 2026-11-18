@@ -1902,10 +1902,11 @@ filled from (on an allowed domain, or `""` to remove it), and
 you can edit a page, reading it also returns these two fields.
 
 To see how source will look before saving it, send `POST preview/`
-with `content` and, optionally, `data_source_url` and
-`data_source_ttl`. It returns `{"html": ...}`, rendered as the page
-would be for you, and saves nothing. Anyone may preview, but filling
-placeholders from a data source takes a token that may edit.
+with `content` and, optionally, a `data_source_url`. It returns
+`{"html": ...}`, rendered as the page would be for you, and saves
+nothing. Anyone may preview, but filling placeholders from a data
+source takes a token that may edit. Previews fetch fresh data, cached
+for only 10 seconds.
 
 ### Paging through results
 

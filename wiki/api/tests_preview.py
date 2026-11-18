@@ -55,13 +55,13 @@ class TestPreview:
             {
                 "content": "Open: [[ stats.open ]]",
                 "data_source_url": url,
-                "data_source_ttl": 600,
             },
             token="o",
         )
         assert r.status_code == 200, r.json()
         assert "Open: 42" in r.json()["html"]
-        assert fetched == [(url, 600)]
+        # Cached only briefly, whatever the page's own cache time.
+        assert fetched == [(url, data_source.MIN_TTL)]
 
     @pytest.mark.parametrize("token, status", [(None, 401), ("stranger", 403)])
     def test_a_data_source_needs_an_account(
@@ -97,7 +97,6 @@ class TestPreview:
                 {"content": "x", "data_source_url": "https://evil.example/"},
                 "domain",
             ),
-            ({"content": "x", "data_source_ttl": 5}, "between 10 and 86400"),
         ],
     )
     def test_bad_requests(self, client, db, settings, body, detail):
