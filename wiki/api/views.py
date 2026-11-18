@@ -134,6 +134,11 @@ def page_search(request):
 @require_http_methods(["GET", "PATCH"])
 @bearer_auth
 def page_detail(request, path):
+    # A write is refused for want of a usable token before the page is
+    # looked up, so the caller gets the 401 or 403 challenge rather than a
+    # 404 for a page it can't see yet. It doesn't depend on the page.
+    if request.method == "PATCH" and (denied := _write_denied(request)):
+        return denied
     page = page_at_path(path.strip("/"))
     if page is None or not can_view_page(request.user, page):
         return _error(404, "not_found")
@@ -213,6 +218,13 @@ def _text(body, field, *, required=False, max_length=None, blank=False):
         raise BadRequest(f"`{field}` must be a string.")
     if field != "content":
         value = value.strip()
+    # Postgres can't store a NUL, and a lone surrogate isn't valid UTF-8.
+    if "\x00" in value:
+        raise BadRequest(f"`{field}` can't contain NUL characters.")
+    try:
+        value.encode("utf-8")
+    except UnicodeEncodeError as e:
+        raise BadRequest(f"`{field}` isn't valid Unicode.") from e
     if not value and not blank:
         raise BadRequest(f"`{field}` can't be empty.")
     if max_length and len(value) > max_length:
@@ -222,9 +234,8 @@ def _text(body, field, *, required=False, max_length=None, blank=False):
 
 def _update_page(request, page):
     """Apply a PATCH: a new title and/or the page's whole new source, based
-    on ``base_revision`` and described by ``change_message``."""
-    if denied := _write_denied(request):
-        return denied
+    on ``base_revision`` and described by ``change_message``.
+    ``page_detail`` has already checked the token with ``_write_denied``."""
     if not can_edit_page(request.user, page):
         return _error(403, "forbidden", "You can't edit this page.")
     try:
@@ -252,12 +263,17 @@ def _update_page(request, page):
     except BadRequest as e:
         return _error(400, "invalid_request", str(e))
 
-    lock = get_active_lock_for_page(page, exclude_user=request.user)
+    # Any open editor blocks an API edit, the caller's own included: the
+    # editor's form would otherwise save over this edit when it's submitted.
+    lock = get_active_lock_for_page(page)
     if lock:
         return _error(
             409,
             "locked",
-            "Someone is editing this page in the wiki; try again later.",
+            "You have this page open in the wiki's editor; close it and try "
+            "again."
+            if lock.user_id == request.user.pk
+            else "Someone is editing this page in the wiki; try again later.",
             locked_by=display_name(lock.user),
             locked_until=lock.expires_at,
         )

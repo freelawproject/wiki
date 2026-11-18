@@ -1,7 +1,8 @@
 """Tests for writing through the JSON API."""
 
 import pytest
-from django.test import Client
+from django.core.cache import cache
+from django.test import Client, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
@@ -141,6 +142,25 @@ class TestEdit:
         assert r.status_code == 409
         assert (r.json()["error"], r.json()["locked_by"]) == ("locked", "Bob")
 
+    def test_your_own_open_editor_blocks_an_edit(
+        self, client, page, writer, user
+    ):
+        # Saving the editor's form afterwards would overwrite the API edit.
+        EditLock.objects.create(
+            page=page,
+            user=user,
+            expires_at=timezone.now() + EditLock.LOCK_DURATION,
+        )
+        r = patch(
+            client,
+            page,
+            {"base_revision": 1, "change_message": "x", "content": "Mine."},
+        )
+        assert (r.status_code, r.json()["error"]) == (409, "locked")
+        assert "You have this page open" in r.json()["detail"]
+        page.refresh_from_db()
+        assert page.content != "Mine."
+
     @pytest.mark.parametrize(
         "body, detail",
         [
@@ -163,6 +183,15 @@ class TestEdit:
         assert r.status_code == 400
         assert r.json()["error"] == "invalid_request"
         assert detail in r.json()["detail"]
+
+    @pytest.mark.parametrize("text", ["a\x00b", "a\ud800b"])
+    @pytest.mark.parametrize("field", ["content", "title", "change_message"])
+    def test_text_postgres_cannot_store_is_a_bad_request(
+        self, client, page, writer, field, text
+    ):
+        body = {"base_revision": 1, "change_message": "x", "content": "y"}
+        r = patch(client, page, {**body, field: text})
+        assert (r.status_code, r.json()["error"]) == (400, "invalid_request")
 
     def test_a_session_alone_cannot_write(self, client, page, user):
         client.force_login(user)
@@ -199,6 +228,22 @@ class TestEdit:
         )
         assert r["WWW-Authenticate"] == (
             'Bearer error="insufficient_scope", scope="openid wiki email"'
+        )
+
+    def test_a_page_you_cannot_see_yet_still_gets_the_challenge(
+        self, client, private_page, tokens
+    ):
+        # The token is checked before the page is looked up, so a client
+        # gets the challenge it can act on rather than a 404.
+        body = {"base_revision": 1, "change_message": "x", "content": "y"}
+        r = patch(client, private_page, body, token=None)
+        assert r.status_code == 401
+        assert r["WWW-Authenticate"] == 'Bearer scope="openid wiki email"'
+        tokens["s"] = auth.MISSING_SCOPES
+        r = patch(client, private_page, body, token="s")
+        assert (r.status_code, r.json()["error"]) == (
+            403,
+            "insufficient_scope",
         )
 
 
@@ -251,3 +296,44 @@ class TestCreate:
         r = create(client, body, token="b")
         assert r.status_code == 403
         assert not Page.objects.filter(slug="t").exists()
+
+
+class TestWriteRateLimits:
+    @pytest.fixture(autouse=True)
+    def _clear_cache(self, db):
+        cache.clear()
+        yield
+        cache.clear()
+
+    @staticmethod
+    def _create(client, n, token="w"):
+        return create(
+            client,
+            {
+                "directory": "engineering",
+                "title": f"Page {n}",
+                "content": "",
+                "change_message": "x",
+            },
+            token=token,
+        )
+
+    @override_settings(RATELIMIT_ENABLE=True)
+    def test_api_writes_skip_the_sitewide_cap(
+        self, client, sub_directory, writer
+    ):
+        # Every MCP user writes from the MCP server's address, so the
+        # sitewide per-address cap (10 a minute) mustn't apply.
+        for n in range(15):
+            assert self._create(client, n).status_code == 201
+
+    @override_settings(RATELIMIT_ENABLE=True)
+    def test_an_accounts_tokens_share_one_budget(
+        self, client, sub_directory, writer, tokens, owner_user
+    ):
+        tokens["w2"] = owner_user.email
+        for n in range(30):
+            token = "w" if n % 2 else "w2"
+            assert self._create(client, n, token).status_code == 201
+        r = self._create(client, 30, "w2")
+        assert (r.status_code, r.json()["error"]) == (429, "ratelimited")

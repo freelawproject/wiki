@@ -1884,9 +1884,9 @@ To edit a page, read it with `?raw=true`, change the source, and send
 
 If someone saved the page after the revision you read, the edit is
 refused with a 409 `{"error": "conflict"}` that carries the current
-`revision`: read the page again and redo your change. If someone has
-the page open in the wiki's editor, it's a 409 `{"error": "locked"}`
-naming who and until when.
+`revision`: read the page again and redo your change. If anyone, you
+included, has the page open in the wiki's editor, it's a 409
+`{"error": "locked"}` naming who and until when.
 
 To create a page, send `POST pages/` with `directory` (the path of an
 existing directory you can edit), `title`, `content` and
