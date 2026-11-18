@@ -58,7 +58,9 @@ class TestBearerAuth:
     def test_bad_token_is_401(self, db, identify):
         r = call("x")
         assert r.status_code == 401
-        assert r["WWW-Authenticate"] == "Bearer"
+        assert r["WWW-Authenticate"] == (
+            'Bearer error="invalid_token", scope="openid wiki email"'
+        )
 
     def test_live_token_naming_no_one_is_anonymous(self, db, identify):
         identify["t"] = ""
@@ -138,12 +140,19 @@ class TestBearerAuth:
         (
             {"active": True, "scope": "openid api", "exp": 4_000_000_000},
             None,
-            "",
+            auth.MISSING_SCOPES,
         ),
+        # Userinfo refused: no openid scope.
         (
             {"active": True, "scope": "wiki", "exp": 4_000_000_000},
             403,
-            "",
+            auth.MISSING_SCOPES,
+        ),
+        # No email claim: no email scope.
+        (
+            {"active": True, "scope": "openid wiki", "exp": 4_000_000_000},
+            {"sub": "1"},
+            auth.MISSING_SCOPES,
         ),
         ({"active": False}, None, None),
     ],
@@ -193,7 +202,7 @@ def test_anonymous_tokens_are_remembered_until_they_expire(
         lambda **kw: real(transport=httpx.MockTransport(handler), **kw),
     )
     email, ttl = auth.verified_email_for("tok")
-    assert email == ""
+    assert email == auth.MISSING_SCOPES
     assert 40 <= ttl <= 42
 
 
@@ -262,8 +271,12 @@ def test_courtlistener_is_asked_once_per_token(settings, monkeypatch):
     assert auth.cached_verified_email_for("tok", request) == "a@free.law"
     assert auth.cached_verified_email_for("bad", request) is None
     assert auth.cached_verified_email_for("bad", request) is None
-    assert auth.cached_verified_email_for("api", request) == ""
-    assert auth.cached_verified_email_for("api", request) == ""
+    assert auth.cached_verified_email_for("api", request) == (
+        auth.MISSING_SCOPES
+    )
+    assert auth.cached_verified_email_for("api", request) == (
+        auth.MISSING_SCOPES
+    )
     assert calls == [
         "/o/introspect/",
         "/o/userinfo/",

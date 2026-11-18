@@ -91,6 +91,24 @@ def ratelimit_token_check(request: HttpRequest) -> bool:
     )
 
 
+def ratelimit_api_write(request: HttpRequest) -> bool:
+    """Count a write through the JSON API against its account, and say
+    whether the account has written too much.
+
+    Every write is a page save with a revision and notifications, so writes
+    get a tighter limit than the API's reads. They're counted per account
+    rather than per token, so one account's several tokens share a budget,
+    as the web editor's creates and moves do.
+    """
+    return is_ratelimited(
+        request,
+        group="api-write",
+        key=get_user_or_ident,
+        rate="30/m",
+        increment=True,
+    )
+
+
 ratelimit_login = ratelimit(
     key=get_ratelimit_ident, rate="5/m", method=["POST"], block=True
 )

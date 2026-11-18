@@ -54,8 +54,13 @@ _WRITE_METHODS = ("POST", "PUT", "PATCH", "DELETE")
 # Fire-and-forget endpoints that JS calls on page loads or while editing.
 # They have their own, higher limits, so a person reading or editing can't
 # trip the global write cap by simply using the site.
+#
+# The JSON API is exempt too: its writes authenticate by bearer token, which
+# this middleware runs too early to see, so every MCP user would share the
+# MCP server's address. The API limits its own calls per token and its
+# writes per account (``ratelimit_api``, ``ratelimit_api_write``).
 _GLOBAL_LIMIT_EXEMPT_URL_NAMES = frozenset(
-    {"page_preview", "record_page_view"}
+    {"page_preview", "record_page_view", "api_page_list", "api_page_detail"}
 )
 
 

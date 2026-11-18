@@ -35,6 +35,11 @@ from wiki.lib.edit_lock import (
 )
 from wiki.lib.inheritance import resolve_effective_value
 from wiki.lib.markdown import render_markdown
+from wiki.lib.page_saves import (
+    link_uploads_to_page,
+    save_new_page,
+    save_page_edit,
+)
 from wiki.lib.page_utils import (
     get_page_from_path,
     moved_target,
@@ -68,8 +73,7 @@ from wiki.lib.seo import (
 from wiki.lib.storage import get_s3_client
 from wiki.lib.users import user_by_handle
 from wiki.proposals.models import ChangeProposal
-from wiki.subscriptions.models import PageSubscription
-from wiki.subscriptions.tasks import notify_subscribers, process_mentions
+from wiki.subscriptions.tasks import notify_subscribers
 from wiki.subscriptions.utils import (
     get_effective_watchers_for_page,
     is_effectively_subscribed_to_page,
@@ -92,40 +96,6 @@ from .ocr import (
 )
 
 logger = logging.getLogger(__name__)
-
-FILE_REF_RE = re.compile(r"/files/(\d+)/")
-
-
-def _link_uploads_to_page(page, user):
-    """Link FileUpload records referenced in page content to this page.
-
-    Parses /files/<id>/ references from the page's markdown content and
-    sets FileUpload.page for any unlinked uploads that the editing user
-    owns.  Also unlinks uploads previously attached to this page that are
-    no longer referenced by the current content *or* any past revision
-    (so that revisions remain restorable).
-
-    Security: only orphaned uploads belonging to ``user`` are linked,
-    preventing a user from claiming another user's upload by guessing
-    its ID and embedding it in their page.
-    """
-    referenced_ids = set(int(m) for m in FILE_REF_RE.findall(page.content))
-
-    if referenced_ids:
-        FileUpload.objects.filter(
-            id__in=referenced_ids, page__isnull=True, uploaded_by=user
-        ).update(page=page)
-
-    # Collect file IDs referenced by any revision of this page.
-    revision_ids = set()
-    for content in page.revisions.values_list("content", flat=True):
-        revision_ids.update(int(m) for m in FILE_REF_RE.findall(content))
-
-    # Only unlink uploads not referenced by current content OR any
-    # past revision, so that older revisions can still be restored.
-    keep_ids = referenced_ids | revision_ids
-    stale = FileUpload.objects.filter(page=page).exclude(id__in=keep_ids)
-    stale.update(page=None)
 
 
 def _build_dir_segments(directory):
@@ -191,15 +161,6 @@ def _build_dir_segments_from_post(post_data):
     return segments
 
 
-# Matches @username (word chars only, not followed by @)
-_MENTION_RE = re.compile(r"@([a-zA-Z][a-zA-Z0-9._-]*)")
-
-
-def _extract_mentions(text):
-    """Extract @mention usernames from text."""
-    return list(set(_MENTION_RE.findall(text or "")))
-
-
 def _collect_grant_access(post_data):
     """Collect per-user access grants from POST data.
 
@@ -215,20 +176,6 @@ def _collect_grant_access(post_data):
             if level in ("view", "edit"):
                 grants[username] = level
     return grants
-
-
-def _process_mentions_and_grants(page, request):
-    """Extract @mentions from page content/change_message and process grants."""
-    mentioned = _extract_mentions(page.content)
-    mentioned += _extract_mentions(page.change_message)
-    grant_access = _collect_grant_access(request.POST)
-    if mentioned:
-        process_mentions(
-            page.id,
-            request.user.id,
-            mentioned,
-            grant_access_to=grant_access,
-        )
 
 
 def _resolve_or_create_directory(dir_path, user, title_overrides=None):
@@ -590,25 +537,10 @@ def page_create(request, path=""):
         else:
             page.directory = directory
 
-        page.owner = request.user
-        page.created_by = request.user
-        page.updated_by = request.user
-        with transaction.atomic():
-            page.save()
-            _link_uploads_to_page(page, request.user)
-            page.create_revision(
-                request.user, page.change_message or "Initial creation"
-            )
-            PageSubscription.objects.get_or_create(
-                user=request.user, page=page
-            )
-
-        _process_mentions_and_grants(page, request)
-        notify_subscribers(
-            page.id,
-            request.user.id,
-            page.change_message,
-            action="created",
+        save_new_page(
+            page,
+            request.user,
+            grant_access=_collect_grant_access(request.POST),
         )
 
         messages.success(request, f'Page "{page.title}" created.')
@@ -699,7 +631,6 @@ def page_edit(request, path):
         form.initial["change_message"] = ""
     if request.method == "POST" and form.is_valid():
         page = form.save(commit=False)
-        page.updated_by = request.user
 
         # Handle directory change from the location picker. Reparenting can
         # change an inherit-visibility page's effective visibility, so it's an
@@ -715,26 +646,13 @@ def page_edit(request, path):
             else:
                 page.directory = None
 
-        with transaction.atomic():
-            page.save()
-            _link_uploads_to_page(page, request.user)
-            record_page_move(page, old_directory, old_slug)
-            rev = page.create_revision(request.user)
-            PageSubscription.objects.get_or_create(
-                user=request.user, page=page
-            )
-
-        notify_subscribers(
-            page.id,
-            request.user.id,
-            page.change_message,
-            prev_rev=rev.revision_number - 1
-            if rev.revision_number > 1
-            else None,
-            new_rev=rev.revision_number,
+        save_page_edit(
+            page,
+            request.user,
+            old_directory=old_directory,
+            old_slug=old_slug,
+            grant_access=_collect_grant_access(request.POST),
         )
-        _process_mentions_and_grants(page, request)
-
         release_lock_for_page(page)
         messages.success(request, f'Page "{page.title}" updated.')
         return redirect(page.get_absolute_url())
@@ -1334,7 +1252,7 @@ def page_revert(request, path, rev_num):
             page.save()
             # Reverting the title regenerates the slug, which moves the page.
             record_page_move(page, page.directory, old_slug)
-            _link_uploads_to_page(page, request.user)
+            link_uploads_to_page(page, request.user)
             rev = page.create_revision(request.user)
 
         notify_subscribers(

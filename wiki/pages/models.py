@@ -160,6 +160,20 @@ class Page(models.Model):
     def __str__(self):
         return self.title
 
+    @staticmethod
+    def normalize_content(content):
+        """``content`` in the form it's stored in.
+
+        Pasted page URLs become #dir/slug wiki links before they're stored,
+        so the link graph, redirects, and collision rewrites all see one
+        canonical form. Tabs become spaces so no editor or import path can
+        put them back into stored content.
+        """
+        # Inline import to avoid circular dependency (pages/models ↔ lib/markdown)
+        from wiki.lib.markdown import internal_urls_to_wiki_links
+
+        return expand_tabs(internal_urls_to_wiki_links(content))
+
     def save(self, *args, **kwargs):
         """Persist the page, auto-generate/rescope the slug, and fan out
         bookkeeping (search vector, link graph, collision rewrites).
@@ -188,16 +202,7 @@ class Page(models.Model):
 
         update_fields = kwargs.get("update_fields")
         if update_fields is None or "content" in update_fields:
-            # Inline import to avoid circular dependency (pages/models ↔ lib/markdown)
-            from wiki.lib.markdown import internal_urls_to_wiki_links
-
-            # Pasted page URLs become #dir/slug wiki links before they're
-            # stored, so the link graph, redirects, and collision rewrites
-            # all see one canonical form. Tabs become spaces so no editor
-            # or import path can put them back into stored content.
-            self.content = expand_tabs(
-                internal_urls_to_wiki_links(self.content)
-            )
+            self.content = self.normalize_content(self.content)
 
         if needs_slug:
             new_slug = slugify(self.title)
