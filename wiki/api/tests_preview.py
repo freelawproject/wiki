@@ -20,7 +20,14 @@ def tokens(monkeypatch):
     return known
 
 
-def preview(client, body, token=None):
+@pytest.fixture
+def member(tokens, user):
+    """A token for a wiki account."""
+    tokens["m"] = user.email
+    return "m"
+
+
+def preview(client, body, token="m"):
     headers = {"Authorization": f"Bearer {token}"} if token else {}
     return client.post(
         reverse("api_preview"),
@@ -31,63 +38,61 @@ def preview(client, body, token=None):
 
 
 class TestPreview:
-    def test_renders_markdown_without_saving(self, client, db):
+    def test_renders_markdown_without_saving(self, client, member):
         r = preview(client, {"content": "# Hello\n\nSome **bold** text."})
-        assert r.status_code == 200
+        assert r.status_code == 200, r.json()
         assert '<h1 id="hello">Hello</h1>' in r.json()["html"]
         assert "<strong>bold</strong>" in r.json()["html"]
 
-    def test_fills_placeholders_from_the_data_source(
-        self, client, db, settings, monkeypatch, tokens, user
+    def test_fills_placeholders_from_a_fresh_fetch(
+        self, client, member, settings, monkeypatch
     ):
         settings.DATA_SOURCE_ALLOWED_DOMAINS = ["www.courtlistener.com"]
-        tokens["o"] = user.email
         fetched = []
 
-        def fetch(url, ttl):
-            fetched.append((url, ttl))
+        def fetch(url):
+            fetched.append(url)
             return {"stats": {"open": 42}}
 
-        monkeypatch.setattr(data_source, "fetch_page_data", fetch)
-        url = "https://www.courtlistener.com/api/rest/v4/wiki-data/"
-        r = preview(
-            client,
-            {
-                "content": "Open: [[ stats.open ]]",
-                "data_source_url": url,
-            },
-            token="o",
+        monkeypatch.setattr(data_source, "fetch_data", fetch)
+        monkeypatch.setattr(
+            data_source,
+            "fetch_page_data",
+            lambda url, ttl: pytest.fail("previews skip the cache"),
         )
+        url = "https://www.courtlistener.com/api/rest/v4/wiki-data/"
+        body = {"content": "Open: [[ stats.open ]]", "data_source_url": url}
+        r = preview(client, body)
         assert r.status_code == 200, r.json()
         assert "Open: 42" in r.json()["html"]
-        # Cached only briefly, whatever the page's own cache time.
-        assert fetched == [(url, data_source.MIN_TTL)]
+        assert fetched == [url]
+
+    def test_renders_as_the_caller(
+        self, client, owner_user, private_page, member, tokens, other_user
+    ):
+        # A link to a page only its owner can see resolves for the owner.
+        # (Naming a system owner stops every account being treated as one.)
+        tokens["x"] = other_user.email
+        body = {"content": "[notes](#secret-notes)"}
+        link = 'href="/c/secret-notes"'
+        assert link in preview(client, body).json()["html"]
+        assert link not in preview(client, body, token="x").json()["html"]
 
     @pytest.mark.parametrize("token, status", [(None, 401), ("stranger", 403)])
-    def test_a_data_source_needs_an_account(
+    def test_needs_a_wiki_account(
         self, client, db, settings, monkeypatch, tokens, token, status
     ):
-        # Filling placeholders fetches the URL, so anonymous callers, who
-        # can't set a data source on a page, can't have one fetched either.
+        # Not even a data source is fetched for a caller who couldn't sign
+        # in to the wiki.
         settings.DATA_SOURCE_ALLOWED_DOMAINS = []
         tokens["stranger"] = "stranger@nowhere.example"
         fetched = []
         monkeypatch.setattr(
-            data_source,
-            "fetch_page_data",
-            lambda url, ttl: fetched.append(url) or {},
+            data_source, "fetch_data", lambda url: fetched.append(url) or {}
         )
         body = {"content": "x", "data_source_url": "http://127.0.0.1:8000/"}
         assert preview(client, body, token=token).status_code == status
         assert fetched == []
-
-    def test_renders_as_the_caller(self, client, private_page, tokens, user):
-        # A link to a page only its owner can see resolves for the owner.
-        tokens["o"] = user.email
-        body = {"content": "[notes](#secret-notes)"}
-        link = 'href="/c/secret-notes"'
-        assert link not in preview(client, body).json()["html"]
-        assert link in preview(client, body, token="o").json()["html"]
 
     @pytest.mark.parametrize(
         "body, detail",
@@ -99,7 +104,7 @@ class TestPreview:
             ),
         ],
     )
-    def test_bad_requests(self, client, db, settings, body, detail):
+    def test_bad_requests(self, client, member, settings, body, detail):
         settings.DATA_SOURCE_ALLOWED_DOMAINS = ["www.courtlistener.com"]
         r = preview(client, body)
         assert (r.status_code, r.json()["error"]) == (400, "invalid_request")

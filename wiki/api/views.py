@@ -29,7 +29,6 @@ from django.views.decorators.http import require_GET, require_http_methods
 from wiki.api.auth import WIKI_SCOPES, bearer_auth, bearer_challenge
 from wiki.directories.models import Directory
 from wiki.lib.data_source import (
-    MIN_TTL,
     content_with_data,
     page_content_with_data,
     validate_data_source_ttl,
@@ -134,24 +133,22 @@ def preview(request):
     anything: the API's counterpart of the editor's Preview tab.
 
     The JSON body has the Markdown ``content`` and, optionally, the
-    ``data_source_url`` to fill its placeholders from. Its response is
-    cached for only the shortest time a page's may be, so a preview shows
-    current data. Like the editor's preview it's open to anyone, and renders as
-    the caller, so wiki links to pages the caller can't see stay
-    unresolved. Filling placeholders makes the server fetch the given URL,
-    so a data source needs what setting one on a page needs: an account
-    that may write, held to the write rate limit.
+    ``data_source_url`` to fill its placeholders from, fetched fresh rather
+    than through the pages' cache. It needs what writing needs, a token
+    whose account may sign in to the wiki, held to the write rate limit,
+    since a data source makes the server fetch a URL. It renders as the
+    caller, so wiki links to pages the caller can't see stay unresolved.
     """
+    if denied := _write_denied(request):
+        return denied
     try:
         body = _json_body(request)
         content = _text(body, "content", required=True, blank=True)
         url = _data_source_url(body)
     except BadRequest as e:
         return _error(400, "invalid_request", str(e))
-    if url and (denied := _write_denied(request)):
-        return denied
     html = render_markdown(
-        content_with_data(content, url, MIN_TTL), viewer=request.user
+        content_with_data(content, url, cached=False), viewer=request.user
     )
     return JsonResponse({"html": str(html)})
 

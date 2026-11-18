@@ -130,6 +130,19 @@ def fetch_page_data(url, ttl=300):
     return data
 
 
+def fetch_data(url):
+    """JSON from *url*, fetched now without touching the cache; ``{}`` if
+    its domain isn't allowed or the fetch fails."""
+    if not is_domain_allowed(url):
+        logger.warning("Data source domain not in allowlist: %s", url)
+        return {}
+    try:
+        return _do_fetch(url)
+    except Exception:
+        logger.warning("Data source fetch failed for %s", url, exc_info=True)
+        return {}
+
+
 def _do_fetch(url):
     """GET *url* and return parsed JSON. Raises on any failure."""
     req = Request(url, headers={"Accept": "application/json"})
@@ -199,16 +212,18 @@ def substitute_data_variables(content, data):
     return content
 
 
-def content_with_data(content, url, ttl=300):
+def content_with_data(content, url, ttl=300, *, cached=True):
     """*content* with its ``[[ key ]]`` placeholders filled from the data
-    source at *url*.
+    source at *url*, through the cache for *ttl* seconds, or fetched fresh
+    if not *cached*.
 
     Without a data source the content comes back as given. If the source
     can't be fetched, or a key isn't in it, the placeholder stays as-is.
     """
     if not url:
         return content
-    return substitute_data_variables(content, fetch_page_data(url, ttl))
+    data = fetch_page_data(url, ttl) if cached else fetch_data(url)
+    return substitute_data_variables(content, data)
 
 
 def page_content_with_data(page):
