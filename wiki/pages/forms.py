@@ -2,7 +2,7 @@ from django import forms
 from django.contrib.auth.models import Group
 
 from wiki.directories.models import Directory
-from wiki.lib.data_source import is_domain_allowed
+from wiki.lib.data_source import validate_data_source_url
 from wiki.lib.inheritance import resolve_effective_value
 from wiki.lib.permissions import filter_administerable_directories
 from wiki.users.models import AllowedDomain
@@ -203,10 +203,8 @@ class PageForm(forms.ModelForm):
 
     def clean_data_source_url(self):
         url = self.cleaned_data.get("data_source_url", "")
-        if url and not is_domain_allowed(url):
-            raise forms.ValidationError(
-                "This domain is not in the allowed data source list."
-            )
+        if url:
+            validate_data_source_url(url)
         return url
 
     def clean_data_source_ttl(self):

@@ -18,6 +18,8 @@ from urllib.request import Request, urlopen
 
 from django.conf import settings
 from django.contrib.humanize.templatetags.humanize import intcomma
+from django.core.exceptions import ValidationError
+from django.core.validators import URLValidator
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +50,17 @@ def is_domain_allowed(url):
         return True
     hostname = urlparse(url).hostname or ""
     return hostname in allowed
+
+
+def validate_data_source_url(url):
+    """Raise ``ValidationError`` unless *url* can be a page's data source:
+    a valid URL on an allowed domain. The web editor and the JSON API both
+    check a data source with this."""
+    URLValidator()(url)
+    if not is_domain_allowed(url):
+        raise ValidationError(
+            "This domain is not in the allowed data source list."
+        )
 
 
 def fetch_page_data(url, ttl=300):
