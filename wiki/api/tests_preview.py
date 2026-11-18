@@ -38,9 +38,10 @@ class TestPreview:
         assert "<strong>bold</strong>" in r.json()["html"]
 
     def test_fills_placeholders_from_the_data_source(
-        self, client, db, settings, monkeypatch
+        self, client, db, settings, monkeypatch, tokens, user
     ):
         settings.DATA_SOURCE_ALLOWED_DOMAINS = ["www.courtlistener.com"]
+        tokens["o"] = user.email
         fetched = []
 
         def fetch(url, ttl):
@@ -56,10 +57,29 @@ class TestPreview:
                 "data_source_url": url,
                 "data_source_ttl": 600,
             },
+            token="o",
         )
         assert r.status_code == 200, r.json()
         assert "Open: 42" in r.json()["html"]
         assert fetched == [(url, 600)]
+
+    @pytest.mark.parametrize("token, status", [(None, 401), ("stranger", 403)])
+    def test_a_data_source_needs_an_account(
+        self, client, db, settings, monkeypatch, tokens, token, status
+    ):
+        # Filling placeholders fetches the URL, so anonymous callers, who
+        # can't set a data source on a page, can't have one fetched either.
+        settings.DATA_SOURCE_ALLOWED_DOMAINS = []
+        tokens["stranger"] = "stranger@nowhere.example"
+        fetched = []
+        monkeypatch.setattr(
+            data_source,
+            "fetch_page_data",
+            lambda url, ttl: fetched.append(url) or {},
+        )
+        body = {"content": "x", "data_source_url": "http://127.0.0.1:8000/"}
+        assert preview(client, body, token=token).status_code == status
+        assert fetched == []
 
     def test_renders_as_the_caller(self, client, private_page, tokens, user):
         # A link to a page only its owner can see resolves for the owner.

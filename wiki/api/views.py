@@ -136,7 +136,9 @@ def preview(request):
     ``data_source_url`` and ``data_source_ttl`` to fill its placeholders
     from. Like the editor's preview it's open to anyone, and renders as
     the caller, so wiki links to pages the caller can't see stay
-    unresolved.
+    unresolved. Filling placeholders makes the server fetch the given URL,
+    so a data source needs what setting one on a page needs: an account
+    that may write, held to the write rate limit.
     """
     try:
         body = _json_body(request)
@@ -144,6 +146,10 @@ def preview(request):
         data_source = _data_source(body)
     except BadRequest as e:
         return _error(400, "invalid_request", str(e))
+    if data_source.get("data_source_url") and (
+        denied := _write_denied(request)
+    ):
+        return denied
     html = render_markdown(
         content_with_data(
             content,

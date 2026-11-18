@@ -550,7 +550,8 @@ open in the editor is a 409) and `POST pages/` creates one in an existing
 directory the caller can edit. Writes need a bearer token whose account may
 edit the target, and share their save logic with the web editor
 (`wiki/lib/page_saves.py`). `POST preview/` renders Markdown `content` (with
-an optional data source) to HTML as the caller would see it, saving nothing.
+an optional data source, which needs a token that may write) to HTML as the
+caller would see it, saving nothing.
 A CourtListener OAuth access token sent as `Authorization: Bearer` is
 introspected at CourtListener with the wiki's own confidential client (set
 `COURTLISTENER_URL`, `COURTLISTENER_CLIENT_ID` and `COURTLISTENER_CLIENT_SECRET`)
