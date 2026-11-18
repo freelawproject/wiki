@@ -31,6 +31,7 @@ from wiki.lib.data_source import page_content_with_data
 from wiki.lib.edit_lock import (
     acquire_lock_for_page,
     get_active_lock_for_page,
+    release_lock_for_page,
 )
 from wiki.lib.inheritance import resolve_effective_value
 from wiki.lib.markdown import render_markdown
@@ -652,6 +653,7 @@ def page_edit(request, path):
             old_slug=old_slug,
             grant_access=_collect_grant_access(request.POST),
         )
+        release_lock_for_page(page)
         messages.success(request, f'Page "{page.title}" updated.')
         return redirect(page.get_absolute_url())
 

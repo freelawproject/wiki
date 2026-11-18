@@ -590,7 +590,7 @@ Test files live alongside the code they test (`wiki/pages/tests.py`,
 | `subscriptions` | 119 | Page and directory subscriptions, effective watchers, notifications for every action, unsubscribe flows |
 | `users` | 103 | Login form, magic link flow, logout, settings, profiles, access allowlist, domain grants, archiving, admin management |
 | `proposals` | 45 | Feedback page, proposal review, accept and deny, rate limits |
-| `api` | 54 | JSON API: listing, search, page detail, bearer-token auth, editing and creating pages |
+| `api` | 57 | JSON API: listing, search, page detail, bearer-token auth, editing and creating pages |
 | `comments` | 28 | Submitting, replying, resolving, review queue, badges |
 | `groups` | 19 | Group list, create, detail, edit, delete |
 | browser (`tests_browser.py`) | 38 | Playwright tests for JS behaviour: location picker, editor keys, content tabs, autocomplete, bulk moves |

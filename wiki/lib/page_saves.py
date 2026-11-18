@@ -10,7 +10,6 @@ import re
 
 from django.db import transaction
 
-from wiki.lib.edit_lock import release_lock_for_page
 from wiki.lib.page_utils import record_page_move
 from wiki.pages.models import FileUpload, Page
 from wiki.subscriptions.models import PageSubscription
@@ -121,7 +120,7 @@ def save_page_edit(
     edit, so a URL the edit changed leaves a redirect behind. With
     ``base_revision``, the save is refused with ``EditConflict`` (and nothing
     is written) if the page has moved past that revision in the meantime.
-    Releases any edit lock on the page. Returns the new revision.
+    Returns the new revision.
     """
     page.updated_by = user
     with transaction.atomic():
@@ -146,5 +145,4 @@ def save_page_edit(
         new_rev=rev.revision_number,
     )
     _process_mentions(page, user, grant_access)
-    release_lock_for_page(page)
     return rev

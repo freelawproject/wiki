@@ -6,8 +6,9 @@ from django.test import Client, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
-from wiki.api import auth
+from wiki.api import auth, views
 from wiki.lib.models import EditLock
+from wiki.lib.page_saves import current_revision_number
 from wiki.pages.models import Page, PageRevision, SlugRedirect
 
 
@@ -65,6 +66,25 @@ class TestDetail:
             detail_url(page), headers={"Authorization": "Bearer w"}
         ).json()
         assert (mine["revision"], mine["can_edit"]) == (1, True)
+
+
+class TestDetailRevision:
+    def test_content_is_never_older_than_its_revision(
+        self, client, page, monkeypatch
+    ):
+        # An edit that commits between reading the revision number and the
+        # content shows up in the content, so an edit based on that content
+        # is refused as a conflict rather than overwriting it.
+        def then_someone_edits(p):
+            number = current_revision_number(p)
+            Page.objects.filter(pk=p.pk).update(content="Newer.")
+            return number
+
+        monkeypatch.setattr(
+            views, "current_revision_number", then_someone_edits
+        )
+        body = client.get(detail_url(page) + "?raw=true").json()
+        assert (body["revision"], body["content"]) == (1, "Newer.")
 
 
 class TestEdit:
@@ -141,6 +161,39 @@ class TestEdit:
         )
         assert r.status_code == 409
         assert (r.json()["error"], r.json()["locked_by"]) == ("locked", "Bob")
+
+    def test_an_api_edit_leaves_editor_locks_alone(
+        self, client, page, writer, other_user, monkeypatch
+    ):
+        # A lock taken after the API's check (simulated by skipping the
+        # check) belongs to an open editor, which the API mustn't release.
+        EditLock.objects.create(
+            page=page,
+            user=other_user,
+            expires_at=timezone.now() + EditLock.LOCK_DURATION,
+        )
+        monkeypatch.setattr(
+            views, "get_active_lock_for_page", lambda page: None
+        )
+        r = patch(
+            client,
+            page,
+            {"base_revision": 1, "change_message": "x", "content": "Mine."},
+        )
+        assert r.status_code == 200
+        assert EditLock.objects.filter(page=page).exists()
+
+    def test_content_that_saves_unchanged_is_no_change(
+        self, client, page, writer
+    ):
+        Page.objects.filter(pk=page.pk).update(content="    Hello")
+        r = patch(
+            client,
+            page,
+            {"base_revision": 1, "change_message": "x", "content": "\tHello"},
+        )
+        assert (r.status_code, r.json()["error"]) == (400, "invalid_request")
+        assert page.revisions.count() == 1
 
     def test_your_own_open_editor_blocks_an_edit(
         self, client, page, writer, user

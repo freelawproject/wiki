@@ -62,15 +62,15 @@ def _summary(page):
     }
 
 
-def _detail(page, user, content=None, status=200):
+def _detail(page, user, revision, content=None, status=200):
     """A page with its content (the stored source unless ``content`` is
-    given), its latest revision number (the ``base_revision`` an edit must
-    name) and whether ``user`` may edit it."""
+    given), the number of the revision that content is from (the
+    ``base_revision`` an edit must name) and whether ``user`` may edit it."""
     return JsonResponse(
         {
             **_summary(page),
             "content": page.content if content is None else content,
-            "revision": current_revision_number(page),
+            "revision": revision,
             "can_edit": can_edit_page(user, page),
         },
         status=status,
@@ -144,6 +144,11 @@ def page_detail(request, path):
         return _error(404, "not_found")
     if request.method == "PATCH":
         return _update_page(request, page)
+    # Read the revision number before the content, so the content is never
+    # older than the revision it's reported as: an edit made from it can at
+    # worst be refused as a conflict, never overwrite a newer edit.
+    revision = current_revision_number(page)
+    page.refresh_from_db()
     if request.GET.get("raw", "").lower() in ("1", "true"):
         content = page.content
     else:
@@ -154,7 +159,7 @@ def page_detail(request, path):
             viewer=request.user,
             mark_missing=False,
         )
-    return _detail(page, request.user, content=content)
+    return _detail(page, request.user, revision, content=content)
 
 
 class BadRequest(Exception):
@@ -255,7 +260,11 @@ def _update_page(request, page):
         content = _text(body, "content", blank=True)
         if title is None and content is None:
             raise BadRequest("Nothing to change: send `title` or `content`.")
-        if title in (None, page.title) and content in (None, page.content):
+        # Compared in the stored form: a tab that saving would expand back
+        # to the same spaces is no change.
+        if title in (None, page.title) and (
+            content is None or Page.normalize_content(content) == page.content
+        ):
             raise BadRequest(
                 "Nothing to change: the page already has that title and "
                 "content."
@@ -285,7 +294,7 @@ def _update_page(request, page):
         page.content = content
     page.change_message = change_message
     try:
-        save_page_edit(
+        rev = save_page_edit(
             page,
             request.user,
             old_directory=old_directory,
@@ -299,7 +308,7 @@ def _update_page(request, page):
             "The page has changed since that revision; read it again.",
             revision=e.current_revision,
         )
-    return _detail(page, request.user)
+    return _detail(page, request.user, rev.revision_number)
 
 
 def _create_page(request):
@@ -341,5 +350,5 @@ def _create_page(request):
         in_sitemap=Page.SitemapStatus.INHERIT,
         in_llms_txt=Page.LlmsTxtStatus.INHERIT,
     )
-    save_new_page(page, request.user)
-    return _detail(page, request.user, status=201)
+    rev = save_new_page(page, request.user)
+    return _detail(page, request.user, rev.revision_number, status=201)

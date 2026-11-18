@@ -1927,7 +1927,8 @@ yourself.
 
 - Calls are limited to 60 a minute per token, or per address when
   there is no token. Over the limit you get a 429.
-- Edits and new pages are also limited to 30 a minute per token.
+- Edits and new pages are also limited to 30 a minute per account,
+  shared by all of its tokens.
 - Each token the wiki has not seen before costs CourtListener a round
   trip, so an address may introduce at most 30 new tokens a minute.
 - A token CourtListener rejects (expired or revoked) gets a 401 with
