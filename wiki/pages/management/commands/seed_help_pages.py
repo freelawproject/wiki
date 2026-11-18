@@ -1836,22 +1836,24 @@ If the variable is set to an empty string, all domains are allowed
         "title": "JSON API Guide",
         "slug": "api-guide",
         "content": """\
-## Reading the wiki from a program
+## Using the wiki from a program
 
-The wiki has a small read-only JSON API for machine clients such as
-the CourtListener MCP server, so an assistant can look things up here
-on your behalf. It serves the same pages you could open in a browser
-and nothing more: there is no way to write through it.
+The wiki has a small JSON API for machine clients such as the
+CourtListener MCP server, so an assistant can look things up here,
+and edit pages, on your behalf. It works with the same pages you
+could open or edit in a browser and nothing more.
 
 ### Endpoints
 
-All three live under `/api/v1/` and answer GET only.
+All of them live under `/api/v1/`.
 
-| Endpoint | Returns |
+| Endpoint | Does |
 |---|---|
-| `pages/` | Every page the caller can read: path, title, description, and when it was last updated |
-| `search/?q=` | The pages matching a search, each with a snippet; the query syntax is the one in #search-guide |
-| `pages/<path>` | One page, including its Markdown `content` |
+| `GET pages/` | Lists every page the caller can read: path, title, description, and when it was last updated |
+| `GET search/?q=` | Lists the pages matching a search, each with a snippet; the query syntax is the one in #search-guide |
+| `GET pages/<path>` | Returns one page, including its Markdown `content`, its `revision` and whether you `can_edit` it |
+| `PATCH pages/<path>` | Edits a page (see "Editing pages" below) |
+| `POST pages/` | Creates a page (see "Editing pages" below) |
 
 A page's path is the part of its URL after `/c/`, so the page at
 `/c/help/markdown-syntax` is `pages/help/markdown-syntax`.
@@ -1863,6 +1865,33 @@ placeholders are filled in and wiki links become ordinary `/c/...`
 links (a link to a page you can't see stays as written). Add
 `?raw=true` to get the page's stored source instead, exactly as the
 editor shows it.
+
+### Editing pages
+
+Editing needs a token (see "Who sees what" below) whose account may
+edit the page; being signed in to the wiki in a browser isn't
+enough. Both calls take a JSON body and return the saved page with
+its stored source as `content`.
+
+To edit a page, read it with `?raw=true`, change the source, and send
+`PATCH pages/<path>` with:
+
+- `base_revision`: the `revision` you read
+- `change_message`: a short description of the change
+- `content`: the page's whole new source, and/or `title`: a new
+  title. A new title moves the page to a new path and leaves a
+  redirect behind, as renaming it in the editor does.
+
+If someone saved the page after the revision you read, the edit is
+refused with a 409 `{"error": "conflict"}` that carries the current
+`revision`: read the page again and redo your change. If someone has
+the page open in the wiki's editor, it's a 409 `{"error": "locked"}`
+naming who and until when.
+
+To create a page, send `POST pages/` with `directory` (the path of an
+existing directory you can edit), `title`, `content` and
+`change_message`. The page takes its visibility and who can edit it
+from the directory, so pages can't be created at the top level.
 
 ### Paging through results
 
@@ -1877,17 +1906,18 @@ Without credentials the API sees what a signed-out visitor sees:
 public pages only.
 
 To read as yourself, send a CourtListener access token that carries
-the `wiki` scope as `Authorization: Bearer <token>`. The wiki asks
+the `openid`, `wiki` and `email` scopes as
+`Authorization: Bearer <token>`. The wiki asks
 CourtListener whose token it is and lets that verified email in
 exactly as a magic-link sign-in would: an address on the sign-in
 allowlist sees everything its account can see (the account is created
 on first use if needed), and any other address is treated as signed
 out.
 
-A valid token without the `wiki` scope also reads as signed out: it
-sees public pages only. If you can see internal pages on the wiki
-but the API shows you only public ones, reconnect so your token
-carries the `wiki` scope.
+A valid token without those scopes also reads as signed out: it sees
+public pages only, and can't edit. If you can see internal pages on
+the wiki but the API shows you only public ones, reconnect so your
+token carries them.
 
 The CourtListener MCP server does this for you once you connect it
 with your CourtListener account, so you never handle the token
@@ -1897,10 +1927,16 @@ yourself.
 
 - Calls are limited to 60 a minute per token, or per address when
   there is no token. Over the limit you get a 429.
+- Edits and new pages are also limited to 30 a minute per token.
 - Each token the wiki has not seen before costs CourtListener a round
   trip, so an address may introduce at most 30 new tokens a minute.
 - A token CourtListener rejects (expired or revoked) gets a 401 with
   `{"error": "invalid_token"}`.
+- A malformed edit is a 400 with `{"error": "invalid_request"}` and a
+  `detail` saying what's wrong.
+- An edit from a token without the needed scopes is a 403 with
+  `{"error": "insufficient_scope"}`; from an account that can't edit
+  the page or directory, a 403 with `{"error": "forbidden"}`.
 - A page you cannot read, or that does not exist, is a 404 with
   `{"error": "not_found"}`. The API never confirms that a hidden page
   exists.

@@ -535,7 +535,7 @@ avoids write contention on the Page table during high-traffic reads.
 
 ### JSON API
 
-Three read-only endpoints under `/api/v1/` serve machine clients such as the
+Endpoints under `/api/v1/` serve machine clients such as the
 [CourtListener MCP server](https://github.com/freelawproject/courtlistener-api-client):
 `pages/` lists the pages the caller can read, `search/?q=` searches them, and
 `pages/<path>` returns one page's Markdown: by default with data placeholders
@@ -544,13 +544,20 @@ source with `?raw=true`. Lists and
 searches come a page at a time (`PAGE_LIST_RESULTS_PER_PAGE` and
 `SEARCH_RESULTS_PER_PAGE`): pass `?page=` and follow `next_page` until it is
 null. Anonymous callers see public pages.
+`PATCH pages/<path>` edits a page (the whole new `content` and/or a new
+`title`, plus `base_revision` and `change_message`; a stale revision or a page
+open in the editor is a 409) and `POST pages/` creates one in an existing
+directory the caller can edit. Writes need a bearer token whose account may
+edit the target, and share their save logic with the web editor
+(`wiki/lib/page_saves.py`).
 A CourtListener OAuth access token sent as `Authorization: Bearer` is
 introspected at CourtListener with the wiki's own confidential client (set
 `COURTLISTENER_URL`, `COURTLISTENER_CLIENT_ID` and `COURTLISTENER_CLIENT_SECRET`)
-and, if it carries the `wiki` scope, its verified email is let in exactly as
-a magic-link sign-in would be, so the caller sees what that account can see.
-A live token without the `wiki` scope is treated as anonymous; only a token
-CourtListener rejects is a 401. See `wiki/api/`.
+and, if it carries the `openid`, `wiki` and `email` scopes, its verified
+email is let in exactly as a magic-link sign-in would be, so the caller sees
+what that account can see. A live token without them is treated as anonymous
+(and a write from it is a 403 `insufficient_scope`); only a token CourtListener
+rejects is a 401. See `wiki/api/`.
 
 ## Running Tests
 
@@ -577,11 +584,16 @@ Test files live alongside the code they test (`wiki/pages/tests.py`,
 
 | App | Tests | Covers |
 |---|---|---|
-| `pages` | 162 | CRUD, history, diff, revert, slugs, search, uploads, markdown, wiki links, view counts, help page seeding |
-| `users` | 43 | Login form, magic link flow, logout, settings, profile model |
-| `directories` | 100 | Root view, directory detail, edit, history, diff, revert, model methods, page creation in directories |
-| `lib` | 36 | Permission checks (system owner, view, edit, restricted, directory inheritance) |
-| `subscriptions` | 16 | Subscribe/unsubscribe toggle, notifications, revert notifications, email content, unsubscribe landing |
+| `pages` | 438 | CRUD, history, diff, revert, slugs and redirects, moves, search and its query parser, uploads, markdown, wiki links, mentions, permissions, feeds, recent changes, CDN invalidation, view counts, help page seeding |
+| `lib` | 472 | Permission checks and bulk resolvers, edit locks, markdown and wiki links, data sources, SEO, path collisions, cache headers, CloudFront, favicons, email utilities |
+| `directories` | 150 | Root view, directory detail, edit, history, moves, permissions, visibility and inherited settings, pinned pages, search, page creation in directories |
+| `subscriptions` | 119 | Page and directory subscriptions, effective watchers, notifications for every action, unsubscribe flows |
+| `users` | 103 | Login form, magic link flow, logout, settings, profiles, access allowlist, domain grants, archiving, admin management |
+| `proposals` | 45 | Feedback page, proposal review, accept and deny, rate limits |
+| `api` | 44 | JSON API: listing, search, page detail, bearer-token auth, editing and creating pages |
+| `comments` | 28 | Submitting, replying, resolving, review queue, badges |
+| `groups` | 19 | Group list, create, detail, edit, delete |
+| browser (`tests_browser.py`) | 38 | Playwright tests for JS behaviour: location picker, editor keys, content tabs, autocomplete, bulk moves |
 
 
 ## Management Commands
