@@ -585,12 +585,12 @@ Test files live alongside the code they test (`wiki/pages/tests.py`,
 | App | Tests | Covers |
 |---|---|---|
 | `pages` | 438 | CRUD, history, diff, revert, slugs and redirects, moves, search and its query parser, uploads, markdown, wiki links, mentions, permissions, feeds, recent changes, CDN invalidation, view counts, help page seeding |
-| `lib` | 472 | Permission checks and bulk resolvers, edit locks, markdown and wiki links, data sources, SEO, path collisions, cache headers, CloudFront, favicons, email utilities |
+| `lib` | 476 | Permission checks and bulk resolvers, edit locks, markdown and wiki links, data sources, SEO, path collisions, cache headers, CloudFront, favicons, email utilities |
 | `directories` | 150 | Root view, directory detail, edit, history, moves, permissions, visibility and inherited settings, pinned pages, search, page creation in directories |
 | `subscriptions` | 119 | Page and directory subscriptions, effective watchers, notifications for every action, unsubscribe flows |
 | `users` | 103 | Login form, magic link flow, logout, settings, profiles, access allowlist, domain grants, archiving, admin management |
 | `proposals` | 45 | Feedback page, proposal review, accept and deny, rate limits |
-| `api` | 57 | JSON API: listing, search, page detail, bearer-token auth, editing and creating pages |
+| `api` | 69 | JSON API: listing, search, page detail, bearer-token auth, editing and creating pages, data sources |
 | `comments` | 28 | Submitting, replying, resolving, review queue, badges |
 | `groups` | 19 | Group list, create, detail, edit, delete |
 | browser (`tests_browser.py`) | 38 | Playwright tests for JS behaviour: location picker, editor keys, content tabs, autocomplete, bulk moves |

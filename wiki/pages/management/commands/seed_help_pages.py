@@ -1893,6 +1893,12 @@ existing directory you can edit), `title`, `content` and
 `change_message`. The page takes its visibility and who can edit it
 from the directory, so pages can't be created at the top level.
 
+Both also take a page's [data source](#help/data-sources-guide):
+`data_source_url`, the JSON URL its `[[ key ]]` placeholders are
+filled from (on an allowed domain, or `""` to remove it), and
+`data_source_ttl`, how many seconds to cache it (300 by default). If
+you can edit a page, reading it also returns these two fields.
+
 ### Paging through results
 
 Lists and searches come a page at a time. Each response carries
