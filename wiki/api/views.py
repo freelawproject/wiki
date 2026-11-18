@@ -30,6 +30,7 @@ from wiki.api.auth import WIKI_SCOPES, bearer_auth, bearer_challenge
 from wiki.directories.models import Directory
 from wiki.lib.data_source import (
     page_content_with_data,
+    validate_data_source_ttl,
     validate_data_source_url,
 )
 from wiki.lib.edit_lock import get_active_lock_for_page
@@ -249,7 +250,7 @@ def _data_source(body):
     fields it sends, checked with the web editor's own check.
     ``data_source_url`` is a URL on the data source allowlist, or ``""`` (or
     null) to remove the data source; ``data_source_ttl`` is how many seconds
-    to cache its response."""
+    to cache its response, from 10 to a day."""
     fields = {}
     if "data_source_url" in body:
         url = _text(body, "data_source_url", max_length=500, blank=True) or ""
@@ -263,11 +264,16 @@ def _data_source(body):
         fields["data_source_url"] = url
     if "data_source_ttl" in body:
         ttl = body["data_source_ttl"]
-        if not isinstance(ttl, int) or isinstance(ttl, bool) or ttl < 1:
+        if not isinstance(ttl, int) or isinstance(ttl, bool):
             raise BadRequest(
-                "`data_source_ttl` must be a whole number of seconds, at "
-                "least 1."
+                "`data_source_ttl` must be a whole number of seconds."
             )
+        try:
+            validate_data_source_ttl(ttl)
+        except ValidationError as e:
+            raise BadRequest(
+                f"`data_source_ttl`: {' '.join(e.messages)}"
+            ) from e
         fields["data_source_ttl"] = ttl
     return fields
 

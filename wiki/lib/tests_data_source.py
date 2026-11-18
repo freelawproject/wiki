@@ -18,6 +18,7 @@ from wiki.lib.data_source import (
     fetch_page_data,
     is_domain_allowed,
     substitute_data_variables,
+    validate_data_source_ttl,
     validate_data_source_url,
 )
 from wiki.pages.models import Page
@@ -385,6 +386,30 @@ class TestDomainAllowlist:
     def test_validate_refuses(self, url, message):
         with pytest.raises(ValidationError, match=message):
             validate_data_source_url(url)
+
+    @pytest.mark.parametrize("ttl", [9, 86401])
+    def test_validate_refuses_a_cache_time_out_of_bounds(self, ttl):
+        with pytest.raises(ValidationError, match="between 10 and 86400"):
+            validate_data_source_ttl(ttl)
+
+    def test_the_editor_refuses_a_cache_time_out_of_bounds(
+        self, client, user, page
+    ):
+        client.force_login(user)
+        r = client.post(
+            reverse("page_edit", kwargs={"path": page.content_path}),
+            {
+                "title": page.title,
+                "content": page.content,
+                "visibility": "public",
+                "change_message": "Cache for a week",
+                "data_source_ttl": 7 * 24 * 60 * 60,
+            },
+        )
+        assert r.status_code == 200
+        assert b"between 10 and 86400" in r.content
+        page.refresh_from_db()
+        assert page.data_source_ttl == 300
 
     @override_settings(DATA_SOURCE_ALLOWED_DOMAINS=["www.courtlistener.com"])
     def test_the_editor_refuses_a_disallowed_domain(self, client, user, page):

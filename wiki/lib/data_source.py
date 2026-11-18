@@ -52,6 +52,24 @@ def is_domain_allowed(url):
     return hostname in allowed
 
 
+# A data source's cache lifetime, in seconds: at least the editor's
+# long-standing minimum, and at most a day. The cache lives in each
+# process's memory and starts empty on every deploy, so a longer lifetime
+# would seldom be reached anyway.
+MIN_TTL = 10
+MAX_TTL = 24 * 60 * 60
+
+
+def validate_data_source_ttl(ttl):
+    """Raise ``ValidationError`` unless *ttl* (an int) is a cache lifetime a
+    page's data source may have."""
+    if not MIN_TTL <= ttl <= MAX_TTL:
+        raise ValidationError(
+            f"The cache time must be between {MIN_TTL} and {MAX_TTL} "
+            "seconds (a day)."
+        )
+
+
 def validate_data_source_url(url):
     """Raise ``ValidationError`` unless *url* can be a page's data source:
     a valid URL on an allowed domain. The web editor and the JSON API both

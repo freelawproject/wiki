@@ -348,6 +348,15 @@ class TestDataSource:
         page.refresh_from_db()
         assert (page.data_source_url, page.data_source_ttl) == ("", 900)
 
+    @pytest.mark.parametrize("ttl", [10, 86400])
+    def test_the_cache_time_bounds_are_allowed(
+        self, client, page, writer, ttl
+    ):
+        body = {"base_revision": 1, "change_message": "x"}
+        r = patch(client, page, {**body, "data_source_ttl": ttl})
+        assert r.status_code == 200, r.json()
+        assert r.json()["data_source_ttl"] == ttl
+
     def test_null_removes_the_data_source(self, client, page, writer):
         Page.objects.filter(pk=page.pk).update(data_source_url=self.URL)
         r = patch(
@@ -417,7 +426,10 @@ class TestDataSource:
             ({"data_source_url": "https://evil.example/x.json"}, "domain"),
             ({"data_source_url": "not a url"}, "valid URL"),
             ({"data_source_url": 5}, "must be a string"),
-            ({"data_source_ttl": 0}, "at least 1"),
+            ({"data_source_ttl": 9}, "between 10 and 86400"),
+            ({"data_source_ttl": 86401}, "between 10 and 86400"),
+            # Past a 32-bit integer: refused, not a database error.
+            ({"data_source_ttl": 2**31}, "between 10 and 86400"),
             ({"data_source_ttl": "300"}, "whole number"),
             ({"data_source_ttl": True}, "whole number"),
         ],
