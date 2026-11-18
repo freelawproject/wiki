@@ -132,8 +132,11 @@
       <div>
         <label for="id_data_source_ttl" class="block text-sm font-medium mb-1">Cache (seconds)</label>
         {{ form.data_source_ttl }}
+        {% if form.data_source_ttl.errors %}
+        <p class="text-red-600 dark:text-red-400 text-sm mt-1">{{ form.data_source_ttl.errors.0 }}</p>
+        {% endif %}
         <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">
-          How long to cache the response. Stale data is served for up to 3&times; this value if the API is down.
+          How long to cache the response, from 10 seconds to a day. Stale data is served for up to 3&times; this value if the API is down.
         </p>
       </div>
     </fieldset>

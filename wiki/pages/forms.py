@@ -2,7 +2,12 @@ from django import forms
 from django.contrib.auth.models import Group
 
 from wiki.directories.models import Directory
-from wiki.lib.data_source import is_domain_allowed
+from wiki.lib.data_source import (
+    MAX_TTL,
+    MIN_TTL,
+    validate_data_source_ttl,
+    validate_data_source_url,
+)
 from wiki.lib.inheritance import resolve_effective_value
 from wiki.lib.permissions import filter_administerable_directories
 from wiki.users.models import AllowedDomain
@@ -84,7 +89,8 @@ class PageForm(forms.ModelForm):
             "data_source_ttl": forms.NumberInput(
                 attrs={
                     "class": "input-text w-24",
-                    "min": "10",
+                    "min": str(MIN_TTL),
+                    "max": str(MAX_TTL),
                 }
             ),
             "visibility": forms.Select(attrs={"class": "input-text"}),
@@ -203,14 +209,14 @@ class PageForm(forms.ModelForm):
 
     def clean_data_source_url(self):
         url = self.cleaned_data.get("data_source_url", "")
-        if url and not is_domain_allowed(url):
-            raise forms.ValidationError(
-                "This domain is not in the allowed data source list."
-            )
+        if url:
+            validate_data_source_url(url)
         return url
 
     def clean_data_source_ttl(self):
-        return self.cleaned_data.get("data_source_ttl") or 300
+        ttl = self.cleaned_data.get("data_source_ttl") or 300
+        validate_data_source_ttl(ttl)
+        return ttl
 
 
 class PagePermissionForm(forms.Form):
