@@ -60,7 +60,13 @@ _WRITE_METHODS = ("POST", "PUT", "PATCH", "DELETE")
 # MCP server's address. The API limits its own calls per token and its
 # writes per account (``ratelimit_api``, ``ratelimit_api_write``).
 _GLOBAL_LIMIT_EXEMPT_URL_NAMES = frozenset(
-    {"page_preview", "record_page_view", "api_page_list", "api_page_detail"}
+    {
+        "page_preview",
+        "record_page_view",
+        "api_page_list",
+        "api_page_detail",
+        "api_preview",
+    }
 )
 
 

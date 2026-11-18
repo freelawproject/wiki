@@ -29,12 +29,13 @@ from django.views.decorators.http import require_GET, require_http_methods
 from wiki.api.auth import WIKI_SCOPES, bearer_auth, bearer_challenge
 from wiki.directories.models import Directory
 from wiki.lib.data_source import (
+    content_with_data,
     page_content_with_data,
     validate_data_source_ttl,
     validate_data_source_url,
 )
 from wiki.lib.edit_lock import get_active_lock_for_page
-from wiki.lib.markdown import resolve_wiki_links
+from wiki.lib.markdown import render_markdown, resolve_wiki_links
 from wiki.lib.page_saves import (
     EditConflict,
     current_revision_number,
@@ -121,6 +122,35 @@ def page_list(request):
     return _paginated(
         request, pages, settings.PAGE_LIST_RESULTS_PER_PAGE, "pages", _summary
     )
+
+
+@csrf_exempt
+@ratelimit_api
+@require_http_methods(["POST"])
+@bearer_auth
+def preview(request):
+    """Render page source to HTML as the page view would, without saving
+    anything: the API's counterpart of the editor's Preview tab.
+
+    The JSON body has the Markdown ``content`` and, optionally, the
+    ``data_source_url`` to fill its placeholders from, fetched fresh rather
+    than through the pages' cache. It needs what writing needs, a token
+    whose account may sign in to the wiki, held to the write rate limit,
+    since a data source makes the server fetch a URL. It renders as the
+    caller, so wiki links to pages the caller can't see stay unresolved.
+    """
+    if denied := _write_denied(request):
+        return denied
+    try:
+        body = _json_body(request)
+        content = _text(body, "content", required=True, blank=True)
+        url = _data_source_url(body)
+    except BadRequest as e:
+        return _error(400, "invalid_request", str(e))
+    html = render_markdown(
+        content_with_data(content, url, cached=False), viewer=request.user
+    )
+    return JsonResponse({"html": str(html)})
 
 
 @ratelimit_api
@@ -253,15 +283,7 @@ def _data_source(body):
     to cache its response, from 10 to a day."""
     fields = {}
     if "data_source_url" in body:
-        url = _text(body, "data_source_url", max_length=500, blank=True) or ""
-        if url:
-            try:
-                validate_data_source_url(url)
-            except ValidationError as e:
-                raise BadRequest(
-                    f"`data_source_url`: {' '.join(e.messages)}"
-                ) from e
-        fields["data_source_url"] = url
+        fields["data_source_url"] = _data_source_url(body)
     if "data_source_ttl" in body:
         ttl = body["data_source_ttl"]
         if not isinstance(ttl, int) or isinstance(ttl, bool):
@@ -276,6 +298,19 @@ def _data_source(body):
             ) from e
         fields["data_source_ttl"] = ttl
     return fields
+
+
+def _data_source_url(body):
+    """``body``'s ``data_source_url``, checked with the web editor's own
+    check; ``""`` if it sends none (or null, or ``""``)."""
+    url = _text(body, "data_source_url", max_length=500, blank=True) or ""
+    if not url:
+        return ""
+    try:
+        validate_data_source_url(url)
+    except ValidationError as e:
+        raise BadRequest(f"`data_source_url`: {' '.join(e.messages)}") from e
+    return url
 
 
 def _update_page(request, page):
