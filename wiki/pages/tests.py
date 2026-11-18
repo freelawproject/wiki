@@ -27,6 +27,7 @@ from wiki.directories.views import _move_directory
 from wiki.lib.edit_lock import acquire_lock_for_page
 from wiki.lib.markdown import render_markdown, resolve_wiki_links
 from wiki.lib.models import EditLock
+from wiki.lib.page_saves import extract_mentions
 from wiki.lib.page_utils import record_page_move
 from wiki.lib.permissions import can_edit_page
 from wiki.pages.diff_utils import unified_diff
@@ -51,7 +52,7 @@ from wiki.pages.tasks import (
     sync_page_view_counts,
     update_search_vectors,
 )
-from wiki.pages.views import _extract_mentions, _move_page_to_directory
+from wiki.pages.views import _move_page_to_directory
 from wiki.subscriptions.models import PageSubscription
 from wiki.subscriptions.tasks import _get_content_snippet
 from wiki.users.models import SystemConfig
@@ -2304,12 +2305,12 @@ class TestSubscriberDisplay:
 
 class TestMentions:
     def test_extract_mentions(self):
-        result = _extract_mentions("Hello @mike and @bob!")
+        result = extract_mentions("Hello @mike and @bob!")
         assert "mike" in result
         assert "bob" in result
 
     def test_extract_no_mentions(self):
-        assert _extract_mentions("No mentions here") == []
+        assert extract_mentions("No mentions here") == []
 
     def test_mentions_do_not_auto_subscribe(
         self, client, user, other_user, page
