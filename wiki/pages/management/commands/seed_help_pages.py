@@ -1901,6 +1901,11 @@ filled from (on an allowed domain, or `""` to remove it), and
 300 by default). If
 you can edit a page, reading it also returns these two fields.
 
+To see how source will look before saving it, send `POST preview/`
+with `content` and, optionally, `data_source_url` and
+`data_source_ttl`. It returns `{"html": ...}`, rendered as the page
+would be for you, and saves nothing.
+
 ### Paging through results
 
 Lists and searches come a page at a time. Each response carries
