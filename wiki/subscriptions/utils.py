@@ -13,6 +13,7 @@ in_sitemap / in_llms_txt:
 from django.contrib.auth.models import User
 
 from wiki.directories.models import Directory
+from wiki.lib.permissions import filter_users_who_can_view_page
 
 from .models import (
     DirectorySubscription,
@@ -171,9 +172,22 @@ def get_subscriber_info_for_page(page):
 
 
 def get_effective_watchers_for_page(page):
-    """Return queryset of Users watching this page (direct + directory)."""
+    """Return queryset of Users watching this page (direct + directory).
+
+    Only users who can currently view the page are included. Subscription rows
+    outlive access (a page made private, a grant revoked), and listing such
+    users would reveal their names — and that they once had access — to
+    everyone who can see the page. Their rows are kept, so they reappear if
+    access is restored.
+    """
     page_sub_users, dir_sub_mapping = get_subscriber_info_for_page(page)
     all_user_ids = page_sub_users | set(dir_sub_mapping.keys())
     if not all_user_ids:
         return User.objects.none()
-    return User.objects.filter(id__in=all_user_ids).select_related("profile")
+    candidates = User.objects.filter(id__in=all_user_ids).select_related(
+        "profile"
+    )
+    viewer_ids = [
+        u.id for u in filter_users_who_can_view_page(page, candidates)
+    ]
+    return candidates.filter(id__in=viewer_ids)
