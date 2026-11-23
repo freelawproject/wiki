@@ -47,6 +47,7 @@ wiki/
    ```python
    # Good
    from django.urls import reverse
+
    url = reverse("page_edit", kwargs={"path": page.content_path})
 
    # Bad
