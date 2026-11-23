@@ -2,7 +2,7 @@
 
 import pytest
 import time_machine
-from django.contrib.auth.models import AnonymousUser, User
+from django.contrib.auth.models import AnonymousUser, Group, User
 from django.db import connection
 from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
@@ -30,12 +30,18 @@ from wiki.lib.permissions import (
     can_view_page,
     editable_page_ids,
     filter_administerable_directories,
+    filter_users_who_can_view_page,
     filter_viewable_directories,
     is_system_owner,
 )
 from wiki.pages.models import Page, PagePermission, PageRevision
 from wiki.proposals.models import ChangeProposal
-from wiki.users.models import SystemConfig
+from wiki.users.models import (
+    AccessTier,
+    AllowedDomain,
+    AllowedEmail,
+    SystemConfig,
+)
 
 
 class TestIsSystemOwner:
@@ -1119,3 +1125,157 @@ class TestCleanupExpiredLocks:
         count = cleanup_expired_locks()
         assert count == 0
         assert EditLock.objects.filter(page=page).exists()
+
+
+class TestFilterUsersWhoCanViewPage:
+    """filter_users_who_can_view_page must agree with can_view_page for every
+    user, on every page shape — it is the bulk twin used for watcher lists and
+    notification fan-out."""
+
+    @staticmethod
+    def _make_user(name, **kwargs):
+        return User.objects.create_user(
+            username=name, email=f"{name}@{kwargs.pop('domain')}", **kwargs
+        )
+
+    @pytest.fixture
+    def cast(self, root_directory):
+        AllowedDomain.objects.create(
+            domain="staff.example", tier=AccessTier.STAFF
+        )
+        AllowedDomain.objects.create(
+            domain="guest.example", tier=AccessTier.GUEST
+        )
+        AllowedEmail.objects.create(
+            email="promoted@guest.example", tier=AccessTier.STAFF
+        )
+        AllowedEmail.objects.create(
+            email="demoted@staff.example", tier=AccessTier.GUEST
+        )
+        group = Group.objects.create(name="viewers")
+        cast = {
+            n: self._make_user(n, domain=d)
+            for n, d in [
+                ("sysowner", "staff.example"),
+                ("pageowner", "guest.example"),
+                ("dirowner", "guest.example"),
+                ("staff", "staff.example"),
+                ("promoted", "guest.example"),
+                ("demoted", "staff.example"),
+                ("guest", "guest.example"),
+                ("granted", "guest.example"),
+                ("grouped", "guest.example"),
+                ("domained", "other.example"),
+                ("flagged", "guest.example"),
+            ]
+        }
+        cast["flagged"].is_staff = True
+        cast["flagged"].save()
+        cast["grouped"].groups.add(group)
+        SystemConfig.objects.create(owner=cast["sysowner"])
+        cast["group"] = group
+        return cast
+
+    def test_matches_can_view_page_across_matrix(self, cast, root_directory):
+        users = [v for k, v in cast.items() if k != "group"]
+        dir_owner = cast["dirowner"]
+        dirs = {"none": None, "root": root_directory}
+        for vis in ("public", "internal", "private"):
+            dirs[vis] = Directory.objects.create(
+                path=f"d-{vis}",
+                title=vis,
+                parent=root_directory,
+                owner=dir_owner,
+                visibility=vis,
+            )
+        # A private parent with an inheriting child, to exercise ancestry.
+        dirs["child-of-private"] = Directory.objects.create(
+            path="d-private/child",
+            title="child",
+            parent=dirs["private"],
+            owner=cast["sysowner"],
+            visibility=Directory.Visibility.INHERIT,
+        )
+
+        pages = []
+        for dname, d in dirs.items():
+            for vis in ("public", "internal", "private", "inherit"):
+                pages.append(
+                    Page.objects.create(
+                        title=f"{dname}-{vis}",
+                        slug=f"{dname}-{vis}",
+                        content="x",
+                        owner=cast["pageowner"],
+                        directory=d,
+                        visibility=vis,
+                    )
+                )
+
+        # Grants: on a page, on an ancestor directory, by group and domain.
+        PagePermission.objects.create(
+            page=pages[2], user=cast["granted"], permission_type="view"
+        )
+        PagePermission.objects.create(
+            page=pages[2], group=cast["group"], permission_type="view"
+        )
+        PagePermission.objects.create(
+            page=pages[2], grant_domain="other.example", permission_type="view"
+        )
+        DirectoryPermission.objects.create(
+            directory=dirs["private"],
+            user=cast["granted"],
+            permission_type="view",
+        )
+        DirectoryPermission.objects.create(
+            directory=dirs["internal"],
+            grant_domain="other.example",
+            permission_type="view",
+        )
+
+        for pg in pages:
+            expected = [u for u in users if can_view_page(u, pg)]
+            actual = filter_users_who_can_view_page(pg, users)
+            assert actual == expected, (
+                f"{pg.title}: "
+                f"{sorted(u.username for u in actual)} != "
+                f"{sorted(u.username for u in expected)}"
+            )
+
+    def test_private_page_hides_user_without_access(self, cast):
+        pg = Page.objects.create(
+            title="p",
+            slug="p",
+            content="x",
+            owner=cast["pageowner"],
+            visibility=Page.Visibility.PRIVATE,
+        )
+        result = filter_users_who_can_view_page(
+            pg, [cast["pageowner"], cast["guest"], cast["staff"]]
+        )
+        assert result == [cast["pageowner"]]
+
+    def test_query_count_is_flat_in_user_count(self, cast):
+        pg = Page.objects.create(
+            title="p",
+            slug="p",
+            content="x",
+            owner=cast["pageowner"],
+            visibility=Page.Visibility.INTERNAL,
+        )
+        PagePermission.objects.create(
+            page=pg, group=cast["group"], permission_type="view"
+        )
+
+        def count(users):
+            fresh = list(User.objects.filter(id__in=[u.id for u in users]))
+            with CaptureQueriesContext(connection) as ctx:
+                filter_users_who_can_view_page(pg, fresh)
+            return len(ctx)
+
+        small = count([cast["guest"], cast["staff"]])
+        extra = [
+            self._make_user(f"extra{i}", domain="staff.example")
+            for i in range(25)
+        ]
+        big = count(list(cast.values())[:-1] + extra)
+        assert big == small
