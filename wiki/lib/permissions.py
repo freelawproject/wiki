@@ -21,11 +21,12 @@ explicit value. Use resolve_effective_value() for single-object checks and
 resolve_all_directory_settings() for bulk queries.
 """
 
+from django.contrib.auth.models import User
 from django.db.models import Q
 from django.utils import timezone
 
 from wiki.directories.models import Directory, DirectoryPermission
-from wiki.lib.access import is_internal_user
+from wiki.lib.access import internal_user_ids, is_internal_user
 from wiki.lib.inheritance import (
     resolve_all_directory_settings,
     resolve_effective_value,
@@ -164,6 +165,91 @@ def can_view_page(user, page):
         return True
 
     return False
+
+
+def filter_users_who_can_view_page(page, users):
+    """Return the subset of ``users`` who can view ``page``, order preserved.
+
+    Bulk counterpart of can_view_page() for the opposite shape — *one page,
+    many users* (watcher lists, notification fan-out) — where looping
+    can_view_page() costs several queries per user. This resolves the page's
+    visibility and ancestor chain once, loads the page and ancestor-directory
+    grants once, then matches every user in memory, in a fixed number of
+    queries. Keep it in sync with can_view_page().
+    """
+    users = list(users)
+    if not users:
+        return users
+
+    effective_visibility, _ = resolve_effective_value(page, "visibility")
+    if effective_visibility == "public":
+        return users
+
+    chain = []
+    directory = page.directory
+    while directory is not None:
+        chain.append(directory)
+        directory = directory.parent
+
+    grants = list(
+        PagePermission.objects.filter(page=page).values_list(
+            "user_id", "group_id", "grant_domain"
+        )
+    )
+    if chain:
+        grants += list(
+            DirectoryPermission.objects.filter(
+                directory_id__in=[d.id for d in chain]
+            ).values_list("user_id", "group_id", "grant_domain")
+        )
+    granted_user_ids = {uid for uid, _, _ in grants if uid}
+    granted_group_ids = {gid for _, gid, _ in grants if gid}
+    granted_domains = {dom for _, _, dom in grants if dom}
+
+    # Users in any granted group.
+    group_member_ids = set()
+    if granted_group_ids:
+        group_member_ids = set(
+            User.groups.through.objects.filter(
+                user_id__in=[u.id for u in users],
+                group_id__in=granted_group_ids,
+            ).values_list("user_id", flat=True)
+        )
+
+    system_owner_id = (
+        SystemConfig.objects.filter(pk=1)
+        .values_list("owner_id", flat=True)
+        .first()
+    )
+    always_ids = {page.owner_id, system_owner_id} - {None}
+    always_ids |= granted_user_ids | group_member_ids
+
+    allowed = {
+        u.id
+        for u in users
+        if u.id in always_ids
+        or (_user_domain(u) and _user_domain(u) in granted_domains)
+    }
+
+    # Baseline: internal pages are viewable by staff who can see the
+    # directory (mirrors can_view_directory for users with no grant).
+    if effective_visibility == "internal":
+        remaining = [u for u in users if u.id not in allowed]
+        directory_visible_to_staff = True
+        chain_owner_ids = set()
+        if page.directory is not None and page.directory.path != "":
+            dir_visibility, _ = resolve_effective_value(
+                page.directory, "visibility"
+            )
+            # A private directory hides the page from staff unless they own
+            # it or an ancestor; public/internal directories don't.
+            directory_visible_to_staff = dir_visibility != "private"
+            chain_owner_ids = {d.owner_id for d in chain} - {None}
+        for uid in internal_user_ids(remaining):
+            if directory_visible_to_staff or uid in chain_owner_ids:
+                allowed.add(uid)
+
+    return [u for u in users if u.id in allowed]
 
 
 def _bulk_viewable_directory_resolver(user):

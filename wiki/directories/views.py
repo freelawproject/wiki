@@ -34,8 +34,8 @@ from wiki.lib.permissions import (
     can_administer_directory,
     can_edit_directory,
     can_view_directory,
-    can_view_page,
     filter_viewable_directories,
+    viewable_pages_q,
 )
 from wiki.lib.ratelimiter import ratelimit_search
 from wiki.lib.seo import (
@@ -143,11 +143,13 @@ def root_view(request):
     # Filter subdirectories by view permission
     subdirectories = filter_viewable_directories(request.user, all_subdirs)
 
-    # Show pages in root directory + unassigned pages
-    pages = Page.objects.filter(Q(directory=root) | Q(directory__isnull=True))
-
-    # Filter by view permission
-    visible_pages = [p for p in pages if can_view_page(request.user, p)]
+    # Pages in the root directory + unassigned pages the user can view.
+    # distinct(): the grant joins in viewable_pages_q can repeat a row.
+    visible_pages = list(
+        Page.objects.filter(Q(directory=root) | Q(directory__isnull=True))
+        .filter(viewable_pages_q(request.user))
+        .distinct()
+    )
 
     for subdir in subdirectories:
         subdir.effective_visibility, _ = resolve_effective_value(
@@ -297,8 +299,12 @@ def directory_detail(request, path):
 
     all_subdirs = directory.children.all()
     subdirectories = filter_viewable_directories(request.user, all_subdirs)
-    pages = directory.pages.all()
-    visible_pages = [p for p in pages if can_view_page(request.user, p)]
+    # The directory gate above already passed, so viewable_pages_q's own
+    # directory gate agrees with can_view_page for every page in here.
+    # distinct(): the grant joins in viewable_pages_q can repeat a row.
+    visible_pages = list(
+        directory.pages.filter(viewable_pages_q(request.user)).distinct()
+    )
 
     for subdir in subdirectories:
         subdir.effective_visibility, _ = resolve_effective_value(
