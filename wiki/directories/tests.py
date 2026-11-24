@@ -4,7 +4,7 @@ import json
 from datetime import timedelta
 
 import pytest
-from django.contrib.auth.models import User
+from django.contrib.auth.models import AnonymousUser, Group, User
 from django.core.management import call_command
 from django.test import Client
 from django.urls import reverse
@@ -21,9 +21,14 @@ from wiki.lib.edit_lock import acquire_lock_for_directory
 from wiki.lib.inheritance import clean_redundant_overrides
 from wiki.lib.models import EditLock
 from wiki.lib.path_utils import MAX_DIRECTORY_DEPTH
-from wiki.lib.permissions import can_edit_directory
+from wiki.lib.permissions import can_edit_directory, can_view_page
 from wiki.pages.models import Page, PagePermission
-from wiki.users.models import SystemConfig, UserProfile
+from wiki.users.models import (
+    AccessTier,
+    AllowedDomain,
+    SystemConfig,
+    UserProfile,
+)
 
 
 def _make_chain(parent, levels, user):
@@ -2159,3 +2164,96 @@ class TestCleanRedundantOverrides:
         assert r.status_code == 302
         page.refresh_from_db()
         assert page.visibility == "inherit"
+
+
+class TestDirectoryListingViewability:
+    """Directory listings filter pages with viewable_pages_q. Inside a
+    directory the user can already see, that must agree exactly with
+    can_view_page — and a page matching several grants must list once."""
+
+    @pytest.fixture
+    def cast(self, user):
+        AllowedDomain.objects.create(
+            domain="staff.example", suffix="st", tier=AccessTier.STAFF
+        )
+        group = Group.objects.create(name="listing-viewers")
+        make = User.objects.create_user
+        cast = {
+            "owner": user,
+            "staff": make("staff", email="staff@staff.example"),
+            "guest": make("guest", email="guest@guest.example"),
+            "granted": make("granted", email="granted@guest.example"),
+            "domained": make("domained", email="d@other.example"),
+            "anon": AnonymousUser(),
+        }
+        cast["granted"].groups.add(group)
+        cast["group"] = group
+        return cast
+
+    @staticmethod
+    def _make_pages(directory, owner, cast):
+        pages = [
+            Page.objects.create(
+                title=f"Listing {vis}",
+                slug=f"listing-{vis}",
+                content="x",
+                directory=directory,
+                owner=owner,
+                visibility=vis,
+            )
+            for vis in ("public", "internal", "private", "inherit")
+        ]
+        private = pages[2]
+        # Two grants for the same user (direct + group) and a domain grant:
+        # the joins must not duplicate the row.
+        PagePermission.objects.create(
+            page=private, user=cast["granted"], permission_type="view"
+        )
+        PagePermission.objects.create(
+            page=private, group=cast["group"], permission_type="view"
+        )
+        PagePermission.objects.create(
+            page=private, grant_domain="other.example", permission_type="view"
+        )
+        return pages
+
+    def _assert_listing_matches(self, url, pages, cast):
+        for name, viewer in cast.items():
+            if name == "group":
+                continue
+            client = Client()
+            if viewer.is_authenticated:
+                client.force_login(viewer)
+            r = client.get(url)
+            assert r.status_code == 200
+            listed = [p.id for p in r.context["pages"]]
+            assert len(listed) == len(set(listed)), f"{name}: duplicates"
+            expected = {p.id for p in pages if can_view_page(viewer, p)}
+            assert set(listed) & {p.id for p in pages} == expected, name
+
+    def test_public_directory_matches_can_view_page(self, cast, sub_directory):
+        pages = self._make_pages(sub_directory, cast["owner"], cast)
+        self._assert_listing_matches(
+            sub_directory.get_absolute_url(), pages, cast
+        )
+
+    def test_internal_directory_matches_can_view_page(
+        self, cast, root_directory
+    ):
+        directory = Directory.objects.create(
+            path="staff-only",
+            title="Staff only",
+            parent=root_directory,
+            owner=cast["owner"],
+            visibility=Directory.Visibility.INTERNAL,
+        )
+        pages = self._make_pages(directory, cast["owner"], cast)
+        # Only the owner and staff can open an internal directory at all.
+        viewers = {k: cast[k] for k in ("owner", "staff")}
+        self._assert_listing_matches(
+            directory.get_absolute_url(), pages, viewers
+        )
+
+    def test_root_matches_can_view_page(self, cast, root_directory):
+        pages = self._make_pages(root_directory, cast["owner"], cast)
+        self._assert_listing_matches(reverse("root"), pages, cast)
