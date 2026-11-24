@@ -1141,10 +1141,10 @@ class TestFilterUsersWhoCanViewPage:
     @pytest.fixture
     def cast(self, root_directory):
         AllowedDomain.objects.create(
-            domain="staff.example", tier=AccessTier.STAFF
+            domain="staff.example", suffix="st", tier=AccessTier.STAFF
         )
         AllowedDomain.objects.create(
-            domain="guest.example", tier=AccessTier.GUEST
+            domain="guest.example", suffix="gu", tier=AccessTier.GUEST
         )
         AllowedEmail.objects.create(
             email="promoted@guest.example", tier=AccessTier.STAFF
