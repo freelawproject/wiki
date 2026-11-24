@@ -24,12 +24,7 @@ from .models import (
 
 def _get_ancestor_dir_list(directory):
     """Return [directory, parent, grandparent, ..., root]."""
-    dirs = []
-    current = directory
-    while current:
-        dirs.append(current)
-        current = current.parent
-    return dirs
+    return [directory, *reversed(directory.get_ancestors())]
 
 
 def _get_ancestor_dir_list_for_page(page):
