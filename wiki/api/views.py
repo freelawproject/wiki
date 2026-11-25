@@ -19,6 +19,7 @@ someone holds the page's edit lock in the web editor.
 import json
 
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.core.paginator import Paginator
 from django.http import JsonResponse
 from django.utils.html import strip_tags
@@ -27,7 +28,11 @@ from django.views.decorators.http import require_GET, require_http_methods
 
 from wiki.api.auth import WIKI_SCOPES, bearer_auth, bearer_challenge
 from wiki.directories.models import Directory
-from wiki.lib.data_source import page_content_with_data
+from wiki.lib.data_source import (
+    page_content_with_data,
+    validate_data_source_ttl,
+    validate_data_source_url,
+)
 from wiki.lib.edit_lock import get_active_lock_for_page
 from wiki.lib.markdown import resolve_wiki_links
 from wiki.lib.page_saves import (
@@ -65,16 +70,19 @@ def _summary(page):
 def _detail(page, user, revision, content=None, status=200):
     """A page with its content (the stored source unless ``content`` is
     given), the number of the revision that content is from (the
-    ``base_revision`` an edit must name) and whether ``user`` may edit it."""
-    return JsonResponse(
-        {
-            **_summary(page),
-            "content": page.content if content is None else content,
-            "revision": revision,
-            "can_edit": can_edit_page(user, page),
-        },
-        status=status,
-    )
+    ``base_revision`` an edit must name) and whether ``user`` may edit it.
+    An editor also gets the page's data source, as the web editor shows it."""
+    can_edit = can_edit_page(user, page)
+    body = {
+        **_summary(page),
+        "content": page.content if content is None else content,
+        "revision": revision,
+        "can_edit": can_edit,
+    }
+    if can_edit:
+        body["data_source_url"] = page.data_source_url
+        body["data_source_ttl"] = page.data_source_ttl
+    return JsonResponse(body, status=status)
 
 
 def _error(status, error, detail=None, **extra):
@@ -237,9 +245,43 @@ def _text(body, field, *, required=False, max_length=None, blank=False):
     return value
 
 
+def _data_source(body):
+    """The data source settings in ``body``, as ``{field: value}`` for the
+    fields it sends, checked with the web editor's own check.
+    ``data_source_url`` is a URL on the data source allowlist, or ``""`` (or
+    null) to remove the data source; ``data_source_ttl`` is how many seconds
+    to cache its response, from 10 to a day."""
+    fields = {}
+    if "data_source_url" in body:
+        url = _text(body, "data_source_url", max_length=500, blank=True) or ""
+        if url:
+            try:
+                validate_data_source_url(url)
+            except ValidationError as e:
+                raise BadRequest(
+                    f"`data_source_url`: {' '.join(e.messages)}"
+                ) from e
+        fields["data_source_url"] = url
+    if "data_source_ttl" in body:
+        ttl = body["data_source_ttl"]
+        if not isinstance(ttl, int) or isinstance(ttl, bool):
+            raise BadRequest(
+                "`data_source_ttl` must be a whole number of seconds."
+            )
+        try:
+            validate_data_source_ttl(ttl)
+        except ValidationError as e:
+            raise BadRequest(
+                f"`data_source_ttl`: {' '.join(e.messages)}"
+            ) from e
+        fields["data_source_ttl"] = ttl
+    return fields
+
+
 def _update_page(request, page):
-    """Apply a PATCH: a new title and/or the page's whole new source, based
-    on ``base_revision`` and described by ``change_message``.
+    """Apply a PATCH: a new title, the page's whole new source and/or its
+    data source settings, based on ``base_revision`` and described by
+    ``change_message``.
     ``page_detail`` has already checked the token with ``_write_denied``."""
     if not can_edit_page(request.user, page):
         return _error(403, "forbidden", "You can't edit this page.")
@@ -258,16 +300,25 @@ def _update_page(request, page):
         )
         title = _text(body, "title", max_length=255)
         content = _text(body, "content", blank=True)
-        if title is None and content is None:
-            raise BadRequest("Nothing to change: send `title` or `content`.")
+        data_source = _data_source(body)
+        if title is None and content is None and not data_source:
+            raise BadRequest(
+                "Nothing to change: send `title`, `content`, "
+                "`data_source_url` or `data_source_ttl`."
+            )
         # Compared in the stored form: a tab that saving would expand back
         # to the same spaces is no change.
-        if title in (None, page.title) and (
-            content is None or Page.normalize_content(content) == page.content
+        if (
+            title in (None, page.title)
+            and (
+                content is None
+                or Page.normalize_content(content) == page.content
+            )
+            and all(getattr(page, f) == v for f, v in data_source.items())
         ):
             raise BadRequest(
-                "Nothing to change: the page already has that title and "
-                "content."
+                "Nothing to change: the page already has that title, "
+                "content and data source."
             )
     except BadRequest as e:
         return _error(400, "invalid_request", str(e))
@@ -294,6 +345,8 @@ def _update_page(request, page):
         page.title = title
     if content is not None:
         page.content = content
+    for field, value in data_source.items():
+        setattr(page, field, value)
     page.change_message = change_message
     try:
         rev = save_page_edit(
@@ -330,6 +383,7 @@ def _create_page(request):
         change_message = _text(
             body, "change_message", required=True, max_length=500
         )
+        data_source = _data_source(body)
     except BadRequest as e:
         return _error(400, "invalid_request", str(e))
 
@@ -351,6 +405,7 @@ def _create_page(request):
         editability=Page.Editability.INHERIT,
         in_sitemap=Page.SitemapStatus.INHERIT,
         in_llms_txt=Page.LlmsTxtStatus.INHERIT,
+        **data_source,
     )
     rev = save_new_page(page, request.user)
     return _detail(page, request.user, rev.revision_number, status=201)

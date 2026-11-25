@@ -7,7 +7,9 @@ from threading import Thread
 from unittest.mock import patch
 
 import pytest
+from django.core.exceptions import ValidationError
 from django.test import override_settings
+from django.urls import reverse
 
 from wiki.lib.data_source import (
     _cache,
@@ -16,6 +18,8 @@ from wiki.lib.data_source import (
     fetch_page_data,
     is_domain_allowed,
     substitute_data_variables,
+    validate_data_source_ttl,
+    validate_data_source_url,
 )
 from wiki.pages.models import Page
 
@@ -366,6 +370,64 @@ class TestDomainAllowlist:
         assert is_domain_allowed("https://a.example.com/x")
         assert is_domain_allowed("https://b.example.com/y")
         assert not is_domain_allowed("https://c.example.com/z")
+
+    @override_settings(DATA_SOURCE_ALLOWED_DOMAINS=["www.courtlistener.com"])
+    def test_validate_accepts_an_allowed_url(self):
+        validate_data_source_url("https://www.courtlistener.com/api/x/")
+
+    @override_settings(DATA_SOURCE_ALLOWED_DOMAINS=["www.courtlistener.com"])
+    @pytest.mark.parametrize(
+        "url, message",
+        [
+            ("https://evil.example.com/data", "allowed data source list"),
+            ("not a url", "valid URL"),
+        ],
+    )
+    def test_validate_refuses(self, url, message):
+        with pytest.raises(ValidationError, match=message):
+            validate_data_source_url(url)
+
+    @pytest.mark.parametrize("ttl", [9, 86401])
+    def test_validate_refuses_a_cache_time_out_of_bounds(self, ttl):
+        with pytest.raises(ValidationError, match="between 10 and 86400"):
+            validate_data_source_ttl(ttl)
+
+    def test_the_editor_refuses_a_cache_time_out_of_bounds(
+        self, client, user, page
+    ):
+        client.force_login(user)
+        r = client.post(
+            reverse("page_edit", kwargs={"path": page.content_path}),
+            {
+                "title": page.title,
+                "content": page.content,
+                "visibility": "public",
+                "change_message": "Cache for a week",
+                "data_source_ttl": 7 * 24 * 60 * 60,
+            },
+        )
+        assert r.status_code == 200
+        assert b"between 10 and 86400" in r.content
+        page.refresh_from_db()
+        assert page.data_source_ttl == 300
+
+    @override_settings(DATA_SOURCE_ALLOWED_DOMAINS=["www.courtlistener.com"])
+    def test_the_editor_refuses_a_disallowed_domain(self, client, user, page):
+        client.force_login(user)
+        r = client.post(
+            reverse("page_edit", kwargs={"path": page.content_path}),
+            {
+                "title": page.title,
+                "content": page.content,
+                "visibility": "public",
+                "change_message": "Add data",
+                "data_source_url": "https://evil.example.com/data",
+            },
+        )
+        assert r.status_code == 200
+        assert b"allowed data source list" in r.content
+        page.refresh_from_db()
+        assert page.data_source_url == ""
 
     @override_settings(DATA_SOURCE_ALLOWED_DOMAINS=["www.courtlistener.com"])
     def test_blocked_domain_returns_empty_dict(self):

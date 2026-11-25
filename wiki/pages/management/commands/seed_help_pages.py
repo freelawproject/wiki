@@ -1689,8 +1689,9 @@ On the page edit form, the **Data Source** section has two fields:
   (e.g. `https://api.example.com/stats.json`). The wiki makes a
   GET request to this URL and parses the response as JSON.
 - **Cache (seconds)** — how long to cache the response before
-  fetching again. Defaults to 300 (5 minutes). Set a higher
-  value for data that changes infrequently.
+  fetching again, from 10 seconds to a day (86400). Defaults to 300
+  (5 minutes). Set a higher value for data that changes
+  infrequently.
 
 Leave the API URL blank if the page doesn't need external data.
 
@@ -1892,6 +1893,13 @@ To create a page, send `POST pages/` with `directory` (the path of an
 existing directory you can edit), `title`, `content` and
 `change_message`. The page takes its visibility and who can edit it
 from the directory, so pages can't be created at the top level.
+
+Both also take a page's [data source](#help/data-sources-guide):
+`data_source_url`, the JSON URL its `[[ key ]]` placeholders are
+filled from (on an allowed domain, or `""` to remove it), and
+`data_source_ttl`, how many seconds to cache it (10 to 86400, a day;
+300 by default). If
+you can edit a page, reading it also returns these two fields.
 
 ### Paging through results
 
