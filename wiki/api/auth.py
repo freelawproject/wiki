@@ -8,10 +8,12 @@ account's verified email, which is let in exactly as a magic-link sign-in
 would be: an allowlisted address gets (or mints) its wiki account, anyone
 else is anonymous and sees public pages only.
 
-A live token without the ``wiki`` scope is anonymous too, rather than
-refused: it gets no more than a request without a token would, and an MCP
-connection made before the wiki tools existed can read public pages without
-reconnecting. Only a token CourtListener rejects is a 401.
+A live token without the scopes that identify its account (``WIKI_SCOPES``)
+is anonymous too, rather than refused: it gets no more than a request without
+a token would, and an MCP connection made before the wiki tools existed can
+read public pages without reconnecting. Only a token CourtListener rejects is
+a 401. Writes, which need an account, refuse such a token with a 403
+``insufficient_scope`` challenge naming the scopes.
 """
 
 import hashlib
@@ -38,9 +40,25 @@ logger = logging.getLogger(__name__)
 TOKEN_CACHE_SECONDS = 300
 REJECTION_CACHE_SECONDS = 30
 
+# The scopes a token needs for the wiki to learn its account: ``wiki`` to be
+# let in, ``openid`` to read userinfo, and ``email`` for the email in it.
+WIKI_SCOPES = ("openid", "wiki", "email")
+
 # Cached in place of an email for a token CourtListener rejects. It is not an
 # address, so it can't be mistaken for one.
 REJECTED = "!rejected"
+
+# In place of an email for a live token that lacks one of ``WIKI_SCOPES``.
+# It reads as anonymous; ``bearer_auth`` marks the request so writes can say
+# which scopes are missing.
+MISSING_SCOPES = "!missing-scopes"
+
+
+def bearer_challenge(error=None):
+    """A ``WWW-Authenticate`` value naming the scopes the wiki needs."""
+    params = [f'error="{error}"'] if error else []
+    params.append(f'scope="{" ".join(WIKI_SCOPES)}"')
+    return "Bearer " + ", ".join(params)
 
 
 class TooManyTokenChecks(Exception):
@@ -64,9 +82,10 @@ def verified_email_for(token):
     """Who a CourtListener token reads as, and how many seconds that answer
     may be remembered.
 
-    The answer is the account's verified email for a live token carrying the
-    ``wiki`` scope; ``""`` (anonymous) for a live token without it, or with no
-    verified email behind it; and None for a token CourtListener rejects."""
+    The answer is the account's verified email for a live token carrying
+    ``WIKI_SCOPES``; ``MISSING_SCOPES`` for a live token lacking one of them;
+    ``""`` (anonymous) for one with no verified email behind it; and None for
+    a token CourtListener rejects."""
     if not (
         settings.COURTLISTENER_CLIENT_ID
         and settings.COURTLISTENER_CLIENT_SECRET
@@ -90,15 +109,18 @@ def verified_email_for(token):
             return None, REJECTION_CACHE_SECONDS
         # Without the scope the user never let the wiki know who they are.
         if "wiki" not in info.get("scope", "").split():
-            return "", _calculate_ttl(info)
+            return MISSING_SCOPES, _calculate_ttl(info)
         userinfo = cl.get(
             "/o/userinfo/", headers={"Authorization": f"Bearer {token}"}
         )
-        # Refused for the token's sake (e.g. no openid scope), not ours.
+        # Refused for the token's sake (no openid scope), not ours.
         if userinfo.status_code in (401, 403):
-            return "", _calculate_ttl(info)
+            return MISSING_SCOPES, _calculate_ttl(info)
         userinfo.raise_for_status()
     claims = userinfo.json()
+    # Userinfo leaves the email claim out without the email scope.
+    if "email" not in claims:
+        return MISSING_SCOPES, _calculate_ttl(info)
     if not (claims.get("email") and claims.get("email_verified")):
         return "", _calculate_ttl(info)
     return claims["email"].lower(), _calculate_ttl(info)
@@ -118,7 +140,8 @@ def bearer_auth(view):
     """Make ``request.user`` the account behind the request's bearer token.
 
     A token CourtListener rejects is a 401, and a live one that names no
-    account (no ``wiki`` scope, or no verified email) is anonymous.
+    account (missing ``WIKI_SCOPES``, or no verified email) is anonymous;
+    for missing scopes, ``request.bearer_missing_scopes`` is set.
     CourtListener being unreachable is a 503; too many unseen tokens from one
     address is a 429. Without a token the view sees the request's own
     (session or anonymous) user.
@@ -144,8 +167,13 @@ def bearer_auth(view):
                 return JsonResponse(
                     {"error": "invalid_token"},
                     status=401,
-                    headers={"WWW-Authenticate": "Bearer"},
+                    headers={
+                        "WWW-Authenticate": bearer_challenge("invalid_token")
+                    },
                 )
+            request.bearer_missing_scopes = email == MISSING_SCOPES
+            if request.bearer_missing_scopes:
+                email = ""
             user = (
                 provision_user(email)
                 if email and is_email_allowed(email)

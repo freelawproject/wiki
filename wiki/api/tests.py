@@ -51,7 +51,7 @@ class TestPageList:
     def test_token_without_wiki_scope_sees_public_only(
         self, client, page, internal_page, identify
     ):
-        identify["t"] = ""
+        identify["t"] = auth.MISSING_SCOPES
         assert paths(client, "t") == [page.content_path]
 
     def test_staff_sees_internal(self, client, page, internal_page, identify):
