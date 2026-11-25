@@ -10,7 +10,7 @@ from django.test import Client, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
-from wiki.pages.models import Page
+from wiki.pages.models import Page, PagePermission
 from wiki.subscriptions.models import (
     DirectorySubscription,
     EmailSubscription,
@@ -294,6 +294,44 @@ class TestGetEffectiveWatchers:
     def test_empty(self, page):
         watchers = get_effective_watchers_for_page(page)
         assert watchers.count() == 0
+
+    def test_excludes_watchers_who_cannot_view_page(
+        self, user, other_user, private_page
+    ):
+        """A stale subscription must not list someone who lost access."""
+        PageSubscription.objects.create(user=user, page=private_page)
+        PageSubscription.objects.create(user=other_user, page=private_page)
+        watcher_ids = {
+            w.id for w in get_effective_watchers_for_page(private_page)
+        }
+        assert watcher_ids == {user.id}
+
+    def test_excludes_directory_watchers_when_page_made_private(
+        self, user, other_user, sub_directory, page_in_directory
+    ):
+        DirectorySubscription.objects.create(
+            user=other_user, directory=sub_directory
+        )
+        page_in_directory.visibility = Page.Visibility.PRIVATE
+        page_in_directory.save()
+        watcher_ids = {
+            w.id for w in get_effective_watchers_for_page(page_in_directory)
+        }
+        assert other_user.id not in watcher_ids
+
+    def test_watcher_reappears_when_access_granted(
+        self, user, other_user, private_page
+    ):
+        PageSubscription.objects.create(user=other_user, page=private_page)
+        assert other_user.id not in {
+            w.id for w in get_effective_watchers_for_page(private_page)
+        }
+        PagePermission.objects.create(
+            page=private_page, user=other_user, permission_type="view"
+        )
+        assert other_user.id in {
+            w.id for w in get_effective_watchers_for_page(private_page)
+        }
 
 
 # ── User journey scenarios ───────────────────────────────────────

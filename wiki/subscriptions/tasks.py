@@ -8,7 +8,10 @@ from django.core.signing import Signer
 from django.urls import reverse
 
 from wiki.lib.inheritance import resolve_effective_value
-from wiki.lib.permissions import can_view_page
+from wiki.lib.permissions import (
+    can_view_page,
+    filter_users_who_can_view_page,
+)
 from wiki.lib.users import display_name, user_by_handle
 from wiki.pages.models import Page, PagePermission
 
@@ -123,10 +126,13 @@ def notify_subscribers(
 
     change_line = f"Change: {change_message}\n\n" if change_message else ""
 
+    # Only users who can view the page are notified (subscription rows
+    # outlive access), resolved in bulk rather than per recipient.
     users = {
         u.id: u
-        for u in User.objects.filter(id__in=all_user_ids).select_related(
-            "profile"
+        for u in filter_users_who_can_view_page(
+            page,
+            User.objects.filter(id__in=all_user_ids).select_related("profile"),
         )
     }
 
@@ -139,10 +145,6 @@ def notify_subscribers(
     for uid, user in users.items():
         # Don't notify the editor themselves
         if uid == editor_id:
-            continue
-
-        # Only notify users who can view the page
-        if not can_view_page(user, page):
             continue
 
         page_token = signer.sign(f"{uid}:{page.id}")
