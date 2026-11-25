@@ -279,10 +279,12 @@ def _update_page(request, page):
         return _error(
             409,
             "locked",
-            "You have this page open in the wiki's editor; close it and try "
-            "again."
+            "You have this page open in the wiki's editor. Closing the editor "
+            "doesn't release its lock: save your changes there, or try again "
+            "after locked_until."
             if lock.user_id == request.user.pk
-            else "Someone is editing this page in the wiki; try again later.",
+            else "Someone is editing this page in the wiki; try again after "
+            "they save or after locked_until.",
             locked_by=display_name(lock.user),
             locked_until=lock.expires_at,
         )
