@@ -108,3 +108,45 @@ def is_internal_user(user):
     )
     user._is_internal_user_cache = result
     return result
+
+
+def internal_user_ids(users):
+    """Return the IDs of ``users`` in the internal (staff) audience.
+
+    Bulk counterpart of :func:`is_internal_user` / :func:`resolve_tier`: a
+    fixed two queries however many users are passed, instead of up to two per
+    user. Keep the two in sync — an exact :class:`AllowedEmail` match wins
+    over the address's domain.
+    """
+    users = list(users)
+    ids = {u.id for u in users if u.is_staff or u.is_superuser}
+
+    emails = {}
+    for u in users:
+        if u.id in ids:
+            continue
+        email = (u.email or "").strip().lower()
+        if "@" in email:
+            emails[u.id] = email
+    if not emails:
+        return ids
+
+    domains = {e.rsplit("@", 1)[1] for e in emails.values()}
+    email_tiers = dict(
+        AllowedEmail.objects.filter(
+            email__in=set(emails.values())
+        ).values_list("email", "tier")
+    )
+    domain_tiers = dict(
+        AllowedDomain.objects.filter(domain__in=domains).values_list(
+            "domain", "tier"
+        )
+    )
+    for uid, email in emails.items():
+        if email in email_tiers:
+            tier = email_tiers[email]
+        else:
+            tier = domain_tiers.get(email.rsplit("@", 1)[1])
+        if tier == AccessTier.STAFF:
+            ids.add(uid)
+    return ids
