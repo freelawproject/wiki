@@ -549,7 +549,9 @@ null. Anonymous callers see public pages.
 open in the editor is a 409) and `POST pages/` creates one in an existing
 directory the caller can edit. Writes need a bearer token whose account may
 edit the target, and share their save logic with the web editor
-(`wiki/lib/page_saves.py`).
+(`wiki/lib/page_saves.py`). `POST preview/` renders Markdown `content` (with
+an optional data source URL, fetched fresh) to HTML as the caller would see
+it, saving nothing; like writes, it needs a token for a wiki account.
 A CourtListener OAuth access token sent as `Authorization: Bearer` is
 introspected at CourtListener with the wiki's own confidential client (set
 `COURTLISTENER_URL`, `COURTLISTENER_CLIENT_ID` and `COURTLISTENER_CLIENT_SECRET`)
@@ -590,7 +592,7 @@ Test files live alongside the code they test (`wiki/pages/tests.py`,
 | `subscriptions` | 119 | Page and directory subscriptions, effective watchers, notifications for every action, unsubscribe flows |
 | `users` | 103 | Login form, magic link flow, logout, settings, profiles, access allowlist, domain grants, archiving, admin management |
 | `proposals` | 45 | Feedback page, proposal review, accept and deny, rate limits |
-| `api` | 73 | JSON API: listing, search, page detail, bearer-token auth, editing and creating pages, data sources |
+| `api` | 80 | JSON API: listing, search, page detail, bearer-token auth, editing and creating pages, data sources, previews |
 | `comments` | 28 | Submitting, replying, resolving, review queue, badges |
 | `groups` | 19 | Group list, create, detail, edit, delete |
 | browser (`tests_browser.py`) | 38 | Playwright tests for JS behaviour: location picker, editor keys, content tabs, autocomplete, bulk moves |
